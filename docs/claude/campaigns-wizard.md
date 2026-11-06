@@ -15,9 +15,12 @@ lo introduce — stesso principio già in uso per gli stati terminali sopra.
 Stesso check su `launch()` (riporta la bozza a DRAFT prima di rilanciare
 l'eccezione) e `launchTestSend()`. **Eccezione voluta: firma allegati SEND**
 (`RemoteSignService.assertCanRead/assertCanModify` → avvio firma Aruba,
-stato, ZIP, ricarico firmati) è aperta a qualunque operatore — flusso reale:
-l'admin prepara, il dirigente (ruolo `user`) firma, poi lancia il
-proprietario. Bug reale (v1.11.x): ownership sulla firma → 403 al dirigente.
+stato, ZIP, ricarico firmati) è aperta a creatore, admin e firmatario indicato (`Campaign.signerUsername`,
+regola `canReadCampaignAttachments`; altri → 403 + audit
+`ATTACHMENT_ACCESS_DENIED`) — flusso reale: l'admin prepara indicando il
+dirigente (ruolo `user`) che firma, poi lancia il proprietario. Bug reale
+(v1.11.x): ownership sulla firma → 403 al dirigente (oggi risolto dal
+firmatario indicato, non da accesso aperto a tutti).
 
 ## operator_directory — cache display name, si popola solo al login
 

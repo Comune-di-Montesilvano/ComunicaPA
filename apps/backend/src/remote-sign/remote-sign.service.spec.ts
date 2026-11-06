@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ForbiddenException } from '@nestjs/common';
 import { RemoteSignService } from './remote-sign.service.js';
 import { RemoteSignError } from './arss-errors.js';
 import { RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
@@ -36,7 +37,7 @@ function build() {
   const audit = { log: vi.fn() };
   const svc = new RemoteSignService(
     campaignRepo as any, recipientRepo as any, jobRepo as any, queue as any, client as any,
-    bulk as any, verification as any, settings as any, config as any,
+    bulk as any, verification as any, settings as any, config as any, audit as any,
   );
   return { svc, campaignRepo, recipientRepo, jobRepo, queue, client, bulk, verification, settings, audit };
 }
@@ -119,17 +120,43 @@ describe('RemoteSignService', () => {
       .resolves.toEqual({ error: 'Firma remota non attiva: abilitala da Impostazioni → Firma remota' });
   });
 
-  // Flusso reale: l'admin prepara la campagna, il dirigente (ruolo 'user') la firma.
-  it('assertCanModify: un user può firmare la campagna creata da un altro operatore', async () => {
-    const { svc } = build();
-    await expect(svc.assertCanModify(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).resolves.toBeDefined();
+  // Flusso reale: il creatore indica il dirigente (ruolo 'user') come firmatario.
+  const SIGNER = { username: 'luigi', role: 'user' as const };
+  const STRANGER = { username: 'pippo', role: 'user' as const };
+
+  it('assertCanModify: il firmatario indicato (non creatore) può firmare', async () => {
+    const { svc, campaignRepo } = build();
+    campaignRepo.findOneBy.mockResolvedValue({ ...sendCampaign, signerUsername: 'luigi' });
+    await expect(svc.assertCanModify(CAMPAIGN_ID, SIGNER)).resolves.toBeDefined();
   });
 
-  it('assertCanRead: user non proprietario legge lo stato firma; campagna lanciata comunque leggibile', async () => {
-    const { svc, campaignRepo } = build();
-    await expect(svc.assertCanRead(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).resolves.toBeDefined();
-    campaignRepo.findOneBy.mockResolvedValueOnce({ ...sendCampaign, status: CampaignStatus.QUEUED });
+  it('assertCanModify: creatore e admin possono, un altro user no (403 + audit)', async () => {
+    const { svc, audit } = build();
+    await expect(svc.assertCanModify(CAMPAIGN_ID, { username: 'mario', role: 'user' })).resolves.toBeDefined();
+    await expect(svc.assertCanModify(CAMPAIGN_ID, ADMIN)).resolves.toBeDefined();
+    await expect(svc.assertCanModify(CAMPAIGN_ID, STRANGER)).rejects.toThrow(ForbiddenException);
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ATTACHMENT_ACCESS_DENIED', operator: 'pippo', campaignId: CAMPAIGN_ID,
+      details: { endpoint: 'remote-sign' },
+    }));
+  });
+
+  it('assertCanRead: firmatario/creatore leggono anche dopo il lancio, un altro user no (403 + audit)', async () => {
+    const { svc, campaignRepo, audit } = build();
+    campaignRepo.findOneBy.mockResolvedValue({ ...sendCampaign, status: CampaignStatus.QUEUED, signerUsername: 'luigi' });
+    await expect(svc.assertCanRead(CAMPAIGN_ID, SIGNER)).resolves.toBeDefined();
     await expect(svc.assertCanRead(CAMPAIGN_ID, { username: 'mario', role: 'user' })).resolves.toBeDefined();
+    await expect(svc.assertCanRead(CAMPAIGN_ID, STRANGER)).rejects.toThrow(ForbiddenException);
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'ATTACHMENT_ACCESS_DENIED', operator: 'pippo' }));
+  });
+
+  it('start: il firmatario (user, non creatore) avvia la firma; un altro user no e nulla viene aperto', async () => {
+    const { svc, campaignRepo, client } = build();
+    campaignRepo.findOneBy.mockResolvedValue({ ...sendCampaign, signerUsername: 'luigi' });
+    await expect(svc.start(CAMPAIGN_ID, SIGNER, { user: 'luigi', password: 'p', otp: '123456' })).resolves.toEqual({ jobId: 'job-1' });
+    client.openSession.mockClear();
+    await expect(svc.start(CAMPAIGN_ID, STRANGER, { user: 'x', password: 'p', otp: '123456' })).rejects.toThrow(ForbiddenException);
+    expect(client.openSession).not.toHaveBeenCalled();
   });
 
   it('assertCanModify: campagna non SEND o non in bozza → errore', async () => {

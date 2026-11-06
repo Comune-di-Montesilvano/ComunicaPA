@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
@@ -16,6 +16,8 @@ import { AppSettingsService } from '../settings/app-settings.service.js';
 import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto.js';
 import type { AppConfiguration } from '../config/configuration.js';
 import type { CampaignRequester } from '../campaigns/campaigns.service.js';
+import { ATTACHMENT_DENIED_MESSAGE, canReadCampaignAttachments, logAttachmentDenied } from '../campaigns/campaign-access.util.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { ArubaSignClient } from './aruba-sign.client.js';
 import { RemoteSignError } from './arss-errors.js';
 import { captureException } from '../common/sentry.util.js';
@@ -53,6 +55,8 @@ export class RemoteSignService {
     private readonly verification: SignatureVerificationService,
     private readonly settings: AppSettingsService,
     config: ConfigService<AppConfiguration, true>,
+    // @Optional: le spec esistenti non lo forniscono (audit del diniego saltato).
+    @Optional() private readonly auditLogs?: AuditLogsService,
   ) {
     this.cryptoKey = deriveSettingsKey(config.get('jwt.secret', { infer: true }));
   }
@@ -69,22 +73,33 @@ export class RemoteSignService {
     return this.settings.get<string>('remoteSign.otpDomain').then((value) => String(value ?? '').trim() || 'firma');
   }
 
-  // Firma senza controllo di ownership: chi firma (dirigente, ruolo 'user')
-  // di norma NON è chi ha preparato la campagna. Vale SOLO per la firma
-  // (avvio, stato, ZIP, ricarico firmati): annulla/elimina restano al
-  // proprietario (assertOwnership di CampaignsService). Operatore nell'audit.
+  // Firma riservata a creatore, admin e firmatario indicato in campagna
+  // (signerUsername): chi firma (dirigente, ruolo 'user') di norma NON è chi
+  // ha preparato la campagna, quindi va designato dal creatore. Stessa regola
+  // degli allegati (canReadCampaignAttachments); diniego = 403 + audit
+  // ATTACHMENT_ACCESS_DENIED. Vale SOLO per la firma (avvio, stato, ZIP,
+  // ricarico firmati): annulla/elimina restano al proprietario
+  // (assertOwnership di CampaignsService). Operatore nell'audit.
+
+  private async assertAttachmentAccess(campaign: Campaign, requester: CampaignRequester): Promise<void> {
+    if (canReadCampaignAttachments(campaign, requester)) return;
+    await logAttachmentDenied(this.auditLogs, requester, campaign, 'remote-sign');
+    throw new ForbiddenException(ATTACHMENT_DENIED_MESSAGE);
+  }
 
   /** Lo stato firma resta leggibile anche dopo il lancio. */
-  async assertCanRead(campaignId: string, _requester: CampaignRequester): Promise<Campaign> {
+  async assertCanRead(campaignId: string, requester: CampaignRequester): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    await this.assertAttachmentAccess(campaign, requester);
     return campaign;
   }
 
-  /** SEND in bozza (massivo o Invio Manuale), qualunque operatore può firmare. */
-  async assertCanModify(campaignId: string, _requester: CampaignRequester): Promise<Campaign> {
+  /** SEND in bozza (massivo o Invio Manuale), solo creatore, admin, firmatario indicato. */
+  async assertCanModify(campaignId: string, requester: CampaignRequester): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    await this.assertAttachmentAccess(campaign, requester);
     if (campaign.channelType !== 'SEND' || campaign.status !== CampaignStatus.DRAFT) {
       throw new BadRequestException('Firma allegati disponibile solo per campagne SEND in bozza');
     }

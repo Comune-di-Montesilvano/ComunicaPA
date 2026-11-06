@@ -249,8 +249,12 @@ export class EnrichmentController {
 
   @Get('jobs/:id/result.zip')
   @Roles('user', 'admin')
-  async downloadZip(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
-    const buf = await this.svc.buildResultZip(id);
+  async downloadZip(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<void> {
+    const buf = await this.svc.buildResultZip(id, { username: req.user.username, role: req.user.role });
     if (!buf) {
       // 200 + blocked, mai non-2xx: il proxy esterno sostituisce il body
       // delle risposte non-2xx con una pagina HTML propria (vedi CLAUDE.md).
@@ -284,7 +288,7 @@ export class EnrichmentController {
     return this.svc.requestCampaignConversion(
       id,
       { name, channelType: body.channelType, splitMissingPayment: body.splitMissingPayment === true },
-      req.user.username,
+      { username: req.user.username, role: req.user.role },
     );
   }
 

@@ -52,6 +52,9 @@ import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
+import { ATTACHMENT_DENIED_MESSAGE, canReadCampaignAttachments, canViewCampaign, logAttachmentDenied, visibleCampaignSql } from './campaign-access.util.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -184,10 +187,19 @@ export class CampaignsService {
     // vedono "nessuna firma remota in corso".
     @Optional() @InjectRepository(RemoteSignJob)
     private readonly remoteSignJobRepo?: Repository<RemoteSignJob>,
+    // @Optional: audit del diniego allegati; le spec che non lo forniscono lo saltano.
+    @Optional() private readonly auditLogs?: AuditLogsService,
+    // @Optional: validazione del firmatario (setSigner); le spec che non lo forniscono non lo usano.
+    @Optional() private readonly operatorDirectory?: OperatorDirectoryService,
   ) {}
 
-  findAll(): Promise<Campaign[]> {
-    return this.campaignRepo.find({ order: { createdAt: 'DESC' } });
+  // Bozze altrui escluse in SQL (visibleCampaignSql): stesso criterio di
+  // canViewCampaign, che il CampaignAccessInterceptor applica al dettaglio.
+  findAll(requester: CampaignRequester): Promise<Campaign[]> {
+    const qb = this.campaignRepo.createQueryBuilder('c').orderBy('c.createdAt', 'DESC');
+    const visible = visibleCampaignSql('c', requester);
+    if (visible) qb.andWhere(visible.sql, visible.params);
+    return qb.getMany();
   }
 
   async findOne(id: string): Promise<Campaign> {
@@ -291,18 +303,28 @@ export class CampaignsService {
    * firmare il link di download nello stesso formato di produzione — il
    * link non risolve realmente perché nessun allegato è associato a
    * quell'id in DB). Usata dal wizard per l'anteprima live.
+   *
+   * Con `campaignId` + CF di un destinatario reale il link firmato sarebbe
+   * funzionante: se `requester` non può leggere gli allegati di quella
+   * campagna i link diventano un segnaposto non cliccabile. Campagna non
+   * visibile (bozza altrui) → trattata come destinatario inesistente: id
+   * casuale e nessun segnaposto, così la risposta non rivela se quel CF è
+   * nella bozza.
    */
-  async previewMessage(dto: PreviewMessageDto): Promise<PreviewMessageResult> {
+  async previewMessage(dto: PreviewMessageDto, requester: CampaignRequester): Promise<PreviewMessageResult> {
     let previewRecipientId: string = randomUUID();
+    let redactDownloadLinks = false;
     if (dto.campaignId && dto.recipient?.codiceFiscale) {
       const realRecipient = await this.recipientRepo.findOne({
         where: {
           campaignId: dto.campaignId,
           codiceFiscale: dto.recipient.codiceFiscale.toUpperCase().trim(),
         },
+        relations: { campaign: true },
       });
-      if (realRecipient) {
+      if (realRecipient?.campaign && canViewCampaign(realRecipient.campaign, requester)) {
         previewRecipientId = realRecipient.id;
+        redactDownloadLinks = !canReadCampaignAttachments(realRecipient.campaign, requester);
       }
     }
 
@@ -328,6 +350,7 @@ export class CampaignsService {
       true,
       dto.appIoParallelPrimaryChannel,
       dto.physicalAddressConfig,
+      redactDownloadLinks,
     );
   }
 
@@ -341,8 +364,11 @@ export class CampaignsService {
    * (un click dell'operatore non conta come download), false = link "vero" del
    * portale cittadino (il click del cittadino DEVE continuare a contare — non
    * passare mai true per il rendering mostrato al cittadino stesso).
+   *
+   * `redactDownloadLinks` = anteprima backoffice per un operatore che non può
+   * leggere gli allegati: link sostituiti da un segnaposto, nessuna firma.
    */
-  async renderMessageForRecipient(recipientId: string, linkChannelTag?: string, preview = true): Promise<PreviewMessageResult> {
+  async renderMessageForRecipient(recipientId: string, linkChannelTag?: string, preview = true, redactDownloadLinks = false): Promise<PreviewMessageResult> {
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
@@ -351,7 +377,7 @@ export class CampaignsService {
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
-    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, preview);
+    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, preview, undefined, undefined, redactDownloadLinks);
   }
 
   /**
@@ -361,7 +387,7 @@ export class CampaignsService {
    * cosa è arrivato su App IO quando la co-consegna è andata a buon fine,
    * distinto dal contenuto (lettera POSTAL, PEC, ecc.) del canale primario.
    */
-  async renderAppIoCoDeliveryPreview(recipientId: string): Promise<PreviewMessageResult | null> {
+  async renderAppIoCoDeliveryPreview(recipientId: string, redactDownloadLinks = false): Promise<PreviewMessageResult | null> {
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
@@ -380,7 +406,7 @@ export class CampaignsService {
     const parallelPrimaryChannel = appIoConfig.mode === 'parallel' ? campaign.channelType : undefined;
     const physicalAddressConfig = campaign.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined;
 
-    return this.renderMessage('APP_IO', subjectTemplate, bodyTemplate, attachmentLabels, recipient, 'markdown', undefined, true, parallelPrimaryChannel, physicalAddressConfig);
+    return this.renderMessage('APP_IO', subjectTemplate, bodyTemplate, attachmentLabels, recipient, 'markdown', undefined, true, parallelPrimaryChannel, physicalAddressConfig, redactDownloadLinks);
   }
 
   private async renderMessage(
@@ -394,6 +420,7 @@ export class CampaignsService {
     preview = false,
     appIoParallelPrimaryChannel?: NotificationChannel,
     physicalAddressConfig?: Record<string, unknown>,
+    redactDownloadLinks = false,
   ): Promise<PreviewMessageResult> {
     const brandName = await this.settings.get<string>('brand.name');
     const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -404,8 +431,8 @@ export class CampaignsService {
     const resolvedFormat: 'html' | 'markdown' = format ?? (channelType === 'APP_IO' ? 'markdown' : 'html');
     const linkTag = linkChannelTag ?? channelType;
 
-    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
-    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
+    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview, redactDownloadLinks);
+    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview, redactDownloadLinks);
 
     const portalUrl = await resolveCitizenPortalUrl(this.settings);
 
@@ -913,6 +940,8 @@ export class CampaignsService {
         channelConfig: parent.channelConfig,
         status: CampaignStatus.QUEUED,
         createdBy: parent.createdBy,
+        // Il firmatario della madre deve poter leggere gli allegati del test.
+        signerUsername: parent.signerUsername ?? null,
         isTest: true,
         parentCampaignId,
       });
@@ -1459,6 +1488,36 @@ export class CampaignsService {
     return { launched: recipients.length };
   }
 
+  // Firmatario indicato (solo SEND in bozza): dà accesso a bozza, allegati e
+  // invii di prova. Propagato ai figli di test già esistenti, altrimenti il
+  // firmatario nominato dopo un invio di prova non li vedrebbe.
+  async setSigner(
+    id: string,
+    signerUsername: string | null,
+    requester: CampaignRequester,
+  ): Promise<{ previous: string | null; signerUsername: string | null }> {
+    const campaign = await this.campaignRepo.findOneBy({ id });
+    if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
+    this.assertOwnership(campaign, requester);
+    if (campaign.channelType !== 'SEND' || campaign.status !== CampaignStatus.DRAFT) {
+      throw new BadRequestException('Il firmatario si indica solo per campagne SEND in bozza');
+    }
+    if (this.remoteSignJobRepo && await this.remoteSignJobRepo.exists({
+      where: { campaignId: id, status: In([RemoteSignJobStatus.QUEUED, RemoteSignJobStatus.PROCESSING]) },
+    })) {
+      throw new BadRequestException('Firma remota in corso: attendi la fine prima di cambiare firmatario');
+    }
+    if (signerUsername !== null) {
+      if (!this.operatorDirectory || !(await this.operatorDirectory.exists(signerUsername))) {
+        throw new BadRequestException('Firmatario sconosciuto: scegli un operatore presente in elenco');
+      }
+    }
+    const previous = campaign.signerUsername ?? null;
+    await this.campaignRepo.update({ id }, { signerUsername });
+    await this.campaignRepo.update({ parentCampaignId: id, isTest: true }, { signerUsername });
+    return { previous, signerUsername };
+  }
+
   async cancel(campaignId: string, requester: CampaignRequester): Promise<{ cancelled: number; campaignId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -1963,7 +2022,7 @@ export class CampaignsService {
     return { sentCount, combinations, postalNoDigitalDownloaded };
   }
 
-  async getRecentActivity(): Promise<Array<{
+  async getRecentActivity(requester: CampaignRequester): Promise<Array<{
     id: string;
     name: string;
     channelType: string;
@@ -1975,7 +2034,7 @@ export class CampaignsService {
   }>> {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const rows = await this.campaignRepo
+    const qb = this.campaignRepo
       .createQueryBuilder('c')
       .select('c.id', 'id')
       .addSelect('c.name', 'name')
@@ -2003,7 +2062,12 @@ export class CampaignsService {
             AND (na.send_status_updated_at >= :since OR na.postal_status_updated_at >= :since)
         ))`,
         { activeStatuses: [CampaignStatus.QUEUED, CampaignStatus.RUNNING], since },
-      )
+      );
+    // Le bozze sono già escluse sopra: il filtro di visibilità è difesa in
+    // profondità, nel caso quella condizione cambi.
+    const visible = visibleCampaignSql('c', requester);
+    if (visible) qb.andWhere(visible.sql, visible.params);
+    const rows = await qb
       .orderBy('"lastActivityAt"', 'DESC')
       .limit(15)
       .getRawMany();
@@ -2175,17 +2239,22 @@ export class CampaignsService {
    * cartaceo, componenti GlobalCom, trend mensile, campagne più costose,
    * risparmio stimato. Aggregazione in cost-analytics.util.ts (pura, testata).
    */
-  async getCostAnalytics(dateFrom?: string, dateTo?: string): Promise<CostAnalyticsDto> {
+  async getCostAnalytics(requester: CampaignRequester, dateFrom?: string, dateTo?: string): Promise<CostAnalyticsDto> {
     const range = buildDateRangeWhere('c', dateFrom, dateTo);
+    // Bozze non visibili al richiedente mai tra le "campagne più costose"
+    // (stessa regola di findAll); admin → null, nessun filtro.
+    const visible = visibleCampaignSql('c', requester);
 
-    const rows = await this.loadCostRows((qb) => qb
-      .andWhere('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
-      .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false'));
+    const rows = await this.loadCostRows((qb) => {
+      qb.andWhere('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
+        .andWhere(range.sql, range.params)
+        .andWhere('c.isTest = false');
+      return visible ? qb.andWhere(visible.sql, visible.params) : qb;
+    });
 
     // POSTAL mai spediti perché dirottati su PEC da INAD, per campagna: il
     // risparmio si stima col costo medio di spedizione DELLA STESSA campagna.
-    const divertedRows = await this.recipientRepo
+    const divertedQb = this.recipientRepo
       .createQueryBuilder('r')
       .innerJoin('r.campaign', 'c')
       .select('c.id', 'campaignId')
@@ -2193,7 +2262,9 @@ export class CampaignsService {
       .where("c.channelType = 'POSTAL'")
       .andWhere("(r.inadCheck ->> 'diverted') = 'true'")
       .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false')
+      .andWhere('c.isTest = false');
+    if (visible) divertedQb.andWhere(visible.sql, visible.params);
+    const divertedRows = await divertedQb
       .groupBy('c.id')
       .getRawMany<{ campaignId: string; diverted: string }>();
 
@@ -2248,17 +2319,19 @@ export class CampaignsService {
     return ships.length > 0 ? ships.reduce((sum, c) => sum + c, 0) / ships.length : null;
   }
 
-  async getNeverDownloadedRecipients(dateFrom?: string, dateTo?: string): Promise<NeverDownloadedRowDto[]> {
+  async getNeverDownloadedRecipients(requester: CampaignRequester, dateFrom?: string, dateTo?: string): Promise<NeverDownloadedRowDto[]> {
     const range = buildDateRangeWhere('c', dateFrom, dateTo);
-    const rows = await this.recipientRepo
+    const qb = this.recipientRepo
       .createQueryBuilder('r')
       .innerJoinAndSelect('r.campaign', 'c')
       .where(`NOT ${HAS_DOWNLOAD_SQL}`)
       .andWhere('r.status = :status', { status: RecipientStatus.SENT })
       .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false')
-      .orderBy('r.createdAt', 'DESC')
-      .getMany();
+      .andWhere('c.isTest = false');
+    // Righe di bozze non visibili al richiedente mai nel CSV (stessa regola di findAll).
+    const visible = visibleCampaignSql('c', requester);
+    if (visible) qb.andWhere(visible.sql, visible.params);
+    const rows = await qb.orderBy('r.createdAt', 'DESC').getMany();
 
     return rows.map((r) => ({
       codiceFiscale: r.codiceFiscale,
@@ -3785,9 +3858,14 @@ export class CampaignsService {
   async resolveAttachmentPreviewFilePath(
     campaignId: string,
     filename: string,
+    requester: CampaignRequester,
   ): Promise<{ path: string; contentType: string }> {
-    const exists = await this.campaignRepo.existsBy({ id: campaignId });
-    if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (!canReadCampaignAttachments(campaign, requester)) {
+      await logAttachmentDenied(this.auditLogs, requester, campaign, 'attachments/preview-file');
+      throw new ForbiddenException(ATTACHMENT_DENIED_MESSAGE);
+    }
 
     const dir = getUploadsDir(campaignId);
     const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];

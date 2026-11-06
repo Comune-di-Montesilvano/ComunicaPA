@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { NotificationsSearchService } from './notifications-search.service.js';
 import { Recipient } from '../entities/recipient.entity.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
@@ -9,6 +9,10 @@ import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { SendLegalFactsService } from '../channels/send/send-legal-facts.service.js';
 import { AttachmentService } from '../attachments/attachment.service.js';
 import { fromUtcWallClock } from '../legal-attention/legal-attention.util.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { visibleCampaignSql } from '../campaigns/campaign-access.util.js';
+
+const ADMIN = { username: 'admin', role: 'admin' as const };
 
 describe('NotificationsSearchService.search', () => {
   const qbMock = {
@@ -46,7 +50,7 @@ describe('NotificationsSearchService.search', () => {
 
   it('applica la condizione di ricerca campo libero su codiceFiscale quando presente', async () => {
     qbMock.getManyAndCount.mockResolvedValue([[], 0]);
-    await service.search({ codiceFiscale: 'rssmra80a01h501x', page: 1, pageSize: 20 });
+    await service.search({ codiceFiscale: 'rssmra80a01h501x', page: 1, pageSize: 20 }, ADMIN);
 
     expect(qbMock.andWhere).toHaveBeenCalledWith(
       '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
@@ -56,7 +60,7 @@ describe('NotificationsSearchService.search', () => {
 
   it('applica la condizione di ricerca campo libero su query quando presente', async () => {
     qbMock.getManyAndCount.mockResolvedValue([[], 0]);
-    await service.search({ query: 'mario', page: 1, pageSize: 20 });
+    await service.search({ query: 'mario', page: 1, pageSize: 20 }, ADMIN);
 
     expect(qbMock.andWhere).toHaveBeenCalledWith(
       '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
@@ -66,7 +70,7 @@ describe('NotificationsSearchService.search', () => {
 
   it('filtro campagna: cerca per id (anche parziale) o nome campagna, case-insensitive', async () => {
     qbMock.getManyAndCount.mockResolvedValue([[], 0]);
-    await service.search({ campaignId: '  Avviso TARI ', page: 1, pageSize: 20 });
+    await service.search({ campaignId: '  Avviso TARI ', page: 1, pageSize: 20 }, ADMIN);
 
     expect(qbMock.andWhere).toHaveBeenCalledWith(
       '(CAST(campaign.id AS text) ILIKE :campaignQ OR campaign.name ILIKE :campaignQ)',
@@ -87,7 +91,7 @@ describe('NotificationsSearchService.search', () => {
       },
     ], 1]);
 
-    const result = await service.search({ page: 1, pageSize: 20 });
+    const result = await service.search({ page: 1, pageSize: 20 }, ADMIN);
 
     expect(result).toEqual({
       rows: [{
@@ -136,7 +140,7 @@ describe('NotificationsSearchService.getDetail', () => {
   it('lancia NotFoundException se il destinatario non esiste', async () => {
     recipientRepoMock.findOne.mockResolvedValueOnce(null);
 
-    await expect(service.getDetail('no-exist')).rejects.toThrow(NotFoundException);
+    await expect(service.getDetail('no-exist', ADMIN)).rejects.toThrow(NotFoundException);
   });
 
   it('ritorna destinatario, campagna, tentativi ed esito App IO separato', async () => {
@@ -175,7 +179,7 @@ describe('NotificationsSearchService.getDetail', () => {
       { channel: 'EMAIL', attachmentIndex: 0, downloadedAt: new Date('2026-07-02T08:00:00Z') },
     ]);
 
-    const result = await service.getDetail('r1');
+    const result = await service.getDetail('r1', ADMIN);
 
     expect(result).toEqual({
       legalOutcome: null,
@@ -225,6 +229,7 @@ describe('NotificationsSearchService.getDetail', () => {
       totalCostCents: 0,
       attachments: [],
       payment: null,
+      canReadAttachments: true,
     });
   });
 
@@ -281,7 +286,7 @@ describe('NotificationsSearchService.getDetail', () => {
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
     downloadEventRepoMock.find.mockResolvedValueOnce([]);
 
-    const result = await service.getDetail('r1');
+    const result = await service.getDetail('r1', ADMIN);
 
     const [pecAttempt, appIoAttempt] = result.attempts;
     expect(pecAttempt.channelType).toBe('PEC');
@@ -311,7 +316,7 @@ describe('NotificationsSearchService.getDetail', () => {
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
     downloadEventRepoMock.find.mockResolvedValueOnce([]);
 
-    const result = await service.getDetail('r1');
+    const result = await service.getDetail('r1', ADMIN);
 
     expect(result.payment).toEqual({
       noticeCode: '123456789012',
@@ -343,7 +348,7 @@ describe('NotificationsSearchService.getDetail', () => {
     downloadEventRepoMock.find.mockResolvedValueOnce([]);
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
 
-    const result = await service.getDetail('r-postal');
+    const result = await service.getDetail('r-postal', ADMIN);
 
     expect(result.attachments).toEqual([{ index: 0, label: 'Avviso' }]);
   });
@@ -378,7 +383,7 @@ describe('NotificationsSearchService.getDetail', () => {
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
     downloadEventRepoMock.find.mockResolvedValueOnce([]);
 
-    const result = await service.getDetail('rec-1');
+    const result = await service.getDetail('rec-1', ADMIN);
 
     expect(result.attempts[0]).toMatchObject({
       iun: 'ABCD-EFGH-ILMN-202607-X-1',
@@ -420,7 +425,7 @@ describe('NotificationsSearchService.getDetail', () => {
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
     downloadEventRepoMock.find.mockResolvedValueOnce([]);
 
-    const result = await service.getDetail('rec-1');
+    const result = await service.getDetail('rec-1', ADMIN);
 
     expect(result.attempts[0]).toMatchObject({
       iun: null,
@@ -444,7 +449,7 @@ describe('NotificationsSearchService.getDetail', () => {
     }]);
     downloadEventRepoMock.find.mockResolvedValueOnce([]);
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
-    const result = await service.getDetail('r-postal');
+    const result = await service.getDetail('r-postal', ADMIN);
     expect(result.legalOutcome).toEqual({ outcome: 'delivered', reason: 'Compiuta Giacenza', at: '2026-09-08T00:00:00.000Z' });
   });
 
@@ -456,7 +461,7 @@ describe('NotificationsSearchService.getDetail', () => {
     attemptRepoMock.find.mockResolvedValueOnce([]);
     downloadEventRepoMock.find.mockResolvedValueOnce([]);
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
-    const result = await service.getDetail('r1');
+    const result = await service.getDetail('r1', ADMIN);
     expect(result.legalOutcome).toBeNull();
   });
 });
@@ -484,12 +489,44 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'rec-1', campaign: launched });
+  });
+
+  const OTHER = { username: 'luigi', role: 'user' as const };
+  const launched = { id: 'c1', name: 'Avviso', status: 'completed', isTest: false, createdBy: 'mario', signerUsername: null };
+  const testSend = { ...launched, isTest: true };
+
+  it('getSendLegalFacts: destinatario inesistente → NotFoundException', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(null);
+    await expect(service.getSendLegalFacts('rec-1', ADMIN)).rejects.toThrow(NotFoundException);
+    expect(sendLegalFactsMock.listDocuments).not.toHaveBeenCalled();
+  });
+
+  it('getSendLegalFacts: invio di prova altrui → NotFoundException, PN mai interrogato', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({ id: 'rec-1', campaign: testSend });
+    await expect(service.getSendLegalFacts('rec-1', OTHER)).rejects.toThrow(NotFoundException);
+    expect(recipientRepoMock.findOne).toHaveBeenCalledWith({ where: { id: 'rec-1' }, relations: { campaign: true } });
+    expect(attemptRepoMock.findOne).not.toHaveBeenCalled();
+    expect(sendLegalFactsMock.listDocuments).not.toHaveBeenCalled();
+  });
+
+  it('getSendLegalFacts: campagna lanciata visibile a ogni user (atti opponibili restano aperti)', async () => {
+    attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
+    sendLegalFactsMock.listDocuments.mockResolvedValueOnce([]);
+    await expect(service.getSendLegalFacts('rec-1', OTHER)).resolves.toEqual({ items: [] });
+  });
+
+  it('downloadSendLegalFact: invio di prova altrui → NotFoundException, PN mai interrogato', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({ id: 'rec-1', campaign: testSend });
+    await expect(service.downloadSendLegalFact('rec-1', 'key1', OTHER)).rejects.toThrow(NotFoundException);
+    expect(attemptRepoMock.findOne).not.toHaveBeenCalled();
+    expect(sendLegalFactsMock.downloadLegalFact).not.toHaveBeenCalled();
   });
 
   it('getSendLegalFacts: ritorna lista vuota se il destinatario non ha un attempt SEND con iun', async () => {
     attemptRepoMock.findOne.mockResolvedValueOnce(null);
 
-    const result = await service.getSendLegalFacts('rec-1');
+    const result = await service.getSendLegalFacts('rec-1', ADMIN);
 
     expect(result).toEqual({ items: [] });
     expect(sendLegalFactsMock.listDocuments).not.toHaveBeenCalled();
@@ -499,7 +536,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
     attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
     sendLegalFactsMock.listDocuments.mockResolvedValueOnce([{ legalFactId: 'key1', category: 'SENDER_ACK' }]);
 
-    const result = await service.getSendLegalFacts('rec-1');
+    const result = await service.getSendLegalFacts('rec-1', ADMIN);
 
     expect(attemptRepoMock.findOne).toHaveBeenCalledWith({
       where: { recipientId: 'rec-1', channelType: 'SEND' },
@@ -512,7 +549,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
   it('downloadSendLegalFact: ritorna errore se il destinatario non ha un attempt SEND con iun', async () => {
     attemptRepoMock.findOne.mockResolvedValueOnce(null);
 
-    const result = await service.downloadSendLegalFact('rec-1', 'key1');
+    const result = await service.downloadSendLegalFact('rec-1', 'key1', ADMIN);
 
     expect(result).toEqual({ ready: false, error: 'Nessun IUN disponibile per questo destinatario' });
     expect(sendLegalFactsMock.downloadLegalFact).not.toHaveBeenCalled();
@@ -522,7 +559,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
     attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
     sendLegalFactsMock.downloadLegalFact.mockResolvedValueOnce({ ready: true, filename: 'a.pdf', contentType: 'application/pdf', buffer: Buffer.from('x') });
 
-    const result = await service.downloadSendLegalFact('rec-1', 'key1');
+    const result = await service.downloadSendLegalFact('rec-1', 'key1', ADMIN);
 
     expect(sendLegalFactsMock.downloadLegalFact).toHaveBeenCalledWith('IUN-1', 'key1');
     expect(result).toEqual({ ready: true, filename: 'a.pdf', contentType: 'application/pdf', buffer: Buffer.from('x') });
@@ -554,7 +591,7 @@ describe('NotificationsSearchService.downloadAttachment', () => {
   it('lancia NotFoundException se il destinatario non esiste', async () => {
     recipientRepoMock.findOne.mockResolvedValueOnce(null);
 
-    await expect(service.downloadAttachment('no-exist', 0)).rejects.toThrow(NotFoundException);
+    await expect(service.downloadAttachment('no-exist', 0, ADMIN)).rejects.toThrow(NotFoundException);
     expect(attachmentServiceMock.generatePdfBuffer).not.toHaveBeenCalled();
   });
 
@@ -565,7 +602,7 @@ describe('NotificationsSearchService.downloadAttachment', () => {
     });
     attachmentServiceMock.generatePdfBuffer.mockResolvedValueOnce(Buffer.from('%PDF-fake'));
 
-    const result = await service.downloadAttachment('r-postal', 0);
+    const result = await service.downloadAttachment('r-postal', 0, ADMIN);
 
     expect(attachmentServiceMock.generatePdfBuffer).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'r-postal' }),
@@ -573,5 +610,129 @@ describe('NotificationsSearchService.downloadAttachment', () => {
     );
     expect(result.buffer.toString()).toBe('%PDF-fake');
     expect(result.filename).toBe('raccomandata.pdf');
+  });
+});
+
+describe('NotificationsSearchService — riservatezza bozze e allegati', () => {
+  const OTHER = { username: 'luigi', role: 'user' as const };
+  const CREATOR = { username: 'mario', role: 'user' as const };
+  const qbMock = {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn(),
+  };
+  const recipientRepoMock = { createQueryBuilder: jest.fn(() => qbMock), findOne: jest.fn() };
+  const campaignsServiceMock = { renderMessageForRecipient: jest.fn(), renderAppIoCoDeliveryPreview: jest.fn() };
+  const attachmentServiceMock = { generatePdfBuffer: jest.fn() };
+  const auditLogsMock = { log: jest.fn() };
+  let service: NotificationsSearchService;
+
+  const recipientOf = (status: string, isTest = false) => ({
+    id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: null, pec: null, status: 'sent', extraData: {},
+    campaign: { id: 'c1', name: 'Avviso', channelType: 'EMAIL', channelConfig: {}, status, createdBy: 'mario', signerUsername: null, isTest },
+  });
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    qbMock.leftJoinAndSelect.mockReturnThis();
+    qbMock.andWhere.mockReturnThis();
+    qbMock.orderBy.mockReturnThis();
+    qbMock.skip.mockReturnThis();
+    qbMock.take.mockReturnThis();
+    qbMock.getManyAndCount.mockResolvedValue([[], 0]);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationsSearchService,
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: { find: jest.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(DownloadEvent), useValue: { find: jest.fn().mockResolvedValue([]) } },
+        { provide: CampaignsService, useValue: campaignsServiceMock },
+        { provide: SendLegalFactsService, useValue: {} },
+        { provide: AttachmentService, useValue: attachmentServiceMock },
+        { provide: AuditLogsService, useValue: auditLogsMock },
+      ],
+    }).compile();
+    service = moduleRef.get(NotificationsSearchService);
+  });
+
+  it('search: altro user → filtro visibleCampaignSql su campaign; admin → nessun filtro', async () => {
+    await service.search({ page: 1, pageSize: 20 }, OTHER);
+    const expected = visibleCampaignSql('campaign', OTHER)!;
+    expect(qbMock.andWhere).toHaveBeenCalledWith(expected.sql, expected.params);
+
+    qbMock.andWhere.mockClear();
+    await service.search({ page: 1, pageSize: 20 }, ADMIN);
+    const sql = qbMock.andWhere.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(sql).not.toContain('visibleCampaignUser');
+  });
+
+  it('getDetail: destinatario di bozza altrui → NotFoundException, niente rendering', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('draft'));
+    await expect(service.getDetail('r1', OTHER)).rejects.toThrow(NotFoundException);
+    expect(campaignsServiceMock.renderMessageForRecipient).not.toHaveBeenCalled();
+  });
+
+  it('getDetail: invio di prova (isTest) lanciato, altro user → NotFoundException', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('queued', true));
+    await expect(service.getDetail('r1', OTHER)).rejects.toThrow(NotFoundException);
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('completed', true));
+    await expect(service.getDetail('r1', OTHER)).rejects.toThrow(NotFoundException);
+    expect(campaignsServiceMock.renderMessageForRecipient).not.toHaveBeenCalled();
+  });
+
+  it('getDetail: campagna lanciata, altro user → canReadAttachments false e link oscurati', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('completed'));
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'S', bodyHtml: '' });
+    const detail = await service.getDetail('r1', OTHER);
+    expect(detail.canReadAttachments).toBe(false);
+    expect(campaignsServiceMock.renderMessageForRecipient).toHaveBeenCalledWith('r1', undefined, true, true);
+  });
+
+  it('getDetail: creatore → canReadAttachments true e link reali', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('completed'));
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'S', bodyHtml: '' });
+    const detail = await service.getDetail('r1', CREATOR);
+    expect(detail.canReadAttachments).toBe(true);
+    expect(campaignsServiceMock.renderMessageForRecipient).toHaveBeenCalledWith('r1', undefined, true, false);
+  });
+
+  it('getDetail: co-consegna App IO oscurata per altro user', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('completed'));
+    const attemptRepo = (service as unknown as { attemptRepo: { find: jest.Mock } }).attemptRepo;
+    attemptRepo.find.mockResolvedValueOnce([{ id: 'a1', attemptNumber: 1, status: 'success', channelType: 'EMAIL', createdAt: new Date('2026-07-01T00:00:00Z'), responsePayload: { appIo: { success: true } } }]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'S', bodyHtml: '' });
+    campaignsServiceMock.renderAppIoCoDeliveryPreview.mockResolvedValueOnce({ subject: 'S', bodyMarkdown: '' });
+    await service.getDetail('r1', OTHER);
+    expect(campaignsServiceMock.renderAppIoCoDeliveryPreview).toHaveBeenCalledWith('r1', true);
+  });
+
+  it('downloadAttachment: altro user → ForbiddenException + audit ATTACHMENT_ACCESS_DENIED', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('completed'));
+    await expect(service.downloadAttachment('r1', 0, OTHER)).rejects.toThrow(ForbiddenException);
+    expect(attachmentServiceMock.generatePdfBuffer).not.toHaveBeenCalled();
+    expect(auditLogsMock.log).toHaveBeenCalledWith({
+      action: 'ATTACHMENT_ACCESS_DENIED',
+      operator: 'luigi',
+      campaignId: 'c1',
+      campaignName: 'Avviso',
+      details: { endpoint: 'notifications-search/attachment', recipientId: 'r1', attachmentIndex: 0 },
+    });
+  });
+
+  it('downloadAttachment: bozza altrui → NotFoundException come il dettaglio', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('draft'));
+    await expect(service.downloadAttachment('r1', 0, OTHER)).rejects.toThrow(NotFoundException);
+    expect(attachmentServiceMock.generatePdfBuffer).not.toHaveBeenCalled();
+  });
+
+  it('downloadAttachment: creatore → PDF generato, nessun audit', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('completed'));
+    attachmentServiceMock.generatePdfBuffer.mockResolvedValueOnce(Buffer.from('%PDF'));
+    const result = await service.downloadAttachment('r1', 0, CREATOR);
+    expect(result.buffer.toString()).toBe('%PDF');
+    expect(auditLogsMock.log).not.toHaveBeenCalled();
   });
 });

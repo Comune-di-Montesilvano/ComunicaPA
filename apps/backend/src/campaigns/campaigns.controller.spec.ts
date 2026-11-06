@@ -12,6 +12,7 @@ describe('CampaignsController', () => {
     finalizeAttachments: jest.fn().mockResolvedValue({ uploaded: 2, discarded: 0 }),
     remove: jest.fn().mockResolvedValue({ deleted: true }),
     getNeverDownloadedRecipients: jest.fn(),
+    getCostAnalytics: jest.fn(),
     getFailuresByReason: jest.fn(),
     getDownloadReportRows: jest.fn(),
     getSendStatusBreakdown: jest.fn(),
@@ -218,12 +219,20 @@ describe('CampaignsController', () => {
       mockService.getNeverDownloadedRecipients = jest.fn().mockResolvedValue(rows);
       const res = { setHeader: jest.fn(), send: jest.fn() } as any;
 
-      await controller.exportNeverDownloadedCsv(undefined, undefined, res);
+      await controller.exportNeverDownloadedCsv({ user: { username: 'mario', role: 'user' } } as any, undefined, undefined, res);
 
-      expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith(undefined, undefined);
+      expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, undefined, undefined);
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
+    });
+  });
+
+  describe('getCostAnalytics', () => {
+    it('passa il richiedente al service (filtro bozze non visibili)', async () => {
+      mockService.getCostAnalytics.mockResolvedValueOnce({});
+      await controller.getCostAnalytics({ user: { username: 'mario', role: 'user' } } as any, '2026-01-01', undefined);
+      expect(mockService.getCostAnalytics).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, '2026-01-01', undefined);
     });
   });
 

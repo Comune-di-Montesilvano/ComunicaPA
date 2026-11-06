@@ -7,11 +7,12 @@ import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js
 import { CampaignsModule } from '../campaigns/campaigns.module.js';
 import { SendLegalFactsModule } from '../channels/send/send-legal-facts.module.js';
 import { AttachmentModule } from '../attachments/attachment.module.js';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module.js';
 import { NotificationsSearchService } from './notifications-search.service.js';
 import { NotificationsSearchController } from './notifications-search.controller.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Recipient, NotificationAttempt, DownloadEvent, PostalPosteTracking]), CampaignsModule, SendLegalFactsModule, AttachmentModule],
+  imports: [TypeOrmModule.forFeature([Recipient, NotificationAttempt, DownloadEvent, PostalPosteTracking]), CampaignsModule, SendLegalFactsModule, AttachmentModule, AuditLogsModule],
   controllers: [NotificationsSearchController],
   providers: [NotificationsSearchService],
 })

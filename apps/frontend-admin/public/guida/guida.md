@@ -103,6 +103,8 @@ Se nella mappatura colleghi una colonna del CSV all'**Oggetto**, l'oggetto scrit
 3. Le righe che non si possono leggere in automatico (indirizzo mancante, QR illeggibile) compaiono come avviso: correggile a mano, una per una, senza ricaricare tutto.
 4. A lavoro completato premi **Crea bozza campagna**: si apre il wizard di invio massivo con il CSV già caricato.
 
+Lo ZIP con i PDF e **Crea bozza campagna** sono riservati a chi ha caricato il tracciato e agli amministratori. Se la bozza la crea un amministratore, risulta comunque creata da chi ha caricato il tracciato.
+
 ### Seguire lo stato di una campagna
 
 1. Apri **Lista Campagne** e scegli la campagna.
@@ -180,7 +182,19 @@ Se la verifica firma segnala allegati non firmati validamente:
 
 La firma con Aruba compare solo se attivata in **Impostazioni → Firma remota (Aruba)**.
 
-Gli allegati può firmarli qualunque operatore, anche su una campagna creata da altri (ad esempio il dirigente che firma la campagna preparata dall'ufficio). Avviare la campagna, inviare il test, annullarla o eliminarla resta invece a chi l'ha creata o a un amministratore.
+Gli allegati li firma chi ha creato la campagna, un amministratore o il **firmatario indicato** (ad esempio il dirigente che firma la campagna preparata dall'ufficio). Avviare la campagna, inviare il test, annullarla o eliminarla resta invece a chi l'ha creata o a un amministratore.
+
+### Indicare il firmatario di una campagna SEND
+
+Se gli allegati li firma un collega (di solito il dirigente), chi ha creato la campagna lo indica prima di chiedergli la firma:
+
+1. Apri la bozza SEND e vai al **Passo 6**.
+2. Nel riquadro della verifica firma scegli il collega nel campo **Firmatario**. La scelta si salva subito.
+3. Il firmatario trova la bozza nella sua **Lista Campagne** e può aprire gli allegati, scaricare lo ZIP, firmare con Aruba e caricare i firmati.
+
+Il firmatario si può cambiare o togliere (**Nessun firmatario**) finché la campagna è in bozza, ma non mentre è in corso una firma con Aruba. Lo possono scegliere solo chi ha creato la campagna e gli amministratori: gli altri vedono solo il nome del firmatario.
+
+Nell'elenco compaiono solo gli operatori che hanno già fatto accesso a ComunicaPA almeno una volta.
 
 ## Regole e riferimenti
 
@@ -303,6 +317,15 @@ Email, PEC e App IO non costano nulla per notifica. SEND e Posta sì:
 - **Posta**: il costo reale del fornitore (tipo, peso, ricevuta di ritorno), che arriva circa 24–48 ore dopo la spedizione.
 
 Un destinatario dirottato su PEC non costa nulla in più. Il dettaglio della campagna mostra anche il risparmio stimato rispetto alla posta.
+
+### Chi vede allegati e bozze
+
+- **Bozze:** una campagna in bozza la vedono solo chi l'ha creata, gli amministratori e il firmatario indicato. Gli altri operatori non la trovano in **Lista Campagne**, nella ricerca notifiche, nelle statistiche dei costi né tra i job dei motori di invio. Lo stesso vale per gli invii di prova.
+- **Allegati:** anteprima, download, ZIP da firmare e firma degli allegati sono riservati a chi ha creato la campagna, agli amministratori e al firmatario indicato, anche dopo l'avvio. Per gli altri i tasti sono disattivati e, nel dettaglio di una notifica, i link agli allegati nel testo del messaggio non si aprono.
+- **Campagne avviate:** stato, destinatari ed esiti restano visibili a tutti gli operatori.
+- **Arricchimento Tracciati:** lo ZIP con i PDF e la creazione della bozza sono riservati a chi ha caricato il tracciato e agli amministratori.
+
+Ogni tentativo di aprire un allegato riservato resta registrato nel registro attività.
 
 ### Impostazioni (solo amministratori)
 
@@ -461,13 +484,37 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 
 **Causa:** dipende dal messaggio.
 
-- «Non puoi modificare una campagna creata da un altro operatore»: solo chi l'ha creata (o un amministratore) può avviarla, inviare il test, annullarla o eliminarla. La firma degli allegati è invece aperta a tutti gli operatori.
+- «Non puoi modificare una campagna creata da un altro operatore»: solo chi l'ha creata (o un amministratore) può avviarla, inviare il test, annullarla o eliminarla. La firma degli allegati è aperta anche al firmatario indicato (vedi [Indicare il firmatario di una campagna SEND](#indicare-il-firmatario-di-una-campagna-send)).
 - «Solo le campagne in bozza possono essere modificate»: la campagna è già partita.
 - «Campagna a valore legale: eliminazione non consentita per campagne avviate»: una campagna con valore legale già avviata resta per sempre nello storico.
 
 **Soluzione:** per una campagna di un collega chiedi a lui. Per una campagna già partita crea una nuova campagna. Per fermare una campagna in corso o in verifica INAD usa **Annulla campagna**.
 
 **Apri un ticket se:** devi intervenire su una campagna di un collega assente.
+
+### Non riesco ad aprire un allegato o non vedo una bozza
+
+**Causa:** allegati e bozze sono riservati a chi ha creato la campagna, agli amministratori e al firmatario indicato (vedi [Chi vede allegati e bozze](#chi-vede-allegati-e-bozze)). Il tasto è disattivato e mostra «Allegato visibile solo a chi ha creato la campagna, agli amministratori e al firmatario indicato»; una bozza aperta da un link dà «Campagna non trovata o non accessibile».
+
+**Soluzione:** se devi firmare gli allegati, chiedi a chi ha creato la campagna di indicarti come firmatario. Per gli allegati di una campagna già avviata rivolgiti a chi l'ha creata o a un amministratore.
+
+**Apri un ticket se:** sei il creatore, un amministratore o il firmatario indicato e l'allegato resta comunque bloccato.
+
+### Il firmatario non compare nell'elenco
+
+**Causa:** l'elenco dei firmatari contiene solo gli operatori che hanno già fatto accesso a ComunicaPA.
+
+**Soluzione:** chiedi al collega di accedere una volta a ComunicaPA con le sue credenziali, poi riapri il Passo 6 e sceglilo.
+
+**Apri un ticket se:** il collega ha già fatto accesso e non compare ancora.
+
+### Il dirigente non riesce più a firmare una bozza SEND già pronta
+
+**Causa:** le bozze SEND create prima di questa modifica non hanno un firmatario indicato, quindi il dirigente non le vede più.
+
+**Soluzione:** chi ha creato la campagna (o un amministratore) apre la bozza al Passo 6 e indica il dirigente come **Firmatario**. Vedi [Indicare il firmatario di una campagna SEND](#indicare-il-firmatario-di-una-campagna-send).
+
+**Apri un ticket se:** chi ha creato la bozza non è più in servizio e non c'è un amministratore disponibile.
 
 ### App IO: «Nessun servizio App IO configurato»
 

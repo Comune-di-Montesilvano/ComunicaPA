@@ -2,6 +2,8 @@ import { Test } from '@nestjs/testing';
 import { NotificationsSearchController } from './notifications-search.controller.js';
 import { NotificationsSearchService } from './notifications-search.service.js';
 
+const REQ = { user: { username: 'luigi', role: 'user', type: 'operator' } } as any;
+
 describe('NotificationsSearchController', () => {
   const svcMock = {
     search: jest.fn(),
@@ -37,9 +39,9 @@ describe('NotificationsSearchController', () => {
       const recipientId = 'rec-1';
       svcMock.getSendLegalFacts.mockResolvedValueOnce({ items: [{ legalFactId: 'key1', category: 'SENDER_ACK' }] });
 
-      const result = await controller.getSendLegalFacts(recipientId);
+      const result = await controller.getSendLegalFacts(recipientId, REQ);
 
-      expect(svcMock.getSendLegalFacts).toHaveBeenCalledWith(recipientId);
+      expect(svcMock.getSendLegalFacts).toHaveBeenCalledWith(recipientId, REQ.user);
       expect(result).toEqual({ items: [{ legalFactId: 'key1', category: 'SENDER_ACK' }] });
     });
 
@@ -47,7 +49,7 @@ describe('NotificationsSearchController', () => {
       const recipientId = 'rec-2';
       svcMock.getSendLegalFacts.mockResolvedValueOnce({ items: [] });
 
-      const result = await controller.getSendLegalFacts(recipientId);
+      const result = await controller.getSendLegalFacts(recipientId, REQ);
 
       expect(result).toEqual({ items: [] });
     });
@@ -64,9 +66,9 @@ describe('NotificationsSearchController', () => {
       });
       const res = makeRes();
 
-      await controller.downloadSendLegalFact('rec-1', 'key1', res);
+      await controller.downloadSendLegalFact('rec-1', 'key1', REQ, res);
 
-      expect(svcMock.downloadSendLegalFact).toHaveBeenCalledWith('rec-1', 'key1');
+      expect(svcMock.downloadSendLegalFact).toHaveBeenCalledWith('rec-1', 'key1', REQ.user);
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="documento.pdf"');
       expect(res.end).toHaveBeenCalledWith(buffer);
@@ -82,7 +84,7 @@ describe('NotificationsSearchController', () => {
       });
       const res = makeRes();
 
-      await controller.downloadSendLegalFact('rec-1', 'key1', res);
+      await controller.downloadSendLegalFact('rec-1', 'key1', REQ, res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
@@ -104,7 +106,7 @@ describe('NotificationsSearchController', () => {
       });
       const res = makeRes();
 
-      await controller.downloadSendLegalFact('rec-1', 'key1', res);
+      await controller.downloadSendLegalFact('rec-1', 'key1', REQ, res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="document.pdf"');
     });

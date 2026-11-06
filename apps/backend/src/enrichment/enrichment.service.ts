@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -25,6 +25,9 @@ import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv }
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service.js';
 import { readCheckpointSync, writeCheckpointSync } from './enrichment-checkpoint.util.js';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
+import { ATTACHMENT_DENIED_MESSAGE, logAttachmentDenied } from '../campaigns/campaign-access.util.js';
+import type { CampaignRequester } from '../campaigns/campaigns.service.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import type { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
 
 export interface EnqueueBatchMergeParams {
@@ -49,7 +52,25 @@ export class EnrichmentService {
     @InjectQueue(CONVERT_CAMPAIGN_QUEUE)
     private readonly convertCampaignQueue: Queue<ConvertCampaignQueueJobData>,
     private readonly overrideService: EnrichmentAddressOverrideService,
+    @Optional() private readonly auditLogs?: AuditLogsService,
   ) {}
+
+  /**
+   * ZIP risultato e conversione in campagna contengono/spostano i PDF: solo
+   * chi ha caricato l'Arricchimento e gli admin. createdBy vuoto (job storici)
+   * → solo admin. Il diniego è un 403 vero (non {blocked}): il frontend lo
+   * gestisce a parte.
+   */
+  private async assertCanUseAttachments(
+    job: EnrichmentJob,
+    requester: CampaignRequester,
+    endpoint: string,
+  ): Promise<void> {
+    if (requester.role === 'admin') return;
+    if (job.createdBy && job.createdBy === requester.username) return;
+    await logAttachmentDenied(this.auditLogs, requester, { id: null, name: null }, endpoint, { jobId: job.id });
+    throw new ForbiddenException(ATTACHMENT_DENIED_MESSAGE);
+  }
 
   /**
    * Il merge multi-ZIP va SEMPRE su job BullMQ (vedi `enrichment.processor.ts`
@@ -129,8 +150,9 @@ export class EnrichmentService {
    * 200+blocked, mai un errore che il proxy esterno sostituirebbe con la sua
    * pagina HTML.
    */
-  async buildResultZip(id: string): Promise<Buffer | null> {
+  async buildResultZip(id: string, requester: CampaignRequester): Promise<Buffer | null> {
     const job = await this.getJob(id);
+    await this.assertCanUseAttachments(job, requester, 'enrichment/result.zip');
     if (job.status !== EnrichmentJobStatus.DONE) {
       return null;
     }
@@ -168,9 +190,14 @@ export class EnrichmentService {
   async requestCampaignConversion(
     jobId: string,
     params: { name: string; channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'; splitMissingPayment?: boolean },
-    createdBy: string,
+    requester: CampaignRequester,
   ): Promise<{ accepted?: boolean; blocked?: boolean; message?: string }> {
     const job = await this.getJob(jobId);
+    await this.assertCanUseAttachments(job, requester, 'enrichment/create-campaign');
+    // La campagna è di chi ha caricato l'Arricchimento, anche se la converte un
+    // admin (così il caricatore conserva l'accesso ai PDF). Job storici senza
+    // createdBy: chi converte (qui per forza admin).
+    const createdBy = job.createdBy || requester.username;
     if (job.status !== EnrichmentJobStatus.DONE) {
       return { blocked: true, message: 'Il job non è completato: nessun risultato da convertire' };
     }

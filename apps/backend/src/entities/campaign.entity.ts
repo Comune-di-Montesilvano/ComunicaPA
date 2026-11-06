@@ -82,6 +82,9 @@ export class Campaign {
   @Column({ type: 'uuid', name: 'group_id', nullable: true })
   groupId!: string | null;
 
+  @Column({ name: 'signer_username', type: 'varchar', length: 255, nullable: true })
+  signerUsername!: string | null;
+
   @OneToMany('Recipient', 'campaign')
   recipients!: Recipient[];
 }

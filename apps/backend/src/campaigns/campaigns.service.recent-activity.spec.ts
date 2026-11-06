@@ -72,7 +72,7 @@ describe('CampaignsService - getRecentActivity', () => {
       ]),
     );
 
-    const result = await service.getRecentActivity();
+    const result = await service.getRecentActivity({ username: 'admin', role: 'admin' });
 
     expect(result).toEqual([
       {
@@ -91,7 +91,7 @@ describe('CampaignsService - getRecentActivity', () => {
   it('ritorna array vuoto se nessuna campagna è attiva o aggiornata di recente', async () => {
     campaignRepo.createQueryBuilder.mockReturnValue(makeQb([]));
 
-    const result = await service.getRecentActivity();
+    const result = await service.getRecentActivity({ username: 'admin', role: 'admin' });
 
     expect(result).toEqual([]);
   });
@@ -100,7 +100,7 @@ describe('CampaignsService - getRecentActivity', () => {
     const qb = makeQb([]);
     campaignRepo.createQueryBuilder.mockReturnValue(qb);
 
-    await service.getRecentActivity();
+    await service.getRecentActivity({ username: 'admin', role: 'admin' });
 
     expect(campaignRepo.createQueryBuilder).toHaveBeenCalledWith('c');
     expect(qb.where).toHaveBeenCalledWith("c.isTest = false AND c.status != 'draft'");
@@ -109,5 +109,19 @@ describe('CampaignsService - getRecentActivity', () => {
       expect.objectContaining({ activeStatuses: ['queued', 'running'] }),
     );
     expect(qb.limit).toHaveBeenCalledWith(15);
+    // admin: nessun filtro di visibilità oltre ai due andWhere/where di base
+    expect(qb.andWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it('per un user applica il filtro di visibilità bozze (creatore/firmatario)', async () => {
+    const qb = makeQb([]);
+    campaignRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.getRecentActivity({ username: 'bianchi', role: 'user' });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      "((c.status <> 'draft' AND c.is_test = false) OR c.created_by = :visibleCampaignUser OR c.signer_username = :visibleCampaignUser)",
+      { visibleCampaignUser: 'bianchi' },
+    );
   });
 });
