@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { SendStatusSyncService } from './send-status-sync.service.js';
+import { SendStatusSyncService, LEGACY_TIMELINE_SQL } from './send-status-sync.service.js';
 import { SendBaseFeeService } from './send-base-fee.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
@@ -277,6 +277,41 @@ describe('SendStatusSyncService', () => {
     expect(attempt.sendTimeline).toEqual([{ category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-01-15T10:00:00Z', raddType: 'ALT', details: { raddType: 'ALT' } }]);
     expect(attempt.sendStatusUpdatedAt).toEqual(new Date('2026-01-12T09:00:00Z'));
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
+  });
+
+  it('LEGACY_TIMELINE_SQL: predicato esatto e incluso nella OR della condizione terminale', async () => {
+    expect(LEGACY_TIMELINE_SQL).toBe("(jsonb_array_length(COALESCE(attempt.send_timeline, '[]'::jsonb)) > 0 AND NOT (attempt.send_timeline -> 0 ? 'details'))");
+    const qb = makeQueryBuilder([]);
+    mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.updateStatuses();
+
+    const hit = qb.andWhere.mock.calls.some(([sql]: [string]) => /NOT IN/.test(sql) && sql.includes(` OR ${LEGACY_TIMELINE_SQL}`));
+    expect(hit).toBe(true);
+  });
+
+  it('rewrites timeline when only details changed (backfill terminale senza details)', async () => {
+    const attempt: any = {
+      id: 'a1', iun: 'IUN-123', sendStatus: 'UNREACHABLE', costCents: 100,
+      costBreakdown: { baseFeeCents: 100, analogEvents: [] },
+      costCalculatedAt: new Date('2026-01-12T10:00:00Z'),
+      sendStatusUpdatedAt: new Date('2026-01-12T09:00:00Z'),
+      sendStatusHistory: [{ status: 'UNREACHABLE', activeFrom: '2026-01-12T09:00:00Z' }],
+      sendTimeline: [{ category: 'REQUEST_ACCEPTED', at: '2026-01-10T10:00:00Z' }],
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve(JSON.stringify({
+      notificationStatus: 'UNREACHABLE',
+      notificationStatusHistory: [{ status: 'UNREACHABLE', activeFrom: '2026-01-12T09:00:00Z' }],
+      timeline: [{ category: 'REQUEST_ACCEPTED', timestamp: '2026-01-10T10:00:00Z', details: { foo: 'bar' } }],
+    })) });
+
+    await service.updateStatuses();
+
+    expect(mockRepo.save).toHaveBeenCalledTimes(1);
+    const saved = mockRepo.save.mock.calls[0][0];
+    expect(saved.sendTimeline[0].details).toBeDefined();
+    expect(saved.sendStatus).toBe('UNREACHABLE');
   });
 
   it('handleCron chiama sia resolveMissingIun che updateStatuses', async () => {
