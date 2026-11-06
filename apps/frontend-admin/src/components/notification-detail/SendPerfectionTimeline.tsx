@@ -124,6 +124,7 @@ export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfec
                     label={s.label}
                     text={fmt(s.date)}
                     open={open}
+                    onOpen={() => setOpenKey(s.key)}
                     onToggle={() => setOpenKey(open ? null : s.key)}
                     onClose={closePop}
                   >
@@ -146,7 +147,7 @@ export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfec
           );
         })}
       </ol>
-      <p className="nd-perf-hint">Tocca una data per i riferimenti di legge.</p>
+      <p className="nd-perf-hint">Passa sopra una data per i riferimenti di legge.</p>
     </div>
   );
 }

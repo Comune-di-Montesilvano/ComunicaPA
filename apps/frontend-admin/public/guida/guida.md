@@ -251,7 +251,7 @@ Per contare un termine del destinatario usa sempre la **data per il destinatario
 | Avviso cartaceo (raccomandata) | il 10° giorno dopo il perfezionamento della notifica cartacea: consegna, ritiro o compiuta giacenza |
 | Destinatario irreperibile | deposito dell'avviso su SEND, +10 giorni per il perfezionamento dell'avviso ([comma 7](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26)), +10 giorni per il destinatario (comma 9, lett. b, n. 2); prima se accede a SEND |
 
-Nel dettaglio di una notifica SEND una timeline mostra le tappe fino alla data di notifica per il destinatario: le date passate, quelle previste o stimate e la data di oggi. Vale sempre la data indicata da SEND quando arriva. Cliccando su una data si apre la spiegazione di quella tappa con il riferimento di legge.
+Nel dettaglio di una notifica SEND una timeline mostra le tappe fino alla data di notifica per il destinatario: le date passate, quelle previste o stimate e la data di oggi. Vale sempre la data indicata da SEND quando arriva. Passando sopra una data (o toccandola) si apre la spiegazione di quella tappa con il riferimento di legge.
 
 La data esatta la calcola SEND ed è quella riportata nel dettaglio della notifica.
 
