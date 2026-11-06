@@ -137,8 +137,44 @@ function attemptSuffix(e: SendTimelineEvent): string {
   return typeof e.attempt === 'number' && e.attempt > 0 ? ' (secondo tentativo)' : '';
 }
 
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+/** Indirizzo postale su una riga ("via, zip comune (prov), stato estero") da un physicalAddress di PN. */
+function formatPhysicalAddress(v: unknown): string | null {
+  if (!v || typeof v !== 'object') return null;
+  const a = v as Record<string, unknown>;
+  const street = str(a['address']);
+  if (!street) return null;
+  const place = [str(a['zip']), str(a['municipality'])].filter(Boolean).join(' ');
+  const province = str(a['province']);
+  const foreign = str(a['foreignState']);
+  return [
+    [street, str(a['addressDetails'])].filter(Boolean).join(' '),
+    place && province ? `${place} (${province})` : place || (province ? `(${province})` : ''),
+    foreign && foreign.toLowerCase() !== 'italia' ? foreign : '',
+  ].filter(Boolean).join(', ');
+}
+
+/**
+ * Indirizzo a cui è stata spedita la carta: quello dell'evento di spedizione, o, se PN lo
+ * riporta solo nella preparazione (PREPARE_ANALOG_DOMICILE), quello dello stesso tentativo.
+ */
+function shipmentAddress(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[]): string | null {
+  const own = formatPhysicalAddress(e.details?.['physicalAddress']);
+  if (own) return own;
+  const prepare = timeline.find((x) => x.category === 'PREPARE_ANALOG_DOMICILE' && (x.attempt ?? 0) === (e.attempt ?? 0) && formatPhysicalAddress(x.details?.['physicalAddress']));
+  return prepare ? formatPhysicalAddress(prepare.details?.['physicalAddress']) : null;
+}
+
+function sentTo(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[]): string | null {
+  const addr = shipmentAddress(e, timeline);
+  return addr ? `Inviata a: ${addr}` : null;
+}
+
 /** Titolo, dettaglio e tono di un fatto SEND, o null se non va mostrato. */
-export function describeSendTimelineEvent(e: SendTimelineEvent): { title: string; detail: string | null; tone: SendTimelineTone } | null {
+export function describeSendTimelineEvent(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[] = []): { title: string; detail: string | null; tone: SendTimelineTone } | null {
   switch (e.category) {
     case 'SEND_DIGITAL_DOMICILE':
       return { title: `Inviata al domicilio digitale${e.channel ? ` (${CHANNEL_LABELS[e.channel] ?? e.channel})` : ''}${attemptSuffix(e)}`, detail: null, tone: 'neutral' };
@@ -153,9 +189,9 @@ export function describeSendTimelineEvent(e: SendTimelineEvent): { title: string
     case 'PREPARE_ANALOG_DOMICILE_FAILURE':
       return { title: 'Indirizzo fisico non trovato', detail: null, tone: 'ko' };
     case 'SEND_ANALOG_DOMICILE':
-      return { title: `Affidata al recapitista${e.productType ? `: ${PRODUCT_LABELS[e.productType] ?? e.productType}` : ''}${attemptSuffix(e)}`, detail: null, tone: 'neutral' };
+      return { title: `Affidata al recapitista${e.productType ? `: ${PRODUCT_LABELS[e.productType] ?? e.productType}` : ''}${attemptSuffix(e)}`, detail: sentTo(e, timeline), tone: 'neutral' };
     case 'SEND_SIMPLE_REGISTERED_LETTER':
-      return { title: 'Raccomandata semplice di avviso affidata al recapitista', detail: null, tone: 'neutral' };
+      return { title: 'Raccomandata semplice di avviso affidata al recapitista', detail: sentTo(e, timeline), tone: 'neutral' };
     case 'SEND_ANALOG_PROGRESS': {
       if (!e.code || isIntermediateOutcome(e.code)) return null;
       const known = DELIVERY_CODES[e.code];

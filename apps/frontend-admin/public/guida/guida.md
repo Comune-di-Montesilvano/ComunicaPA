@@ -282,7 +282,7 @@ Le date si trovano nel dettaglio della notifica, nell'elenco destinatari della c
 
 Cosa fare dipende dal canale.
 
-**SEND.** Se il destinatario è irreperibile, SEND deposita l'avviso sulla piattaforma e la notifica **si perfeziona da sola 10 giorni dopo** ([art. 26 D.L. 76/2020](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26), comma 7). Il dettaglio della notifica lo segnala con «nessuna consegna». La notifica è valida, ma il destinatario può chiedere di essere rimesso in termini se dimostra di non averne avuto conoscenza senza sua colpa. Per atti pesanti (ordinanze, sanzioni rilevanti, iscrizioni a ruolo):
+**SEND.** Se il destinatario è irreperibile, SEND deposita l'avviso sulla piattaforma e la notifica **si perfeziona da sola 10 giorni dopo** ([art. 26 D.L. 76/2020](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26), comma 7). Il dettaglio della notifica lo segnala con «nessuna consegna». Nel **Percorso**, ogni spedizione cartacea mostra l'indirizzo a cui è stata inviata, compreso quello del secondo tentativo trovato da SEND. La notifica è valida, ma il destinatario può chiedere di essere rimesso in termini se dimostra di non averne avuto conoscenza senza sua colpa. Per atti pesanti (ordinanze, sanzioni rilevanti, iscrizioni a ruolo):
 
 1. verifica la residenza in **Verifica Anagrafica** (ANPR) e il domicilio digitale (INAD, Registro Imprese);
 2. se trovi un indirizzo nuovo e valido, valuta con il responsabile del procedimento una nuova notifica, anche se la prima è perfezionata;

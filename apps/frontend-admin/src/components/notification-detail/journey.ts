@@ -245,7 +245,7 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
     }
     const sendTimeline = a.sendTimeline ?? [];
     for (const t of sendTimeline) {
-      const described = describeSendTimelineEvent(t);
+      const described = describeSendTimelineEvent(t, sendTimeline);
       if (!described || !validDate(t.at)) continue;
       // Numero della raccomandata (arriva dagli avanzamenti dello stesso
       // tentativo): è quello da cercare su poste.it o da dare al cittadino.
@@ -257,7 +257,7 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
         at: t.at,
         source: 'send',
         ...described,
-        ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter)].filter(Boolean).join(' · ') } : {}),
+        ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter), described.detail].filter(Boolean).join(' · ') } : {}),
         ...(letter && isPosteLetterCode(letter) ? { link: { href: posteTrackingUrl(letter), label: 'Traccia su poste.it' } } : {}),
       });
     }
