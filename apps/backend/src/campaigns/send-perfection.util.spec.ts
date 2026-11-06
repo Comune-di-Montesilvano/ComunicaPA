@@ -126,6 +126,13 @@ describe('buildSendPerfection', () => {
     expect(p!.finalSource).toBe('none');
   });
 
+  it('letta su SEND senza mai passare da DELIVERING: niente tappa "In consegna" vuota', () => {
+    const p = buildSendPerfection('VIEWED', [ACCEPTED, { status: 'VIEWED', activeFrom: '2026-10-15T09:48:00Z' }], [], now);
+    expect(keys(p)).toEqual(['entity', 'viewed', 'recipient']);
+    expect(dates(p)).toEqual(['2026-10-15', '2026-10-15', '2026-10-15']);
+    expect(p!.finalSource).toBe('pn');
+  });
+
   it('VIEWED prima della data programmata', () => {
     const h = [...irrHistory, { status: 'VIEWED', activeFrom: '2026-11-05T09:00:00Z' }];
     const p = buildSendPerfection('VIEWED', h, [sched('2026-11-04T10:00:00Z', '2026-11-24T10:00:00Z')], now);

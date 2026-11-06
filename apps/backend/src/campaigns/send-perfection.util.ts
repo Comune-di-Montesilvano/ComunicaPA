@@ -144,7 +144,9 @@ export function buildSendPerfection(
     estimateOffset = 7;
   } else {
     const d = romeDate(histEntry('DELIVERING')?.activeFrom);
-    steps.push(mk('delivering', d, d ? 'done' : 'expected'));
+    // Letta su SEND prima di andare in consegna (ACCEPTED → VIEWED): la tappa
+    // "In consegna" non c'è mai stata, mostrarla vuota spezzerebbe la sequenza.
+    if (d || !histEntry('VIEWED')) steps.push(mk('delivering', d, d ? 'done' : 'expected'));
   }
 
   // Data finale: PN effettiva > PN programmata > stima > nessuna.
