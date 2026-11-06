@@ -715,10 +715,11 @@ export class CampaignsController {
 
   @Get('stats/costs')
   getCostAnalytics(
+    @Req() req: Request & { user: JwtOperatorPayload },
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
-    return this.campaignsService.getCostAnalytics(dateFrom, dateTo);
+    return this.campaignsService.getCostAnalytics(req.user, dateFrom, dateTo);
   }
 
   @Get('stats/global/never-downloaded.csv')

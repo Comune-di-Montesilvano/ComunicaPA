@@ -320,7 +320,7 @@ Un destinatario dirottato su PEC non costa nulla in più. Il dettaglio della cam
 
 ### Chi vede allegati e bozze
 
-- **Bozze:** una campagna in bozza la vedono solo chi l'ha creata, gli amministratori e il firmatario indicato. Gli altri operatori non la trovano in **Lista Campagne**. Lo stesso vale per gli invii di prova.
+- **Bozze:** una campagna in bozza la vedono solo chi l'ha creata, gli amministratori e il firmatario indicato. Gli altri operatori non la trovano in **Lista Campagne**, nella ricerca notifiche, nelle statistiche dei costi né tra i job dei motori di invio. Lo stesso vale per gli invii di prova.
 - **Allegati:** anteprima, download, ZIP da firmare e firma degli allegati sono riservati a chi ha creato la campagna, agli amministratori e al firmatario indicato, anche dopo l'avvio. Per gli altri i tasti sono disattivati e, nel dettaglio di una notifica, i link agli allegati nel testo del messaggio non si aprono.
 - **Campagne avviate:** stato, destinatari ed esiti restano visibili a tutti gli operatori.
 - **Arricchimento Tracciati:** lo ZIP con i PDF e la creazione della bozza sono riservati a chi ha caricato il tracciato e agli amministratori.

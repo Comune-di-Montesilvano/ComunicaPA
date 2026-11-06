@@ -377,7 +377,18 @@ export class NotificationsSearchService {
     return { buffer, filename };
   }
 
-  async getSendLegalFacts(recipientId: string): Promise<{ items: SendDocumentItem[] }> {
+  /**
+   * Destinatario di una bozza / invio di prova non visibile → 404 come
+   * getDetail. Gli atti opponibili delle campagne lanciate restano aperti a
+   * ogni operatore (non sono allegati riservati).
+   */
+  private async assertRecipientVisible(recipientId: string, requester: CampaignRequester): Promise<void> {
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
+    if (!recipient || !canViewCampaign(recipient.campaign, requester)) throw new NotFoundException(`Recipient ${recipientId} not found`);
+  }
+
+  async getSendLegalFacts(recipientId: string, requester: CampaignRequester): Promise<{ items: SendDocumentItem[] }> {
+    await this.assertRecipientVisible(recipientId, requester);
     const attempt = await this.attemptRepo.findOne({
       where: { recipientId, channelType: 'SEND' },
       order: { createdAt: 'DESC' },
@@ -387,7 +398,8 @@ export class NotificationsSearchService {
     return { items };
   }
 
-  async downloadSendLegalFact(recipientId: string, legalFactId: string): Promise<SendLegalFactDownloadResult> {
+  async downloadSendLegalFact(recipientId: string, legalFactId: string, requester: CampaignRequester): Promise<SendLegalFactDownloadResult> {
+    await this.assertRecipientVisible(recipientId, requester);
     const attempt = await this.attemptRepo.findOne({
       where: { recipientId, channelType: 'SEND' },
       order: { createdAt: 'DESC' },

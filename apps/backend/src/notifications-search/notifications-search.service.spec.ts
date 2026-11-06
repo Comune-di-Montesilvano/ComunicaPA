@@ -489,12 +489,44 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'rec-1', campaign: launched });
+  });
+
+  const OTHER = { username: 'luigi', role: 'user' as const };
+  const launched = { id: 'c1', name: 'Avviso', status: 'completed', isTest: false, createdBy: 'mario', signerUsername: null };
+  const testSend = { ...launched, isTest: true };
+
+  it('getSendLegalFacts: destinatario inesistente → NotFoundException', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(null);
+    await expect(service.getSendLegalFacts('rec-1', ADMIN)).rejects.toThrow(NotFoundException);
+    expect(sendLegalFactsMock.listDocuments).not.toHaveBeenCalled();
+  });
+
+  it('getSendLegalFacts: invio di prova altrui → NotFoundException, PN mai interrogato', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({ id: 'rec-1', campaign: testSend });
+    await expect(service.getSendLegalFacts('rec-1', OTHER)).rejects.toThrow(NotFoundException);
+    expect(recipientRepoMock.findOne).toHaveBeenCalledWith({ where: { id: 'rec-1' }, relations: { campaign: true } });
+    expect(attemptRepoMock.findOne).not.toHaveBeenCalled();
+    expect(sendLegalFactsMock.listDocuments).not.toHaveBeenCalled();
+  });
+
+  it('getSendLegalFacts: campagna lanciata visibile a ogni user (atti opponibili restano aperti)', async () => {
+    attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
+    sendLegalFactsMock.listDocuments.mockResolvedValueOnce([]);
+    await expect(service.getSendLegalFacts('rec-1', OTHER)).resolves.toEqual({ items: [] });
+  });
+
+  it('downloadSendLegalFact: invio di prova altrui → NotFoundException, PN mai interrogato', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({ id: 'rec-1', campaign: testSend });
+    await expect(service.downloadSendLegalFact('rec-1', 'key1', OTHER)).rejects.toThrow(NotFoundException);
+    expect(attemptRepoMock.findOne).not.toHaveBeenCalled();
+    expect(sendLegalFactsMock.downloadLegalFact).not.toHaveBeenCalled();
   });
 
   it('getSendLegalFacts: ritorna lista vuota se il destinatario non ha un attempt SEND con iun', async () => {
     attemptRepoMock.findOne.mockResolvedValueOnce(null);
 
-    const result = await service.getSendLegalFacts('rec-1');
+    const result = await service.getSendLegalFacts('rec-1', ADMIN);
 
     expect(result).toEqual({ items: [] });
     expect(sendLegalFactsMock.listDocuments).not.toHaveBeenCalled();
@@ -504,7 +536,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
     attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
     sendLegalFactsMock.listDocuments.mockResolvedValueOnce([{ legalFactId: 'key1', category: 'SENDER_ACK' }]);
 
-    const result = await service.getSendLegalFacts('rec-1');
+    const result = await service.getSendLegalFacts('rec-1', ADMIN);
 
     expect(attemptRepoMock.findOne).toHaveBeenCalledWith({
       where: { recipientId: 'rec-1', channelType: 'SEND' },
@@ -517,7 +549,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
   it('downloadSendLegalFact: ritorna errore se il destinatario non ha un attempt SEND con iun', async () => {
     attemptRepoMock.findOne.mockResolvedValueOnce(null);
 
-    const result = await service.downloadSendLegalFact('rec-1', 'key1');
+    const result = await service.downloadSendLegalFact('rec-1', 'key1', ADMIN);
 
     expect(result).toEqual({ ready: false, error: 'Nessun IUN disponibile per questo destinatario' });
     expect(sendLegalFactsMock.downloadLegalFact).not.toHaveBeenCalled();
@@ -527,7 +559,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
     attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
     sendLegalFactsMock.downloadLegalFact.mockResolvedValueOnce({ ready: true, filename: 'a.pdf', contentType: 'application/pdf', buffer: Buffer.from('x') });
 
-    const result = await service.downloadSendLegalFact('rec-1', 'key1');
+    const result = await service.downloadSendLegalFact('rec-1', 'key1', ADMIN);
 
     expect(sendLegalFactsMock.downloadLegalFact).toHaveBeenCalledWith('IUN-1', 'key1');
     expect(result).toEqual({ ready: true, filename: 'a.pdf', contentType: 'application/pdf', buffer: Buffer.from('x') });

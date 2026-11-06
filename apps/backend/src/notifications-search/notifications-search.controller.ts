@@ -43,8 +43,8 @@ export class NotificationsSearchController {
   }
 
   @Get(':recipientId/send-legal-facts')
-  getSendLegalFacts(@Param('recipientId', ParseUUIDPipe) recipientId: string) {
-    return this.svc.getSendLegalFacts(recipientId);
+  getSendLegalFacts(@Param('recipientId', ParseUUIDPipe) recipientId: string, @Req() req: Request & { user: JwtOperatorPayload }) {
+    return this.svc.getSendLegalFacts(recipientId, req.user);
   }
 
   // legalFactId in query string, mai come path param: contiene "/" (es.
@@ -58,9 +58,10 @@ export class NotificationsSearchController {
   async downloadSendLegalFact(
     @Param('recipientId', ParseUUIDPipe) recipientId: string,
     @Query('legalFactId') legalFactId: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
     @Res() res: Response,
   ): Promise<void> {
-    const result = await this.svc.downloadSendLegalFact(recipientId, legalFactId);
+    const result = await this.svc.downloadSendLegalFact(recipientId, legalFactId, req.user);
     if (!result.ready) {
       res.status(200).json({ ready: false, retryAfterSeconds: result.retryAfterSeconds, error: result.error });
       return;

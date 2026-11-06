@@ -9,7 +9,10 @@ import { ENRICHMENT_QUEUE } from '../enrichment/enrichment-job.types.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
 import { Campaign } from '../entities/campaign.entity.js';
 import { Recipient } from '../entities/recipient.entity.js';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+
+const ADMIN_REQ = { user: { username: 'admin', role: 'admin', type: 'operator' } } as any;
+const USER_REQ = { user: { username: 'luigi', role: 'user', type: 'operator' } } as any;
 
 describe('EnginesController', () => {
   let controller: EnginesController;
@@ -20,13 +23,15 @@ describe('EnginesController', () => {
     pause: jest.fn(),
     resume: jest.fn(),
     getJobsDetail: jest.fn().mockResolvedValue([{ jobId: 'j1' }]),
+    getJob: jest.fn(),
+    getJobLogs: jest.fn().mockResolvedValue(['log-1']),
   };
   const mockEnrichmentQueue = {
     getJobCounts: jest.fn().mockResolvedValue({ waiting: 1, active: 0, completed: 5, failed: 0, delayed: 0 }),
     getFailed: jest.fn().mockResolvedValue([]),
   };
   const mockAttemptRepo = { count: jest.fn(), createQueryBuilder: jest.fn() };
-  const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]) };
+  const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]), findOne: jest.fn() };
   const mockRecipientRepo = { count: jest.fn().mockResolvedValue(0) };
   const mockPostalStatusSync = { getQueueHealth: jest.fn() };
   const mockOrphanReconciliation = { reconcileEngine: jest.fn().mockResolvedValue({ checked: 0, repaired: 0 }) };
@@ -117,10 +122,13 @@ describe('EnginesController', () => {
     mockQueuesService.getJobsDetail.mockResolvedValueOnce([{ jobId: 'j1', campaignId: 'c1' }]);
     mockCampaignRepo.find.mockResolvedValueOnce([{ id: 'c1', name: 'Saldo TARI 2026' }]);
 
-    const result = await controller.jobs('email', 'failed', '10');
+    const result = await controller.jobs(ADMIN_REQ, 'email', 'failed', '10');
 
     expect(mockQueuesService.getJobsDetail).toHaveBeenCalledWith('EMAIL', 'failed', 10);
-    expect(mockCampaignRepo.find).toHaveBeenCalledWith({ where: { id: expect.anything() }, select: { id: true, name: true } });
+    expect(mockCampaignRepo.find).toHaveBeenCalledWith({
+      where: { id: expect.anything() },
+      select: { id: true, name: true, createdBy: true, signerUsername: true, status: true, isTest: true },
+    });
     expect(result).toEqual({ channel: 'EMAIL', status: 'failed', jobs: [{ jobId: 'j1', campaignId: 'c1', campaignName: 'Saldo TARI 2026' }] });
   });
 
@@ -128,13 +136,72 @@ describe('EnginesController', () => {
     mockQueuesService.getJobsDetail.mockResolvedValueOnce([{ jobId: 'j1', campaignId: 'c-eliminata' }]);
     mockCampaignRepo.find.mockResolvedValueOnce([]);
 
-    const result = await controller.jobs('email', 'failed', '10');
+    const result = await controller.jobs(ADMIN_REQ, 'email', 'failed', '10');
 
     expect(result.jobs).toEqual([{ jobId: 'j1', campaignId: 'c-eliminata', campaignName: null }]);
   });
 
   it('jobs() rifiuta un canale sconosciuto', async () => {
-    await expect(controller.jobs('fax', 'failed', '10')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.jobs(ADMIN_REQ, 'fax', 'failed', '10')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('riservatezza bozze e invii di prova', () => {
+    const campaignOf = (id: string, status: string, isTest = false, createdBy = 'mario', signerUsername: string | null = null) =>
+      ({ id, name: `Camp ${id}`, status, isTest, createdBy, signerUsername });
+
+    it('jobs(): user non admin non vede i job di invii di prova / bozze altrui', async () => {
+      mockQueuesService.getJobsDetail.mockResolvedValueOnce([
+        { jobId: 'j1', campaignId: 'c-lanciata' },
+        { jobId: 'j2', campaignId: 'c-test-altrui' },
+        { jobId: 'j3', campaignId: 'c-test-mia' },
+        { jobId: 'j4', campaignId: 'c-test-firmatario' },
+        { jobId: 'j5', campaignId: 'c-eliminata' },
+      ]);
+      mockCampaignRepo.find.mockResolvedValueOnce([
+        campaignOf('c-lanciata', 'completed'),
+        campaignOf('c-test-altrui', 'completed', true),
+        campaignOf('c-test-mia', 'completed', true, 'luigi'),
+        campaignOf('c-test-firmatario', 'queued', true, 'mario', 'luigi'),
+      ]);
+
+      const result = await controller.jobs(USER_REQ, 'email', 'failed', '10');
+
+      expect(result.jobs.map((j: any) => j.jobId)).toEqual(['j1', 'j3', 'j4', 'j5']);
+      expect(result.jobs[0]).toEqual({ jobId: 'j1', campaignId: 'c-lanciata', campaignName: 'Camp c-lanciata' });
+    });
+
+    it('jobs(): admin vede tutti i job, anche degli invii di prova', async () => {
+      mockQueuesService.getJobsDetail.mockResolvedValueOnce([{ jobId: 'j2', campaignId: 'c-test-altrui' }]);
+      mockCampaignRepo.find.mockResolvedValueOnce([campaignOf('c-test-altrui', 'completed', true)]);
+
+      const result = await controller.jobs(ADMIN_REQ, 'email', 'failed', '10');
+
+      expect(result.jobs).toEqual([{ jobId: 'j2', campaignId: 'c-test-altrui', campaignName: 'Camp c-test-altrui' }]);
+    });
+
+    it('jobLogs(): job di un invio di prova altrui → NotFoundException per user, log mai letti', async () => {
+      mockQueuesService.getJob.mockResolvedValueOnce({ id: 'j2', data: { campaignId: 'c-test-altrui' } });
+      mockCampaignRepo.findOne.mockResolvedValueOnce(campaignOf('c-test-altrui', 'completed', true));
+
+      await expect(controller.jobLogs(USER_REQ, 'email', 'j2')).rejects.toThrow(NotFoundException);
+      expect(mockQueuesService.getJobLogs).not.toHaveBeenCalled();
+    });
+
+    it('jobLogs(): job di campagna visibile → log restituiti', async () => {
+      mockQueuesService.getJob.mockResolvedValueOnce({ id: 'j1', data: { campaignId: 'c-lanciata' } });
+      mockCampaignRepo.findOne.mockResolvedValueOnce(campaignOf('c-lanciata', 'completed'));
+
+      const result = await controller.jobLogs(USER_REQ, 'email', 'j1');
+
+      expect(result).toEqual({ channel: 'EMAIL', jobId: 'j1', logs: ['log-1'] });
+    });
+
+    it('jobLogs(): admin legge i log senza controllo campagna', async () => {
+      const result = await controller.jobLogs(ADMIN_REQ, 'email', 'j2');
+
+      expect(result).toEqual({ channel: 'EMAIL', jobId: 'j2', logs: ['log-1'] });
+      expect(mockCampaignRepo.findOne).not.toHaveBeenCalled();
+    });
   });
 
   it('GET send/stage-counts ritorna i contatori (senza queued, ora nel motore protocollazione)', async () => {

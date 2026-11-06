@@ -16,9 +16,15 @@ import { canViewCampaign } from './campaign-access.util.js';
 // controller incluso), es. '/admin/campaigns/:id/stats' — vale anche per i
 // controller fuori da campaigns/ (remote-sign, signature-verification,
 // signed-attachments, poste-tracking) che usano lo stesso segmento.
-const CAMPAIGN_ID_ROUTE = /^\/admin\/campaigns\/:id(\/|$)/;
+export const CAMPAIGN_ID_ROUTE = /^\/admin\/campaigns\/:id(\/|$)/;
 // Gli interceptor girano PRIMA delle pipe: un id non UUID va lasciato a
 // ParseUUIDPipe (400), non passato a Postgres (errore 500 sul cast uuid).
+// INVARIANTE: ogni handler `admin/campaigns/:id/...` che legge `id` DEVE
+// usare `@Param('id', ParseUUIDPipe)`. Postgres accetta anche UUID senza
+// trattini (o tra graffe), che qui non passano il test e saltano il
+// controllo: senza ParseUUIDPipe arriverebbero al DB aggirando la
+// visibilità di bozze/invii di prova. Verificato su tutti i controller da
+// campaign-access.routes.spec.ts.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

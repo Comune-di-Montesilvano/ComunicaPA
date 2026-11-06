@@ -2712,6 +2712,45 @@ describe('CampaignsService', () => {
     });
   });
 
+  describe('getCostAnalytics — riservatezza bozze', () => {
+    const makeQb = (raw: unknown[] = []) => {
+      const qb: any = {};
+      ['innerJoin', 'select', 'addSelect', 'where', 'andWhere', 'groupBy', 'orderBy', 'limit'].forEach((m) => {
+        qb[m] = jest.fn().mockReturnValue(qb);
+      });
+      qb.getRawMany = jest.fn().mockResolvedValue(raw);
+      return qb;
+    };
+
+    it('user non admin: visibleCampaignSql su righe costo e POSTAL dirottati', async () => {
+      const costQb = makeQb();
+      const avgQb = makeQb();
+      const divertedQb = makeQb();
+      mockAttemptRepo.createQueryBuilder.mockReturnValueOnce(costQb).mockReturnValueOnce(avgQb);
+      mockRecipientRepo.createQueryBuilder.mockReturnValueOnce(divertedQb);
+      const requester = { username: 'luigi', role: 'user' as const };
+
+      await service.getCostAnalytics(requester);
+
+      const expected = visibleCampaignSql('c', requester)!;
+      expect(costQb.andWhere).toHaveBeenCalledWith(expected.sql, expected.params);
+      expect(divertedQb.andWhere).toHaveBeenCalledWith(expected.sql, expected.params);
+    });
+
+    it('admin: nessun filtro visibilità', async () => {
+      const costQb = makeQb();
+      const avgQb = makeQb();
+      const divertedQb = makeQb();
+      mockAttemptRepo.createQueryBuilder.mockReturnValueOnce(costQb).mockReturnValueOnce(avgQb);
+      mockRecipientRepo.createQueryBuilder.mockReturnValueOnce(divertedQb);
+
+      await service.getCostAnalytics(ADMIN_REQUESTER, '2026-06-01', '2026-07-08');
+
+      const sqls = [...costQb.andWhere.mock.calls, ...divertedQb.andWhere.mock.calls].map((c: unknown[]) => String(c[0])).join(' ');
+      expect(sqls).not.toContain('visibleCampaignUser');
+    });
+  });
+
   describe('remove', () => {
     it('lancia NotFoundException se la campagna non esiste', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);

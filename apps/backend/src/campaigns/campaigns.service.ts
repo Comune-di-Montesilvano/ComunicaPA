@@ -2239,17 +2239,22 @@ export class CampaignsService {
    * cartaceo, componenti GlobalCom, trend mensile, campagne più costose,
    * risparmio stimato. Aggregazione in cost-analytics.util.ts (pura, testata).
    */
-  async getCostAnalytics(dateFrom?: string, dateTo?: string): Promise<CostAnalyticsDto> {
+  async getCostAnalytics(requester: CampaignRequester, dateFrom?: string, dateTo?: string): Promise<CostAnalyticsDto> {
     const range = buildDateRangeWhere('c', dateFrom, dateTo);
+    // Bozze non visibili al richiedente mai tra le "campagne più costose"
+    // (stessa regola di findAll); admin → null, nessun filtro.
+    const visible = visibleCampaignSql('c', requester);
 
-    const rows = await this.loadCostRows((qb) => qb
-      .andWhere('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
-      .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false'));
+    const rows = await this.loadCostRows((qb) => {
+      qb.andWhere('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
+        .andWhere(range.sql, range.params)
+        .andWhere('c.isTest = false');
+      return visible ? qb.andWhere(visible.sql, visible.params) : qb;
+    });
 
     // POSTAL mai spediti perché dirottati su PEC da INAD, per campagna: il
     // risparmio si stima col costo medio di spedizione DELLA STESSA campagna.
-    const divertedRows = await this.recipientRepo
+    const divertedQb = this.recipientRepo
       .createQueryBuilder('r')
       .innerJoin('r.campaign', 'c')
       .select('c.id', 'campaignId')
@@ -2257,7 +2262,9 @@ export class CampaignsService {
       .where("c.channelType = 'POSTAL'")
       .andWhere("(r.inadCheck ->> 'diverted') = 'true'")
       .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false')
+      .andWhere('c.isTest = false');
+    if (visible) divertedQb.andWhere(visible.sql, visible.params);
+    const divertedRows = await divertedQb
       .groupBy('c.id')
       .getRawMany<{ campaignId: string; diverted: string }>();
 

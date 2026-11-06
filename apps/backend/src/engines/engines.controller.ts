@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Param, Query, HttpStatus, HttpCode, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Req, HttpStatus, HttpCode, BadRequestException, NotFoundException } from '@nestjs/common';
+import type { Request } from 'express';
+import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
@@ -12,6 +14,7 @@ import { ENRICHMENT_QUEUE } from '../enrichment/enrichment-job.types.js';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
+import { canViewCampaign } from '../campaigns/campaign-access.util.js';
 
 function isEngineName(name: string): name is EngineName {
   return (ENGINE_NAMES as readonly string[]).includes(name);
@@ -156,6 +159,7 @@ export class EnginesController {
   @Get(':channel/jobs')
   @Roles('admin', 'user')
   async jobs(
+    @Req() req: Request & { user: JwtOperatorPayload },
     @Param('channel') channel: string,
     @Query('status') status = 'failed',
     @Query('limit') limit = '50',
@@ -181,19 +185,49 @@ export class EnginesController {
     // andare a cercarla a mano.
     const uniqueCampaignIds = [...new Set(jobs.map((j) => j.campaignId))];
     const campaigns = uniqueCampaignIds.length
-      ? await this.campaignRepo.find({ where: { id: In(uniqueCampaignIds) }, select: { id: true, name: true } })
+      ? await this.campaignRepo.find({
+          where: { id: In(uniqueCampaignIds) },
+          select: { id: true, name: true, createdBy: true, signerUsername: true, status: true, isTest: true },
+        })
       : [];
-    const nameById = new Map(campaigns.map((c) => [c.id, c.name]));
-    const jobsWithNames = jobs.map((j) => ({ ...j, campaignName: nameById.get(j.campaignId) ?? null }));
+    const campaignById = new Map(campaigns.map((c) => [c.id, c]));
+    // Job di bozze / invii di prova ([TEST] <bozza>) invisibili a chi non può
+    // vedere la campagna (canViewCampaign): nome, recipientId e attemptId
+    // rivelerebbero la bozza. Campagna non più in DB → job lasciato (nulla da celare).
+    const jobsWithNames = jobs
+      .filter((j) => {
+        const c = campaignById.get(j.campaignId);
+        return !c || canViewCampaign(c, req.user);
+      })
+      .map((j) => ({ ...j, campaignName: campaignById.get(j.campaignId)?.name ?? null }));
     return { channel: uc, status, jobs: jobsWithNames };
   }
 
   @Get(':channel/jobs/:jobId/logs')
   @Roles('admin', 'user')
-  async jobLogs(@Param('channel') channel: string, @Param('jobId') jobId: string) {
+  async jobLogs(
+    @Req() req: Request & { user: JwtOperatorPayload },
+    @Param('channel') channel: string,
+    @Param('jobId') jobId: string,
+  ) {
     const uc = channel.toUpperCase();
     if (!isEngineName(uc)) {
       throw new BadRequestException(`Motore ${channel} non supportato`);
+    }
+    // Stessa regola di jobs(): log di un job di bozza / invio di prova non
+    // visibile → 404 come per un job inesistente.
+    if (req.user.role !== 'admin') {
+      const job = await this.queues.getJob(uc, jobId);
+      const campaignId = job?.data?.campaignId;
+      const campaign = campaignId
+        ? await this.campaignRepo.findOne({
+            where: { id: campaignId },
+            select: { id: true, createdBy: true, signerUsername: true, status: true, isTest: true },
+          })
+        : null;
+      if (campaign && !canViewCampaign(campaign, req.user)) {
+        throw new NotFoundException(`Job ${jobId} non trovato`);
+      }
     }
     const logs = await this.queues.getJobLogs(uc, jobId);
     return { channel: uc, jobId, logs };
