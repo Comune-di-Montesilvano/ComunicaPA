@@ -17,8 +17,8 @@ export interface AttemptDetailDto {
   sendStatusUpdatedAt: string | null;
   /** Copia di notificationStatusHistory PN, cronologico. */
   sendStatusHistory: Array<{ status: string; activeFrom: string }> | null;
-  /** Fatti della timeline PN per il percorso (nessun indirizzo). */
-  sendTimeline: Array<{ category: string; at: string; code?: string; responseStatus?: string; productType?: string; channel?: string; deliveryFailureCause?: string; attempt?: number; raddType?: string }> | null;
+  /** Timeline PN completa senza chiavi PII. */
+  sendTimeline: Array<{ category: string; at: string; code?: string; responseStatus?: string; productType?: string; channel?: string; deliveryFailureCause?: string; attempt?: number; raddType?: string; registeredLetterCode?: string; details?: Record<string, unknown> }> | null;
   protocolNumber: number | null;
   protocolYear: number | null;
   protocolledAt: string | null;

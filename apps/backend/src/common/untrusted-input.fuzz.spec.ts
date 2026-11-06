@@ -5,6 +5,7 @@ import { resolveCustomAttachmentFilename } from '../attachments/attachment.servi
 import { escapeLdapFilterValue } from '../auth/ldap/ldap.service.js';
 import { escapeCsvField } from '../campaigns/csv.util.js';
 import { isValidChunkIndex, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { SEND_TIMELINE_PII_KEYS, stripSendPii } from '../channels/send/send-status-history.util.js';
 import type { Recipient } from '../entities/recipient.entity.js';
 import { safeAttachmentPath } from '../remote-sign/attachment-writer.util.js';
 
@@ -128,6 +129,37 @@ describe('fuzz: path da input non fidato', () => {
         if (isValidChunkIndex(index)) {
           expect(dirname(resolve(join('/upload', `${index}.part`)))).toBe('/upload');
         }
+      }),
+      RUNS,
+    );
+  });
+});
+
+describe('fuzz: stripSendPii', () => {
+  const hasPiiKey = (v: unknown): boolean => {
+    if (Array.isArray(v)) return v.some(hasPiiKey);
+    if (v && typeof v === 'object') {
+      return Object.entries(v).some(([k, x]) => SEND_TIMELINE_PII_KEYS.includes(k) || hasPiiKey(x));
+    }
+    return false;
+  };
+  const piiKey = fc.constantFrom(...SEND_TIMELINE_PII_KEYS);
+  const tree = fc.letrec((tie) => ({
+    node: fc.oneof(
+      { depthSize: 'small' },
+      fc.string(),
+      fc.integer(),
+      fc.array(tie('node'), { maxLength: 3 }),
+      fc.dictionary(fc.oneof(piiKey, fc.string({ maxLength: 6 })), tie('node'), { maxKeys: 4 }),
+    ),
+  })).node;
+
+  it('nessuna chiave PII sopravvive a qualunque profondità', () => {
+    fc.assert(
+      fc.property(fc.dictionary(fc.oneof(piiKey, fc.string({ maxLength: 6 })), tree, { maxKeys: 5 }), piiKey, (obj, key) => {
+        const withPii = { ...obj, nested: [{ [key]: 'x', deep: { [key]: 'y' } }] };
+        expect(hasPiiKey(withPii)).toBe(true);
+        expect(hasPiiKey(stripSendPii(withPii))).toBe(false);
       }),
       RUNS,
     );

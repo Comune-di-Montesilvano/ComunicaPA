@@ -274,7 +274,7 @@ describe('SendStatusSyncService', () => {
 
     await service.updateStatuses();
 
-    expect(attempt.sendTimeline).toEqual([{ category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-01-15T10:00:00Z', raddType: 'ALT' }]);
+    expect(attempt.sendTimeline).toEqual([{ category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-01-15T10:00:00Z', raddType: 'ALT', details: { raddType: 'ALT' } }]);
     expect(attempt.sendStatusUpdatedAt).toEqual(new Date('2026-01-12T09:00:00Z'));
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
   });

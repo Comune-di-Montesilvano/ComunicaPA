@@ -13,6 +13,7 @@ export interface SendTimelineEvent {
   attempt?: number;
   raddType?: string;
   registeredLetterCode?: string;
+  details?: Record<string, unknown>;
 }
 
 export type SendTimelineTone = 'neutral' | 'ok' | 'ko' | 'warn';

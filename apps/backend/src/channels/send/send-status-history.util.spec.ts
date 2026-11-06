@@ -61,7 +61,7 @@ describe('send-status-history.util', () => {
     });
   });
   describe('extractSendTimeline', () => {
-    it('tiene solo i fatti utili al percorso, senza indirizzi né dati del destinatario', () => {
+    it('tiene i normalizzati e i dettagli, senza indirizzi né dati del destinatario', () => {
       const data = {
         timeline: [
           { category: 'REQUEST_ACCEPTED', timestamp: '2026-10-13T09:46:43Z', details: {} },
@@ -77,13 +77,57 @@ describe('send-status-history.util', () => {
       const result = extractSendTimeline(data);
 
       expect(result).toEqual([
-        { category: 'SEND_ANALOG_DOMICILE', at: '2026-10-13T09:47:30Z', productType: 'AR', attempt: 0 },
-        { category: 'SEND_ANALOG_PROGRESS', at: '2026-10-20T07:58:00Z', code: 'RECRN010', registeredLetterCode: '123' },
-        { category: 'SEND_ANALOG_FEEDBACK', at: '2026-10-23T13:18:08Z', code: 'RECRN003C', responseStatus: 'OK', attempt: 0 },
-        { category: 'SEND_COURTESY_MESSAGE', at: '2026-10-13T09:47:00Z', channel: 'EMAIL' },
-        { category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-10-26T10:51:36Z', raddType: 'ALT' },
+        { category: 'REQUEST_ACCEPTED', at: '2026-10-13T09:46:43Z', details: {} },
+        { category: 'SEND_ANALOG_DOMICILE', at: '2026-10-13T09:47:30Z', productType: 'AR', attempt: 0, details: { productType: 'AR', analogCost: 494, sentAttemptMade: 0 } },
+        { category: 'SEND_ANALOG_PROGRESS', at: '2026-10-20T07:58:00Z', code: 'RECRN010', registeredLetterCode: '123', details: { deliveryDetailCode: 'RECRN010', registeredLetterCode: '123' } },
+        { category: 'SEND_ANALOG_FEEDBACK', at: '2026-10-23T13:18:08Z', code: 'RECRN003C', responseStatus: 'OK', attempt: 0, details: { responseStatus: 'OK', deliveryDetailCode: 'RECRN003C', sentAttemptMade: 0 } },
+        { category: 'SEND_COURTESY_MESSAGE', at: '2026-10-13T09:47:00Z', channel: 'EMAIL', details: {} },
+        { category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-10-26T10:51:36Z', raddType: 'ALT', details: { raddType: 'ALT', raddTransactionId: 'x' } },
+        { category: 'REFINEMENT', at: '2026-11-02T13:18:08Z', details: {} },
       ]);
       expect(JSON.stringify(result)).not.toMatch(/VIA ROMA|mario@example/);
+    });
+
+    it('keeps categories outside the old whitelist', () => {
+      const data = { timeline: [{ category: 'SCHEDULE_REFINEMENT', timestamp: '2026-11-02T10:00:00Z', details: { recIndex: 0, schedulingDate: '2026-11-23T10:00:00Z' } }] };
+
+      expect(extractSendTimeline(data)).toEqual([
+        { category: 'SCHEDULE_REFINEMENT', at: '2026-11-02T10:00:00Z', details: { recIndex: 0, schedulingDate: '2026-11-23T10:00:00Z' } },
+      ]);
+    });
+
+    it('strips PII keys at any depth', () => {
+      const data = {
+        timeline: [{
+          category: 'SEND_DIGITAL_DOMICILE',
+          timestamp: '2026-11-02T10:00:00Z',
+          details: {
+            physicalAddress: { address: 'VIA ROMA 1', zip: '00100' },
+            digitalAddress: { type: 'PEC', address: 'rossi@pec.example' },
+            attachments: [{ documentType: 'AR', physicalAddress: { address: 'X' } }],
+            recipient: { taxId: 'RSSMRA80A01H501U' },
+            analogCost: 900,
+          },
+        }],
+      };
+
+      const [ev] = extractSendTimeline(data);
+
+      expect(ev.details).toEqual({ attachments: [{ documentType: 'AR' }], analogCost: 900 });
+      expect(ev.channel).toBe('PEC');
+      const json = JSON.stringify(ev);
+      expect(json).not.toContain('RSSMRA80A01H501U');
+      expect(json).not.toContain('VIA ROMA');
+      expect(json).not.toContain('rossi@pec');
+    });
+
+    it('keeps event timestamp at while stripping details.at', () => {
+      const data = { timeline: [{ category: 'REFINEMENT', timestamp: '2026-11-02T10:00:00Z', details: { at: 'VIA X' } }] };
+
+      const [ev] = extractSendTimeline(data);
+
+      expect(ev.at).toBe('2026-11-02T10:00:00Z');
+      expect(ev.details).toEqual({});
     });
 
     it('timeline assente → array vuoto', () => {

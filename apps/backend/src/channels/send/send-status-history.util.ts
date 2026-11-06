@@ -85,9 +85,9 @@ export function extractSendAnalogCost(data: unknown): SendAnalogCostInfo {
 }
 
 /**
- * Evento della timeline PN conservato per il percorso della notifica:
- * solo i fatti utili all'operatore e solo campi tecnici — mai indirizzi
- * fisici/digitali né dati del destinatario.
+ * Evento della timeline PN: tutti i fatti PN, chiavi PII rimosse (indirizzi
+ * fisici/digitali, dati del destinatario). I campi normalizzati sono estratti
+ * prima della rimozione; `details` ha il resto.
  */
 export interface SendTimelineEvent {
   category: string;
@@ -105,37 +105,56 @@ export interface SendTimelineEvent {
   raddType?: string;
   /** Codice della raccomandata del recapitista: tracciabile su poste.it quando il vettore è Poste. */
   registeredLetterCode?: string;
+  /** Dettagli PN senza chiavi PII (sempre presente, anche vuoto). */
+  details?: Record<string, unknown>;
 }
 
-export const SEND_TIMELINE_CATEGORIES = [
-  'SEND_DIGITAL_DOMICILE',
-  'SEND_DIGITAL_FEEDBACK',
-  'DIGITAL_FAILURE_WORKFLOW',
-  'SEND_COURTESY_MESSAGE',
-  'PREPARE_ANALOG_DOMICILE_FAILURE',
-  'SEND_ANALOG_DOMICILE',
-  'SEND_SIMPLE_REGISTERED_LETTER',
-  'SEND_ANALOG_PROGRESS',
-  'SEND_ANALOG_FEEDBACK',
-  'ANALOG_FAILURE_WORKFLOW',
-  'NOTIFICATION_RADD_RETRIEVED',
-] as const;
+/** Chiavi con dati personali, tolte a qualunque profondità dai `details`. */
+export const SEND_TIMELINE_PII_KEYS: readonly string[] = [
+  'physicalAddress',
+  'digitalAddress',
+  'newAddress',
+  'normalizedAddress',
+  'oldAddress',
+  'address',
+  'at',
+  'municipality',
+  'municipalityDetails',
+  'zip',
+  'province',
+  'foreignState',
+  'taxId',
+  'denomination',
+  'recipient',
+  'recipientId',
+];
+
+/** Copia profonda (array e oggetti semplici) senza le chiavi PII. */
+export function stripSendPii(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripSendPii);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (SEND_TIMELINE_PII_KEYS.includes(k)) continue;
+      out[k] = stripSendPii(v);
+    }
+    return out;
+  }
+  return value;
+}
 
 /**
- * Sottoinsieme della timeline PN per il percorso: gli stati sono già in
- * notificationStatusHistory, qui i fatti che avvengono DENTRO uno stato
- * (spedizione cartacea, avanzamenti recapitista, ritiro presso punto RADD...).
- * Overwrite intero ad ogni poll, come lo storico stati.
+ * Timeline PN completa (gli stati sono anche in notificationStatusHistory),
+ * con le chiavi PII rimosse dai dettagli. Overwrite intero ad ogni poll.
  */
 export function extractSendTimeline(data: unknown): SendTimelineEvent[] {
   const timeline = (data as { timeline?: unknown })?.timeline;
   if (!Array.isArray(timeline)) return [];
-  const kept = new Set<string>(SEND_TIMELINE_CATEGORIES);
   const out: SendTimelineEvent[] = [];
   for (const el of timeline as any[]) {
-    if (!kept.has(el?.category) || typeof el?.timestamp !== 'string') continue;
+    if (typeof el?.category !== 'string' || typeof el?.timestamp !== 'string') continue;
     const d = el.details ?? {};
-    const ev: SendTimelineEvent = { category: el.category, at: el.timestamp };
+    const ev: SendTimelineEvent = { category: el.category, at: el.timestamp, details: {} };
     if (typeof d.deliveryDetailCode === 'string') ev.code = d.deliveryDetailCode;
     if (typeof d.responseStatus === 'string') ev.responseStatus = d.responseStatus;
     if (typeof d.productType === 'string') ev.productType = d.productType;
@@ -144,6 +163,8 @@ export function extractSendTimeline(data: unknown): SendTimelineEvent[] {
     if (typeof d.sentAttemptMade === 'number') ev.attempt = d.sentAttemptMade;
     if (typeof d.raddType === 'string') ev.raddType = d.raddType;
     if (typeof d.registeredLetterCode === 'string' && d.registeredLetterCode) ev.registeredLetterCode = d.registeredLetterCode;
+    const stripped = stripSendPii(d);
+    if (stripped && typeof stripped === 'object' && !Array.isArray(stripped)) ev.details = stripped as Record<string, unknown>;
     out.push(ev);
   }
   return out;
