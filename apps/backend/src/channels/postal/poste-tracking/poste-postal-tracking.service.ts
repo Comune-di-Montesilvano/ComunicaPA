@@ -520,8 +520,8 @@ export class PostePostalTrackingService {
 
     let row = await this.repo.findOneBy({ attemptId: attempt.id });
     if (!row) {
-      if (attempt.postalStatus === 'Consegnato' || !attempt.postalAcceptanceId) {
-        throw new BadRequestException('Verifica Poste disponibile solo per notifiche non ancora consegnate secondo GlobalCom e con codice di accettazione Poste');
+      if (!attempt.postalAcceptanceId) {
+        throw new BadRequestException('Verifica Poste non disponibile: nessun codice di accettazione Poste per questa notifica');
       }
       const notifiedAt = attempt.sentAt ?? attempt.createdAt;
       row = await this.repo.save(this.repo.create({
@@ -529,7 +529,8 @@ export class PostePostalTrackingService {
         trackingCode: attempt.postalAcceptanceId,
         status: 'pending',
         checkCount: 0,
-        nextCheckAt: new Date(),
+        // Già consegnata secondo GlobalCom: solo controllo a richiesta, mai in coda giornaliera.
+        nextCheckAt: attempt.postalStatus === 'Consegnato' ? null : new Date(),
         trackingUntil: notifiedAt ? new Date(notifiedAt.getTime() + POSTE_TRACKING_DAYS * DAY_MS) : null,
       }));
     }
@@ -563,7 +564,8 @@ export class PostePostalTrackingService {
         trackingCode: code,
         status: 'pending',
         checkCount: 0,
-        nextCheckAt: new Date(),
+        // SEND non più in consegna: solo controllo a richiesta, mai in coda giornaliera.
+        nextCheckAt: attempt.sendStatus === 'DELIVERING' ? new Date() : null,
         trackingUntil: notifiedAt ? new Date(notifiedAt.getTime() + POSTE_TRACKING_DAYS * DAY_MS) : null,
       }));
     }

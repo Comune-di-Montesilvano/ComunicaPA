@@ -88,18 +88,19 @@ function ChannelBadge({ channel, extra }: { channel: string; extra?: string | nu
   const meta = getChannelMeta(channel);
   const Icon = meta.icon;
   return (
-    <span className={`badge ${meta.badge} d-inline-flex align-items-center`}>
+    <span className={`badge ${meta.badge} d-inline-flex align-items-center`} title={meta.logoUrl ? meta.label : undefined}>
       {meta.logoUrl ? (
+        // Logo ufficiale già leggibile: niente nome ripetuto accanto (resta come alt e title).
         <span
-          className="d-inline-flex align-items-center justify-content-center bg-white rounded-1 me-1.5 px-1.5 py-0.5"
+          className={`d-inline-flex align-items-center justify-content-center bg-white rounded-1 px-1.5 py-0.5${extra ? ' me-1.5' : ''}`}
           style={{ height: 18, minWidth: 18 }}
         >
-          <img src={meta.logoUrl} alt="" style={{ height: 14, width: 'auto', maxHeight: 14, display: 'block', objectFit: 'contain' }} />
+          <img src={meta.logoUrl} alt={meta.label} style={{ height: 14, width: 'auto', maxHeight: 14, display: 'block', objectFit: 'contain' }} />
         </span>
       ) : (
         <Icon className="me-1" size={14} />
       )}
-      {meta.label}{extra ? ` (${extra})` : ''}
+      {meta.logoUrl ? (extra ? `(${extra})` : '') : <>{meta.label}{extra ? ` (${extra})` : ''}</>}
     </span>
   );
 }
@@ -13441,9 +13442,9 @@ export function App(): React.JSX.Element {
                                 const pv = lastPostal?.posteVerification;
                                 if (isSend) {
                                   // SEND: solo raccomandate Poste (altri recapitisti non sono su poste.it).
-                                  // Mai controllata e SEND già chiusa: la coda non la verificherà più.
-                                  if (!lastPostal || !(pv || (lastPostal.sendStatus === 'DELIVERING' && latestSendPosteLetter(lastPostal.sendTimeline)))) return null;
-                                } else if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) {
+                                  // Anche a esito finale: il tasto "Verifica ora su Poste" resta disponibile.
+                                  if (!lastPostal || !(pv || latestSendPosteLetter(lastPostal.sendTimeline))) return null;
+                                } else if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || lastPostal.postalAcceptanceId)) {
                                   // Posta semplice: codice mai tracciabile su Poste, nessuna sezione.
                                   return null;
                                 }
@@ -13499,7 +13500,8 @@ export function App(): React.JSX.Element {
                                   const isSend = notifDetail.campaign.channelType === 'SEND';
                                   const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === (isSend ? 'SEND' : 'POSTAL')).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                                   if (!lastPostal) return null;
-                                  if (isSend ? !(lastPostal.posteVerification || (lastPostal.sendStatus === 'DELIVERING' && latestSendPosteLetter(lastPostal.sendTimeline))) : !(lastPostal.posteVerification || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                  // Sempre disponibile se c'è un codice tracciabile, anche a esito finale.
+                                  if (isSend ? !(lastPostal.posteVerification || latestSendPosteLetter(lastPostal.sendTimeline)) : !(lastPostal.posteVerification || (isPosteTrackableService(notifDetail.campaign.postalServiceType) && lastPostal.postalAcceptanceId))) return null;
                                   return (
                                     <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
                                       {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
