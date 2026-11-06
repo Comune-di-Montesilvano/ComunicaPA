@@ -208,6 +208,7 @@ describe('NotificationsSearchService.getDetail', () => {
         sendStatusUpdatedAt: null,
         sendStatusHistory: null,
         sendTimeline: null,
+        sendPerfection: null,
         protocolNumber: null,
         protocolYear: null,
         protocolledAt: null,
@@ -435,6 +436,42 @@ describe('NotificationsSearchService.getDetail', () => {
       protocolYear: null,
       protocolledAt: null,
     });
+  });
+
+  it('SEND: espone sendPerfection con tappa finale destinatario', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: null, pec: null, status: 'sent', extraData: {},
+      campaign: { id: 'c1', name: 'Avviso', channelType: 'SEND', channelConfig: {} },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([{
+      id: 'a1', attemptNumber: 1, status: 'success', channelType: 'SEND', errorMessage: null,
+      sentAt: new Date('2026-07-10T10:00:00Z'), createdAt: new Date('2026-07-10T09:00:00Z'), responsePayload: null,
+      iun: 'ABCD-EFGH-ILMN-202607-X-1', sendStatus: 'UNREACHABLE', sendStatusUpdatedAt: new Date('2026-07-12T08:00:00Z'),
+      sendStatusHistory: [
+        { status: 'ACCEPTED', activeFrom: '2026-07-10T10:00:00Z' },
+        { status: 'UNREACHABLE', activeFrom: '2026-07-12T08:00:00Z' },
+      ],
+      sendTimeline: [],
+    }]);
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
+    const result = await service.getDetail('r1', ADMIN);
+    expect(result.attempts[0]!.sendPerfection!.steps.at(-1)!.key).toBe('recipient');
+  });
+
+  it('non SEND: sendPerfection null', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: 'mario@test.it', pec: null, status: 'sent', extraData: {},
+      campaign: { id: 'c1', name: 'Avviso', channelType: 'EMAIL', channelConfig: {} },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([{
+      id: 'a1', attemptNumber: 1, status: 'success', channelType: 'EMAIL', errorMessage: null,
+      sentAt: new Date('2026-07-10T10:00:00Z'), createdAt: new Date('2026-07-10T09:00:00Z'), responsePayload: null,
+    }]);
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
+    const result = await service.getDetail('r1', ADMIN);
+    expect(result.attempts[0]!.sendPerfection).toBeNull();
   });
 
   it('POSTAL: esito legale nel dettaglio (compiuta giacenza = consegnato, data GlobalCom)', async () => {

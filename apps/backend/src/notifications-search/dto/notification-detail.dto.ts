@@ -2,6 +2,7 @@ import type { PreviewMessageResult } from '../../campaigns/dto/preview-message.d
 import type { ResolvedPaymentData } from '../../channels/payment-config.util.js';
 import type { PostalLegalOutcome } from '../../campaigns/postal-legal-outcome.util.js';
 import type { PosteVerificationDto } from '../../channels/postal/poste-tracking/poste-tracking-effective.util.js';
+import type { SendPerfection } from '../../campaigns/send-perfection.util.js';
 
 export interface AttemptDetailDto {
   attemptNumber: number;
@@ -19,6 +20,8 @@ export interface AttemptDetailDto {
   sendStatusHistory: Array<{ status: string; activeFrom: string }> | null;
   /** Timeline PN completa senza chiavi PII. */
   sendTimeline: Array<{ category: string; at: string; code?: string; responseStatus?: string; productType?: string; channel?: string; deliveryFailureCause?: string; attempt?: number; raddType?: string; registeredLetterCode?: string; details?: Record<string, unknown> }> | null;
+  /** Tappe fino alla notifica per il destinatario; solo canale SEND. */
+  sendPerfection?: SendPerfection | null;
   protocolNumber: number | null;
   protocolYear: number | null;
   protocolledAt: string | null;

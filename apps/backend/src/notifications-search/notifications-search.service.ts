@@ -15,6 +15,7 @@ import type { NotificationDetailDto } from './dto/notification-detail.dto.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { posteDeliveredSql, toPosteVerificationDto } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 import { fromUtcWallClock } from '../legal-attention/legal-attention.util.js';
+import { buildSendPerfection } from '../campaigns/send-perfection.util.js';
 
 // Canali digitali: "sent" con almeno un download = "read" (Letto), stato
 // derivato mai scritto su recipient.status. Stesso criterio del dettaglio
@@ -316,6 +317,9 @@ export class NotificationsSearchService {
             sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,
             sendStatusHistory: a.sendStatusHistory ?? null,
             sendTimeline: a.sendTimeline ?? null,
+            sendPerfection: a.channelType === 'SEND'
+              ? buildSendPerfection(a.sendStatus, a.sendStatusHistory, a.sendTimeline, new Date())
+              : null,
             protocolNumber: protoNum,
             protocolYear: protoYr,
             protocolledAt: protoAt ? protoAt.toISOString() : null,
