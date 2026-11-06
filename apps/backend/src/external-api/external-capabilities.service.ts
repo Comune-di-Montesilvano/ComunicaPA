@@ -15,6 +15,7 @@ import { AppSettingsService } from '../settings/app-settings.service.js';
 import type { SettingKey } from '../settings/settings.registry.js';
 import type { ValidationIssue } from './external-api.error.js';
 import { APP_IO_LIMITS, type CreateNotificationDto } from './dto/create-notification.dto.js';
+import { SEND_SUBJECT_MAX } from '../channels/send/send-limits.js';
 import { MAX_CHUNK_SIZE_BYTES } from '../campaigns/chunked-upload.util.js';
 
 export interface SenderCapability { id: string; name: string; fromAddress: string; default: boolean }
@@ -27,6 +28,7 @@ export interface CapabilitiesResponse {
   limits: {
     attachment: { chunkMaxBytes: number; chunkRecommendedBytes: number; tokenTtlHours: number };
     appIo: { subject: readonly [number, number]; body: readonly [number, number] };
+    send: { subjectMax: number };
     idempotencyKeyTtlHours: number;
   };
   channels: {
@@ -99,6 +101,7 @@ export class ExternalCapabilitiesService {
       limits: {
         attachment: { chunkMaxBytes: MAX_CHUNK_SIZE_BYTES, chunkRecommendedBytes: 512 * 1024, tokenTtlHours: 24 },
         appIo: { subject: APP_IO_LIMITS.subject, body: APP_IO_LIMITS.body },
+        send: { subjectMax: SEND_SUBJECT_MAX },
         idempotencyKeyTtlHours: IDEMPOTENCY_TTL_HOURS,
       },
       channels: {

@@ -3,8 +3,8 @@ publiccodeYmlVersion: "0"
 name: ComunicaPA
 url: "https://github.com/Comune-di-Montesilvano/ComunicaPA.git"
 landingURL: "https://github.com/Comune-di-Montesilvano/ComunicaPA"
-softwareVersion: "v1.16.7"
-releaseDate: "2026-11-05"
+softwareVersion: "v1.16.8"
+releaseDate: "2026-11-06"
 
 platforms:
   - web

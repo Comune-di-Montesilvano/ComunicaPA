@@ -298,6 +298,32 @@ describe('SendDispatchService', () => {
     expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
   });
 
+  it('oggetto oltre 134 caratteri: FAILED con motivo leggibile, nessun upload né chiamata a PN', async () => {
+    const attempt = makeAttempt();
+    (attempt.recipient as any).campaign.channelConfig.subject = 'x'.repeat(135);
+    mockBatch([attempt]);
+
+    await service.handleCron();
+
+    expect(mockUpload.preloadAndUpload).not.toHaveBeenCalled();
+    expect(mockFetch.mock.calls.some(([url]) => url === 'https://send.test/delivery/v2.6/requests')).toBe(false);
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      { id: 'att-1', status: AttemptStatus.QUEUED },
+      expect.objectContaining({ status: AttemptStatus.FAILED, errorMessage: expect.stringContaining('135 caratteri') }),
+    );
+  });
+
+  it('oggetto di esattamente 134 caratteri: inviato', async () => {
+    const attempt = makeAttempt();
+    (attempt.recipient as any).campaign.channelConfig.subject = 'x'.repeat(134);
+    mockBatch([attempt]);
+
+    await service.handleCron();
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    expect(JSON.parse(sendCall![1].body).subject).toHaveLength(134);
+  });
+
   it('usa l\'oggetto per-destinatario quando csvMapping.subject è configurato', async () => {
     const attempt = makeAttempt();
     (attempt.recipient as any).campaign.channelConfig.csvMapping = { subject: 'oggetto_custom' };

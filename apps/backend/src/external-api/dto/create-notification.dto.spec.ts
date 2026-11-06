@@ -116,6 +116,18 @@ describe('validateCreateNotification — regole per canale', () => {
     ).toEqual([]);
   });
 
+  it('SEND: subject oltre 134 caratteri → errore (limite PN), 134 valido', async () => {
+    const send = (subject: string) => ({
+      channel: 'SEND',
+      recipient: { type: 'PF', taxId: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', address: ADDRESS },
+      content: { subject },
+      attachments: [{ token: TOKEN }],
+      send: { taxonomyCode: '010101N' },
+    });
+    expect(await fields(send('x'.repeat(135)))).toEqual(['content.subject']);
+    expect(await fields(send('x'.repeat(134)))).toEqual([]);
+  });
+
   it('SEND: body vietato, address/fullName/attachments/send obbligatori', async () => {
     const f = await fields({
       channel: 'SEND',
