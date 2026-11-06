@@ -169,6 +169,7 @@
    sotto la riga delle date (che finisce a 2.2rem dal top dell'etichetta),
    mai attraverso la data in grassetto di una tappa vicina; i pallini la coprono. */
 .nd-perf-today::after { content: ''; position: absolute; left: 50%; top: calc(2.5rem - 2.5px); width: 2px; height: 12px; margin-left: -1px; background: #E0A100; opacity: 0.55; }
+.nd-perf-hint { margin: 0.6rem 0 0; font-size: 0.75rem; color: var(--nd-muted); }
 .nd-perf-note { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--nd-muted); max-width: 70ch; }
 @media (max-width: 575.98px) {
   .nd-perf-steps { flex-direction: column; gap: 0.75rem; }
@@ -177,4 +178,16 @@
   .nd-perf-date { order: 2; height: auto; margin: 0; min-width: 2.6rem; }
   .nd-perf-dot { order: 1; flex: none; }
   .nd-perf-label { order: 3; margin: 0; }
+}
+
+/* Popover sulla data di una tappa */
+.nd-perf-pop-wrap { position: relative; display: inline-block; }
+.nd-perf-pop-btn { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.nd-perf-pop-btn:focus-visible { outline: 2px solid var(--nd-ok); outline-offset: 2px; }
+.nd-perf-step-open { z-index: 5; }
+.nd-perf-pop { position: absolute; top: calc(100% + 0.4rem); left: 50%; transform: translateX(-50%); z-index: 10; width: max-content; max-width: min(280px, 80vw); padding: 0.6rem 0.75rem; background: #fff; color: var(--nd-ink); border: 1px solid var(--nd-rail); border-radius: 6px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15); font-size: 0.8rem; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; }
+.nd-perf-pop-first .nd-perf-pop { left: 0; transform: none; }
+.nd-perf-pop-last .nd-perf-pop { left: auto; right: 0; transform: none; }
+@media (max-width: 575.98px) {
+  .nd-perf-pop, .nd-perf-pop-first .nd-perf-pop, .nd-perf-pop-last .nd-perf-pop { left: 0; right: auto; transform: none; }
 }

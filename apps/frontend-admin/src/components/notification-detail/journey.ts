@@ -369,7 +369,7 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
       // "returned" scatta al primo movimento con flagRitorno: per SEND il plico
       // torna al recapitista, la restituzione è avviata, non conclusa.
       ? `Poste: ${posteOutcome.status === 'delivered' ? 'consegnata' : 'restituzione al mittente avviata'}${posteWhen ? ` il ${new Date(posteWhen).toLocaleDateString('it-IT')}` : ''}; SEND non ha ancora ricevuto l'esito dal recapitista`
-      : viaUnreachable
+      : viaUnreachable && !last.sendPerfection
       ? "Destinatario irreperibile: nessuna consegna. Date nella timeline qui sopra (art. 26, commi 7 e 9, D.L. 76/2020)."
       : null;
     // Data dello stato secondo PN (storico), non dell'ultimo sync: un

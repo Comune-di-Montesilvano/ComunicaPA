@@ -1,5 +1,7 @@
 import React from 'react';
-import type { SendPerfection } from './journey';
+import { GUIDA_DATE_TERMINI } from '../../guida';
+import { DatePopover } from './DatePopover';
+import type { SendPerfection, SendPerfectionStep } from './journey';
 
 /** YYYY-MM-DD -> gg/mm (o gg/mm/aaaa). Niente `new Date`: il parse UTC sposta il giorno in alcuni fusi. */
 function fmt(ymd: string | null, withYear = false): string {
@@ -62,11 +64,44 @@ function noteOf(data: SendPerfection): string {
   }
 }
 
+const ART26 = 'D.L. 76/2020';
+
+/** Spiegazione con riferimenti di legge della data di una tappa. */
+function explanationOf(step: SendPerfectionStep, data: SendPerfection): string {
+  const d = fmt(step.date, true);
+  const expected = step.state === 'expected';
+  switch (step.key) {
+    case 'entity':
+      return `Notificata per l'ente il ${d}: messa a disposizione su SEND. Impedisce le decadenze e interrompe la prescrizione (art. 26, c. 9 lett. a e c. 10, ${ART26}). I termini del destinatario decorrono dalla data in cui è notificata per lui.`;
+    case 'deposited':
+      return `Avviso di avvenuta ricezione depositato su SEND il ${d}: il destinatario è risultato irreperibile.`;
+    case 'aar_refined':
+      return `${expected ? 'Si perfezionerà' : "La notifica dell'avviso si è perfezionata"} il ${d}, il decimo giorno dopo il deposito (art. 26, c. 7, ${ART26}).`;
+    case 'digital_delivered':
+      return `Consegnata al domicilio digitale il ${d}. Per il destinatario si perfeziona il settimo giorno successivo; se consegnata dopo le 21:00, si conta dal giorno dopo (art. 26, c. 9 lett. b n. 1, ${ART26}).`;
+    case 'digital_failure':
+      return `Avviso di mancato recapito depositato il ${d} (casella piena, non valida o non attiva): per il destinatario si perfeziona il quindicesimo giorno successivo (art. 26, c. 9 lett. b n. 1, ${ART26}).`;
+    case 'analog_delivered':
+      return `Avviso cartaceo consegnato il ${d}. Per il destinatario si perfeziona il decimo giorno dopo il perfezionamento dell'avviso cartaceo (art. 26, c. 9 lett. b n. 2, ${ART26}): la data la indica SEND.`;
+    case 'delivering':
+      return `In consegna dal ${d}.`;
+    case 'viewed':
+      return `Il destinatario ha aperto la notifica su SEND il ${d}: se anteriore, è questa la data di notifica per lui (art. 26, c. 9 lett. b n. 3, ${ART26}).`;
+    case 'recipient':
+      return noteOf(data);
+    default:
+      return `${step.label}: ${d}.`;
+  }
+}
+
 /** Timeline orizzontale delle tappe fino alla notifica per il destinatario. */
-export function SendPerfectionTimeline({ data }: { data: SendPerfection }): React.JSX.Element {
+export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfection; onOpenGuida?: (anchor: string) => void }): React.JSX.Element {
   const n = data.steps.length;
   const frac = todayFraction(data);
   const pct = frac === null ? null : `${(frac * 100).toFixed(2)}%`;
+  const [openKey, setOpenKey] = React.useState<string | null>(null);
+  const closePop = React.useCallback(() => setOpenKey(null), []);
+  const baseId = React.useId();
   return (
     <div className="nd-perf">
       <ol className="nd-perf-steps" style={{ '--nd-perf-n': n } as React.CSSProperties}>
@@ -76,11 +111,31 @@ export function SendPerfectionTimeline({ data }: { data: SendPerfection }): Reac
             <span className="nd-perf-today" style={{ left: pct }}>oggi {fmt(data.today)}</span>
           </li>
         )}
-        {data.steps.map((s) => {
+        {data.steps.map((s, i) => {
           const isFinal = s.key === 'recipient';
+          const open = openKey === s.key;
+          const place = i === 0 ? ' nd-perf-pop-first' : i === n - 1 ? ' nd-perf-pop-last' : '';
           return (
-            <li key={s.key} className={`nd-perf-step${isFinal ? ' nd-perf-goal' : ''}`}>
-              <span className="nd-perf-date">{fmt(s.date)}</span>
+            <li key={s.key} className={`nd-perf-step${isFinal ? ' nd-perf-goal' : ''}${open ? ' nd-perf-step-open' : ''}${place}`}>
+              <span className="nd-perf-date">
+                {s.date || isFinal ? (
+                  <DatePopover
+                    id={`${baseId}-${s.key}`}
+                    label={s.label}
+                    text={fmt(s.date)}
+                    open={open}
+                    onToggle={() => setOpenKey(open ? null : s.key)}
+                    onClose={closePop}
+                  >
+                    {explanationOf(s, data)}
+                    {(s.key === 'entity' || isFinal) && onOpenGuida && (
+                      <button type="button" className="btn btn-link btn-sm p-0 ms-1 align-baseline" onClick={() => onOpenGuida(GUIDA_DATE_TERMINI)}>
+                        Come si contano i termini
+                      </button>
+                    )}
+                  </DatePopover>
+                ) : '—'}
+              </span>
               <span className={`nd-perf-dot ${s.state}`} aria-hidden="true" />
               <span className="nd-perf-label">
                 {isFinal ? <strong>{s.label}</strong> : s.label}
@@ -91,7 +146,7 @@ export function SendPerfectionTimeline({ data }: { data: SendPerfection }): Reac
           );
         })}
       </ol>
-      <p className="nd-perf-note">{noteOf(data)}</p>
+      <p className="nd-perf-hint">Tocca una data per i riferimenti di legge.</p>
     </div>
   );
 }
