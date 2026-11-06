@@ -21,11 +21,41 @@ Il **contenuto** degli allegati di una campagna è leggibile solo da:
 
 La regola vale per tutte le campagne, senza flag "riservato".
 
+## Bozze invisibili (decisione utente, aggiunta dopo la prima stesura)
+
+Una campagna in stato `DRAFT` è **interamente** invisibile a chiunque non sia
+admin, creatore o firmatario indicato (stessa regola degli allegati; il
+firmatario esiste solo per SEND, per gli altri canali restano creatore e admin).
+
+- **Elenco campagne** (`findAll`, dashboard, aggregazione gruppi multicanale
+  `aggregateCampaignGroups`): le bozze altrui non compaiono. Un gruppo con membri
+  misti mostra solo i membri visibili (scelta di Claude).
+- **Ogni endpoint con `:id` campagna** (dettaglio, destinatari, stats, report,
+  export, firma, verifica firma, poste-tracking, allegati, ecc. — controller
+  `campaigns`, `signed-attachments`, `signature-verification`, `remote-sign`,
+  `poste-tracking` e qualunque altro con `:id` di campagna): bozza non visibile →
+  **404** come se non esistesse (scelta di Claude: non rivelare l'esistenza).
+  Implementazione consigliata: un controllo centrale (guard/helper unico)
+  applicato a tutte le route con `:id` campagna, non endpoint per endpoint; il
+  builder verifica con grep che nessuna route resti scoperta.
+- **Ricerca notifiche**: i destinatari esistono già in bozza (sync wizard) e i
+  test di invio creano tentativi → risultati e dettaglio di destinatari di bozze
+  non visibili vanno esclusi (lista filtrata, dettaglio 404).
+- **Conteggi aggregati globali** (statistiche dashboard senza nomi né dettagli):
+  possono includere le bozze, nessuna informazione riservata (scelta di Claude).
+- **Dopo il lancio** (stato ≠ `DRAFT`) la campagna torna visibile a tutti come
+  oggi; restano protetti solo gli allegati. Una campagna riportata a `DRAFT`
+  (es. lancio fallito) torna invisibile.
+- Test: altro `user` non vede bozza in elenco, 404 su dettaglio/destinatari/
+  stats/ricerca notifiche; creatore/admin/firmatario la vedono; dopo il lancio
+  la vede anche l'altro `user` (allegati esclusi).
+
 ## Non-obiettivi
 
-- **Non** si filtra la visibilità di campagne, destinatari, report, export,
-  ricerca notifiche, statistiche: restano visibili a tutti gli operatori.
-  Decisione esplicita dell'utente ("basta oscurare l'allegato").
+- **Non** si filtra la visibilità di campagne **lanciate**, destinatari, report,
+  export, ricerca notifiche, statistiche: restano visibili a tutti gli operatori.
+  Decisione esplicita dell'utente ("basta oscurare l'allegato"); unica eccezione
+  le bozze (sezione sopra).
 - **Nomi file** degli allegati restano visibili (si oscura il contenuto).
 - **Atti opponibili SEND** (`notifications-search/:recipientId/send-legal-facts/download`)
   restano visibili: sono ricevute PN, non il documento.
