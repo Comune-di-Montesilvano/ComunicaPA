@@ -146,7 +146,18 @@ export function buildSendPerfection(
     const d = romeDate(histEntry('DELIVERING')?.activeFrom);
     // Letta su SEND prima di andare in consegna (ACCEPTED → VIEWED): la tappa
     // "In consegna" non c'è mai stata, mostrarla vuota spezzerebbe la sequenza.
-    if (d || !histEntry('VIEWED')) steps.push(mk('delivering', d, d ? 'done' : 'expected'));
+    if (d) steps.push(mk('delivering', d, 'done'));
+    else if (!histEntry('VIEWED')) {
+      // Senza domicilio digitale PN aspetta 5 giorni dall'avviso di cortesia prima
+      // della raccomandata e ne pubblica la data: è quando la notifica va in consegna.
+      // Già passata e non ancora partita: data non più affidabile, resta "—".
+      const analog = [...events]
+        .reverse()
+        .filter((e) => e.category === 'PROBABLE_SCHEDULING_ANALOG_DATE')
+        .map((e) => romeDate(e.details?.['schedulingAnalogDate']))
+        .find((x) => x !== null);
+      steps.push(mk('delivering', analog && analog >= today ? analog : null, 'expected'));
+    }
   }
 
   // Data finale: PN effettiva > PN programmata > stima > nessuna.
