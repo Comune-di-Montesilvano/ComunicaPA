@@ -126,6 +126,22 @@ describe('buildSendPerfection', () => {
     expect(p!.finalSource).toBe('none');
   });
 
+  it('accettata, raccomandata programmata da PN: "In consegna" prevista a quella data', () => {
+    const probable = (at: string, d: string) => ev('PROBABLE_SCHEDULING_ANALOG_DATE', at, { details: { recIndex: 0, schedulingAnalogDate: d } });
+    const tl = [probable('2026-11-05T11:51:00Z', '2026-11-10T11:51:00Z')];
+    const p = buildSendPerfection('ACCEPTED', [ACCEPTED], tl, now);
+    expect(keys(p)).toEqual(['entity', 'delivering', 'recipient']);
+    expect(step(p, 'delivering').date).toBe('2026-11-10');
+    expect(step(p, 'delivering').state).toBe('expected');
+    // Data già passata senza che parta la raccomandata: non più affidabile.
+    const late = buildSendPerfection('ACCEPTED', [ACCEPTED], [probable('2026-10-30T11:51:00Z', '2026-11-04T11:51:00Z')], now);
+    expect(step(late, 'delivering').date).toBeNull();
+    // Già in consegna: vale la data dello storico PN.
+    const started = buildSendPerfection('DELIVERING', [ACCEPTED, DELIVERING], tl, now);
+    expect(step(started, 'delivering').date).toBe('2026-10-16');
+    expect(step(started, 'delivering').state).toBe('done');
+  });
+
   it('letta su SEND senza mai passare da DELIVERING: niente tappa "In consegna" vuota', () => {
     const p = buildSendPerfection('VIEWED', [ACCEPTED, { status: 'VIEWED', activeFrom: '2026-10-15T09:48:00Z' }], [], now);
     expect(keys(p)).toEqual(['entity', 'viewed', 'recipient']);

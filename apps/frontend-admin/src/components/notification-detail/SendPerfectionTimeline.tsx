@@ -80,7 +80,9 @@ function explanationOf(step: SendPerfectionStep, data: SendPerfection): string {
     case 'analog_delivered':
       return `Avviso cartaceo consegnato il ${d}. Per il destinatario si perfeziona il decimo giorno dopo il perfezionamento dell'avviso cartaceo (art. 26, c. 9 lett. b n. 2, ${ART26}): la data la indica SEND.`;
     case 'delivering':
-      return `In consegna dal ${d}.`;
+      return step.state === 'expected'
+        ? `Recapito cartaceo previsto da SEND dal ${d}: senza domicilio digitale, SEND attende 5 giorni dall'avviso di cortesia e poi invia la raccomandata, se il destinatario non ha aperto prima la notifica.`
+        : `In consegna dal ${d}.`;
     case 'viewed':
       return `Il destinatario ha aperto la notifica su SEND il ${d}: se anteriore, è questa la data di notifica per lui (art. 26, c. 9 lett. b n. 3, ${ART26}).`;
     case 'recipient':

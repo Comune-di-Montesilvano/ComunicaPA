@@ -227,6 +227,21 @@ export function describeSendTimelineEvent(e: SendTimelineEvent, timeline: readon
       }
       return { title: `Avviso di cortesia inviato${ch ? ` via ${CHANNEL_LABELS[ch] ?? ch}` : ''}`, detail: da.address ? `Inviato a: ${da.address}` : null, tone: 'neutral' };
     }
+    case 'PROBABLE_SCHEDULING_ANALOG_DATE': {
+      // Data in cui PN avvierà il cartaceo se il destinatario non apre la notifica.
+      // Superata dai fatti appena il cartaceo parte o la notifica è aperta/annullata.
+      const superseded = ['PREPARE_ANALOG_DOMICILE', 'SEND_ANALOG_DOMICILE', 'NOTIFICATION_VIEWED', 'NOTIFICATION_CANCELLED'];
+      if (timeline.some((x) => superseded.includes(x.category))) return null;
+      const when = new Date(str(e.details?.['schedulingAnalogDate']) ?? '');
+      // Data uguale all'evento: nessuna attesa (niente avviso di cortesia), il cartaceo parte subito.
+      if (Number.isNaN(when.getTime()) || when.getTime() - new Date(e.at).getTime() < 3_600_000) return null;
+      const day = when.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' });
+      return {
+        title: `Raccomandata prevista dal ${day}`,
+        detail: "Se il destinatario non apre la notifica entro 5 giorni dall'avviso di cortesia, SEND invia la raccomandata",
+        tone: 'neutral',
+      };
+    }
     case 'PREPARE_ANALOG_DOMICILE_FAILURE':
       return { title: 'Indirizzo fisico non trovato', detail: null, tone: 'ko' };
     case 'SEND_ANALOG_DOMICILE':
