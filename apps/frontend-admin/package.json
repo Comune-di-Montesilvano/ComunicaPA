@@ -13,11 +13,11 @@
   "dependencies": {
     "@comunicapa/shared-types": "workspace:*",
     "@sentry/react": "^11.10.0",
-    "@tiptap/react": "^3.32.1",
-    "@tiptap/starter-kit": "^3.32.1",
-    "@tiptap/extension-link": "^3.32.1",
-    "@uiw/react-md-editor": "^4.1.6",
-    "lucide-react": "^1.64.0",
+    "@tiptap/react": "^3.32.2",
+    "@tiptap/starter-kit": "^3.32.2",
+    "@tiptap/extension-link": "^3.32.2",
+    "@uiw/react-md-editor": "^4.2.2",
+    "lucide-react": "^1.66.0",
     "recharts": "^3.10.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
@@ -28,11 +28,11 @@
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^6.0.3",
     "vite": "^8.3.5",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "@eslint/js": "^10.0.1",
     "typescript-eslint": "^8.72.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
-    "globals": "^17.13.0"
+    "globals": "^17.14.0"
   }
 }
