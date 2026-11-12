@@ -1092,7 +1092,7 @@ const APP_IO_MARKDOWN_MIN = 80;
 const APP_IO_MARKDOWN_MAX = 10000;
 const APP_IO_SUBJECT_MIN = 10;
 const APP_IO_SUBJECT_MAX = 120;
-const SUBJECT_ATTACHMENT_PLACEHOLDER_RE = /%%\s*(?:elenco_allegati|allegato\d+)\s*%%/i;
+const SUBJECT_ATTACHMENT_PLACEHOLDER_RE = /%%(?:elenco_allegati|allegato\d+)%%/i;
 // Limite PN su subject (HTTP 400 PN_INVALID_BODY "maximum allowed: 134").
 const SEND_SUBJECT_MAX = 134;
 

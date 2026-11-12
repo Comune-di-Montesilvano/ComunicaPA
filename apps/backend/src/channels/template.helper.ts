@@ -224,10 +224,12 @@ export function processSubjectTemplate(
 ): string {
   // Via il segnaposto insieme agli spazi che lo precedono; il resto
   // dell'oggetto (spaziatura inclusa) resta com'è.
-  const attachmentPlaceholder = /[ \t]*%%\s*(?:elenco_allegati|allegato\d+)\s*%%/gi;
-  const withoutAttachments = attachmentPlaceholder.test(subjectTemplate)
-    ? subjectTemplate.replace(attachmentPlaceholder, '').trim()
-    : subjectTemplate;
+  // Niente quantificatore di spazi nella regex (ReDoS polinomiale su input
+  // non fidato, CodeQL js/polynomial-redos): gli spazi li toglie trimEnd.
+  const parts = subjectTemplate.split(/%%(?:elenco_allegati|allegato\d+)%%/i);
+  const withoutAttachments = parts.length === 1
+    ? subjectTemplate
+    : parts.map((part, i) => (i < parts.length - 1 ? part.trimEnd() : part)).join('').trim();
   return processTemplate(withoutAttachments, recipient, '', '', 0, [], format);
 }
 
