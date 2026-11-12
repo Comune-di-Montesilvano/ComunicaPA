@@ -6,7 +6,7 @@ import type { Recipient } from '../../entities/recipient.entity.js';
 import type { Campaign } from '../../entities/campaign.entity.js';
 import { IoServicesService } from '../../io-services/io-services.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
-import { processTemplate, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper.js';
+import { processTemplate, processSubjectTemplate, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper.js';
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service.js';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { resolvePaymentData } from '../payment-config.util.js';
@@ -71,7 +71,7 @@ export class AppIoStrategy implements IChannelStrategy {
     const subjectTemplate = cfg['subject'] || campaign.name;
     const bodyTemplate = cfg['body'] || '';
 
-    const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'markdown', 'APP_IO');
+    const subject = processSubjectTemplate(subjectTemplate, recipient, 'markdown');
     const rawMarkdown = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'markdown', 'APP_IO');
     const portalUrl = await resolveCitizenPortalUrl(this.settings);
     const markdown = formatAppIoMarkdown(rawMarkdown, { portalUrl });

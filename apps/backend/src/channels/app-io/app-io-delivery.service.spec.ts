@@ -35,6 +35,7 @@ describe('AppIoDeliveryService', () => {
 
     // Mock template helper functions
     (templateHelper.processTemplate as jest.Mock).mockImplementation((content) => content);
+    (templateHelper.processSubjectTemplate as jest.Mock).mockImplementation((content) => content);
     (templateHelper.buildParallelChannelNotice as jest.Mock).mockImplementation((_recipient, channel) => `Notifica parallela via ${channel}`);
     (templateHelper.formatAppIoMarkdown as jest.Mock).mockImplementation((markdown, opts) => {
       return opts?.parallelNotice ? `${markdown}\n\n${opts.parallelNotice}` : markdown;

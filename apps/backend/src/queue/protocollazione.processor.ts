@@ -14,7 +14,7 @@ import { splitFullName } from '../channels/send/name.util.js';
 import { PROTOCOLLAZIONE_QUEUE, NOTIFICATION_JOB_SEND } from './notification-job.types.js';
 import { NotificationQueuesService } from './notification-queues.service.js';
 import { ConfigService } from '@nestjs/config';
-import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../channels/template.helper.js';
+import { processTemplate, processSubjectTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../channels/template.helper.js';
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service.js';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
@@ -119,7 +119,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
           protocolNumber: '[Numero Protocollo generato in trasmissione]',
         } as any;
 
-        const resolvedSubject = processTemplate(subjectTemplate, tempRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', effectiveChannel);
+        const resolvedSubject = processSubjectTemplate(subjectTemplate, tempRecipient, 'html');
         const resolvedBodyText = processTemplate(bodyTemplate, tempRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', effectiveChannel);
         const resolvedBodyHtml = wrapInHtmlLayout(resolvedBodyText, brandName, { logoUrl, portalUrl });
 
