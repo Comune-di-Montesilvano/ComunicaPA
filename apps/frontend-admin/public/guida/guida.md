@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-09_
+_Ultimo aggiornamento: 2026-11-12_
 
 ## Cos'è e chi lo usa
 
@@ -85,7 +85,7 @@ Dopo il lancio lo stato si segue dal dettaglio della campagna (vedi «Seguire lo
 Nell'oggetto e nel testo puoi inserire segnaposto che vengono sostituiti, destinatario per destinatario, con il suo valore. Il formato usa sempre il doppio percento: `%%nome_segnaposto%%`. Un `%` singolo nel testo (es. "sconto del 60%") resta com'è.
 
 - Sempre disponibili: `%%nominativo%%`, `%%codice_fiscale%%`.
-- Con allegati: `%%elenco_allegati%%` oppure `%%allegato1%%`, `%%allegato2%%` e così via. Se ci sono allegati, il testo deve contenere `%%elenco_allegati%%` oppure tutti i singoli `%%allegatoN%%`, altrimenti il destinatario non può scaricarli.
+- Con allegati: `%%elenco_allegati%%` oppure `%%allegato1%%`, `%%allegato2%%` e così via. Se ci sono allegati, il testo deve contenere `%%elenco_allegati%%` oppure tutti i singoli `%%allegatoN%%`, altrimenti il destinatario non può scaricarli. Questi segnaposto valgono solo nel testo: nell'oggetto il wizard non li accetta.
 - Con la protocollazione: `%%numero_protocollo%%`.
 - Con pagoPA: numero avviso, importo e scadenza.
 - Nell'invio massivo: qualsiasi colonna del file non usata per CF, nome o email, scritta come `%%NomeColonna%%`, esattamente come nell'intestazione.
@@ -354,6 +354,7 @@ Da **Impostazioni** gli amministratori configurano server Email e PEC, App IO, S
 **Causa:** il canale ha regole proprie (vedi «Regole per canale»). Le più frequenti:
 
 - su App IO, oggetto sotto i 10 caratteri o testo sotto gli 80;
+- un segnaposto degli allegati (`%%elenco_allegati%%`, `%%allegatoN%%`) scritto nell'oggetto invece che nel testo;
 - su SEND, oggetto oltre i 134 caratteri, anche in una sola riga della colonna CSV dell'oggetto;
 - su SEND e Posta, allegato mancante;
 - testo senza `%%elenco_allegati%%` (o senza tutti gli `%%allegatoN%%`) quando la campagna ha allegati.

@@ -1092,6 +1092,7 @@ const APP_IO_MARKDOWN_MIN = 80;
 const APP_IO_MARKDOWN_MAX = 10000;
 const APP_IO_SUBJECT_MIN = 10;
 const APP_IO_SUBJECT_MAX = 120;
+const SUBJECT_ATTACHMENT_PLACEHOLDER_RE = /%%(?:elenco_allegati|allegato\d+)%%/i;
 // Limite PN su subject (HTTP 400 PN_INVALID_BODY "maximum allowed: 134").
 const SEND_SUBJECT_MAX = 134;
 
@@ -2679,6 +2680,13 @@ export function App(): React.JSX.Element {
   const wizAppIoSubjectLen = wizAppIoInvolved ? wizAppIoSubjectText.length : 0;
   const wizAppIoSubjectLenInvalid = wizAppIoInvolved
     && (wizAppIoSubjectLen < APP_IO_SUBJECT_MIN || wizAppIoSubjectLen > APP_IO_SUBJECT_MAX);
+
+  // I segnaposto allegati valgono solo nel testo: nell'oggetto il backend li
+  // toglie (processSubjectTemplate). Bug reale: "Comunicazione importante
+  // %%elenco_allegati%%" → oggetto espanso oltre 120 caratteri → HTTP 400 App IO.
+  const wizSubjectHasAttachmentPlaceholder =
+    SUBJECT_ATTACHMENT_PLACEHOLDER_RE.test(wizSubject) ||
+    (wizAppIoMode !== 'none' && wizAppIoDifferentiate && SUBJECT_ATTACHMENT_PLACEHOLDER_RE.test(wizAppIoSubjectOverride));
 
   // SEND: oggetto max 134 caratteri, sia il template unico sia la colonna
   // CSV per destinatario (righe vuote ripiegano sul template).
@@ -12237,6 +12245,7 @@ export function App(): React.JSX.Element {
                                 ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                 wizAppIoBodyLenInvalid ||
                                 wizAppIoSubjectLenInvalid ||
+                                wizSubjectHasAttachmentPlaceholder ||
                                 wizSendSubjectLenInvalid ||
                                 wizSendSubjectColumnTooLong > 0 ||
                                 wizPrimaryBodyMissingAttachmentPlaceholder ||
@@ -12287,6 +12296,12 @@ export function App(): React.JSX.Element {
                         onFocus={() => setWizLastFocusedField('subject')}
                         required
                       />
+                      {wizSubjectHasAttachmentPlaceholder && (
+                        <div className="alert alert-warning py-2 small mt-2 mb-0">
+                          <AlertTriangle className="me-1" size={16} />
+                          L'oggetto non può contenere i segnaposto degli allegati (<code>%%elenco_allegati%%</code>, <code>%%allegatoN%%</code>): vanno inseriti nel testo del messaggio.
+                        </div>
+                      )}
                       {wizChannel === 'SEND' && (
                         <div className={`form-text small ${wizSendSubjectLenInvalid ? 'text-danger' : 'text-muted'}`}>
                           {wizSubject.length}/{SEND_SUBJECT_MAX} caratteri: SEND rifiuta oggetti più lunghi. I segnaposto vengono sostituiti all'invio e possono allungarlo.
@@ -12467,6 +12482,7 @@ export function App(): React.JSX.Element {
                                   ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                   wizAppIoBodyLenInvalid ||
                                   wizAppIoSubjectLenInvalid ||
+                                  wizSubjectHasAttachmentPlaceholder ||
                                   wizSendSubjectLenInvalid ||
                                   wizSendSubjectColumnTooLong > 0 ||
                                   wizPrimaryBodyMissingAttachmentPlaceholder ||

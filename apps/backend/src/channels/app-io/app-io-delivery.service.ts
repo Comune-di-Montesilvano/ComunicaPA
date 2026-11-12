@@ -5,7 +5,7 @@ import type { ChannelLogFn } from '../channel.interface.js';
 import type { Recipient } from '../../entities/recipient.entity.js';
 import type { Campaign } from '../../entities/campaign.entity.js';
 import type { AppConfiguration } from '../../config/configuration.js';
-import { processTemplate, buildParallelChannelNotice, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper.js';
+import { processTemplate, processSubjectTemplate, buildParallelChannelNotice, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper.js';
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service.js';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
@@ -68,9 +68,9 @@ export class AppIoDeliveryService {
       const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
 
       const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
-      const processedSubject = processTemplate(
+      const processedSubject = processSubjectTemplate(
         appIoConfig.subjectOverride || (campaign.channelConfig?.['subject'] as string) || campaign.name,
-        recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'APP_IO',
+        recipient, 'html',
       );
       const rawMarkdown = processTemplate(
         appIoConfig.bodyOverride || (campaign.channelConfig?.['body'] as string) || '',

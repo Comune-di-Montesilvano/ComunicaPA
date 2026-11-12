@@ -6,7 +6,7 @@ import type { Recipient } from '../../entities/recipient.entity.js';
 import type { Campaign } from '../../entities/campaign.entity.js';
 import * as nodemailer from 'nodemailer';
 import type { AppConfiguration } from '../../config/configuration.js';
-import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../template.helper.js';
+import { processTemplate, processSubjectTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../template.helper.js';
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service.js';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
@@ -53,7 +53,7 @@ export class EmailStrategy implements IChannelStrategy {
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
     // Process templates
-    const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'EMAIL');
+    const subject = processSubjectTemplate(subjectTemplate, recipient, 'html');
     const bodyText = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'EMAIL');
     const bodyHtml = wrapInHtmlLayout(bodyText, brandName, { logoUrl, portalUrl });
 

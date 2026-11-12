@@ -1,4 +1,4 @@
-import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, buildParallelChannelNotice, appendAppIoPortalFooter, formatAppIoMarkdown } from './template.helper.js';
+import { processTemplate, processSubjectTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, buildParallelChannelNotice, appendAppIoPortalFooter, formatAppIoMarkdown } from './template.helper.js';
 import type { Recipient } from '../entities/recipient.entity.js';
 
 const baseRecipient = {
@@ -322,5 +322,28 @@ describe('hasValidAttachmentPlaceholders', () => {
 
   it('non è valido se il body non contiene né elenco né singoli', () => {
     expect(hasValidAttachmentPlaceholders('Gentile %%nominativo%%, saluti.', 1)).toBe(false);
+  });
+});
+
+describe('processSubjectTemplate — oggetto senza link agli allegati', () => {
+  it('toglie %%elenco_allegati%% dall\'oggetto invece di espanderlo in link (bug reale: HTTP 400 App IO, oggetto > 120 caratteri)', () => {
+    const result = processSubjectTemplate('Comunicazione importante %%elenco_allegati%%', baseRecipient, 'markdown');
+    expect(result).toBe('Comunicazione importante');
+  });
+
+  it('toglie anche i singoli %%allegatoN%% e non lascia spazi doppi', () => {
+    const result = processSubjectTemplate('Avviso %%allegato1%% TARI %%Allegato2%%', baseRecipient, 'html');
+    expect(result).toBe('Avviso TARI');
+  });
+
+  it('continua a sostituire gli altri segnaposto', () => {
+    const result = processSubjectTemplate('Avviso per %%nominativo%% %%elenco_allegati%%', baseRecipient, 'html');
+    expect(result).toBe('Avviso per Mario Rossi');
+  });
+
+  it('nessun link di download anche con allegato legacy in extraData', () => {
+    const recipient = { ...baseRecipient, extraData: { file: 'doc.pdf' } } as unknown as Recipient;
+    const result = processSubjectTemplate('Avviso %%allegato1%%', recipient, 'markdown');
+    expect(result).toBe('Avviso');
   });
 });

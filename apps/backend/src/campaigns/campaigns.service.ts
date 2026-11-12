@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
-import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, resolveCitizenPortalUrl, buildParallelChannelNotice, formatAppIoMarkdown } from '../channels/template.helper.js';
+import { processTemplate, processSubjectTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, resolveCitizenPortalUrl, buildParallelChannelNotice, formatAppIoMarkdown } from '../channels/template.helper.js';
 import { getEffectiveRetentionDays } from './retention.util.js';
 import { getUploadsDir, getUnsignedBackupDir } from '../attachments/attachment-paths.js';
 import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
@@ -431,7 +431,7 @@ export class CampaignsService {
     const resolvedFormat: 'html' | 'markdown' = format ?? (channelType === 'APP_IO' ? 'markdown' : 'html');
     const linkTag = linkChannelTag ?? channelType;
 
-    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview, redactDownloadLinks);
+    const subject = processSubjectTemplate(subjectTemplate, recipientLike, resolvedFormat);
     const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview, redactDownloadLinks);
 
     const portalUrl = await resolveCitizenPortalUrl(this.settings);

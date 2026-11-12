@@ -206,6 +206,34 @@ export function processTemplate(
 }
 
 /**
+ * Oggetto del messaggio: stessi segnaposto del corpo, MAI i link agli
+ * allegati. `%%elenco_allegati%%`/`%%allegatoN%%` vengono tolti prima della
+ * sostituzione — un oggetto non può contenere un link di download (URL
+ * firmato ~200 caratteri, tabella HTML in Email/PEC).
+ *
+ * Bug reale: oggetto "Comunicazione importante %%elenco_allegati%%" su una
+ * campagna App IO → espanso in "- **Allegato 1**: [Scarica](https://…)" →
+ * PagoPA risponde HTTP 400 "root.content.subject is not a valid [string of
+ * length >= 10 and < 121]". Il wizard contava la lunghezza del template
+ * grezzo (45 caratteri), quindi lasciava passare.
+ */
+export function processSubjectTemplate(
+  subjectTemplate: string,
+  recipient: Recipient,
+  format: 'html' | 'markdown' = 'html',
+): string {
+  // Via il segnaposto insieme agli spazi che lo precedono; il resto
+  // dell'oggetto (spaziatura inclusa) resta com'è.
+  // Niente quantificatore di spazi nella regex (ReDoS polinomiale su input
+  // non fidato, CodeQL js/polynomial-redos): gli spazi li toglie trimEnd.
+  const parts = subjectTemplate.split(/%%(?:elenco_allegati|allegato\d+)%%/i);
+  const withoutAttachments = parts.length === 1
+    ? subjectTemplate
+    : parts.map((part, i) => (i < parts.length - 1 ? part.trimEnd() : part)).join('').trim();
+  return processTemplate(withoutAttachments, recipient, '', '', 0, [], format);
+}
+
+/**
  * Verifica che `body` referenzi correttamente gli allegati configurati:
  * valido se contiene %%elenco_allegati%% OPPURE tutti gli %%allegatoN%%
  * da 1 a `count` — un sottoinsieme di singoli non basta. `count === 0`
