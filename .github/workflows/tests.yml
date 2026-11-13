@@ -125,19 +125,54 @@ jobs:
             python -m unittest discover -s /repo/scripts/security/test -p "test_*.py"
           '
 
+  # Immagini postgres/redis (con digest) lette da docker-compose.yml, unica fonte: un bump
+  # Dependabot del compose arriva anche ai service di integration-tests senza toccare questo file.
+  images:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      postgres: ${{ steps.images.outputs.postgres }}
+      redis: ${{ steps.images.outputs.redis }}
+    steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Una sola riga image: per immagine, sempre fissata per digest: altrimenti errore.
+      - name: Immagini da docker-compose.yml
+        id: images
+        run: |
+          for img in postgres redis; do
+            refs=$(sed -nE "s/^[[:space:]]*image:[[:space:]]*[\"']?(${img}:[^\"'[:space:]]+)[\"']?[[:space:]]*$/\1/p" docker-compose.yml | sort -u)
+            if [ "$(printf '%s' "$refs" | grep -c .)" != 1 ] || ! printf '%s' "$refs" | grep -qE '@sha256:[0-9a-f]{64}$'; then
+              echo "::error::docker-compose.yml: serve una sola immagine ${img} fissata per digest (trovato: '${refs}')"
+              exit 1
+            fi
+            echo "${img}=${refs}" >> "$GITHUB_OUTPUT"
+          done
+
   # Test di integrazione su Postgres e Redis veri (*.integration.spec.ts, *.parity.spec.ts e
   # lo spec del globalSetup): job separato perche' i service container partono per tutto il
   # job a prescindere dagli if degli step, e su run-tests rallenterebbero le PR.
   # Solo in merge queue: sulla PR il job risulta saltato, che per un required check vale verde.
   integration-tests:
+    needs: images
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # Stesse immagini e digest di docker-compose.yml (lo step "Digest service" lo verifica).
+    # Stesse immagini e digest di docker-compose.yml (job images).
     services:
       postgres:
-        image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+        image: ${{ needs.images.outputs.postgres }}
         env:
           POSTGRES_USER: comunicapa
           POSTGRES_PASSWORD: comunicapa
@@ -150,7 +185,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       redis:
-        image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
+        image: ${{ needs.images.outputs.redis }}
         ports:
           - 6379:6379
         options: >-
@@ -176,22 +211,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      # Un bump di postgres/redis in docker-compose.yml (Dependabot) va riportato nei service
-      # qui sopra: i test devono girare sulle stesse immagini della produzione.
-      - name: Digest service uguali a docker-compose.yml
-        run: |
-          fail=0
-          for img in postgres redis; do
-            compose=$(grep -oE "image: ${img}:[^[:space:]]+@sha256:[0-9a-f]{64}" docker-compose.yml | sort -u || true)
-            ci=$(grep -oE "image: ${img}:[^[:space:]]+@sha256:[0-9a-f]{64}" .github/workflows/tests.yml | sort -u || true)
-            if [ -z "$compose" ] || [ -z "$ci" ] || [ "$compose" != "$ci" ]; then
-              echo "::error::Immagine ${img} diversa tra docker-compose.yml e tests.yml"
-              diff <(echo "$compose") <(echo "$ci") || true
-              fail=1
-            fi
-          done
-          exit $fail
 
       # Versione di pnpm dal campo packageManager di package.json (unica fonte, la stessa
       # che corepack installa nei Dockerfile).
