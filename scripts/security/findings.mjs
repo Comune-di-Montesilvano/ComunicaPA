@@ -116,7 +116,8 @@ const ids = (f) => new Set([f.id, ...f.aliases]);
 export function diffFindings(head, base) {
   return head.filter((h) => {
     const hi = ids(h);
-    return !base.some((b) => b.ecosystem === h.ecosystem && b.pkg === h.pkg && [...ids(b)].some((i) => hi.has(i)));
+    return !base.some((b) => b.ecosystem === h.ecosystem && (b.dir ?? '.') === (h.dir ?? '.') && b.pkg === h.pkg
+      && [...ids(b)].some((i) => hi.has(i)));
   });
 }
 
