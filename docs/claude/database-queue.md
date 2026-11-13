@@ -61,10 +61,42 @@ yes` sul servizio in `docker-compose.yml` — persiste ogni scrittura.
 nuovo valore enum Postgres: produce un diff invasivo (rename tipo esistente →
 crea nuovo tipo → `ALTER COLUMN ... USING ... ::testo::nuovo_tipo` → drop/ricrea
 eventuali FK coinvolte). Per aggiungere un valore enum, scrivi la migration a
-mano con `ALTER TYPE "public"."<tabella>_status_enum" ADD VALUE '<valore>'`
-(una query per tipo coinvolto), `down()` no-op documentato (Postgres non ha
-`DROP VALUE`). Verifica eseguendo l'intera catena di migration su un DB
-temporaneo pulito, non fidandoti dell'output grezzo del generatore.
+mano con `ALTER TYPE "public"."<tabella>_status_enum" ADD VALUE IF NOT EXISTS '<valore>'`
+(una query per tipo coinvolto; `IF NOT EXISTS` per le nuove, le 3 storiche
+non lo hanno), `down()` no-op documentato (Postgres non ha `DROP VALUE`) e
+`static readonly irreversible = true` sulla classe. Verifica eseguendo
+l'intera catena di migration su un DB temporaneo pulito, non fidandoti
+dell'output grezzo del generatore.
+
+## Test delle migration — `migrations.integration.spec.ts`
+
+`apps/backend/src/database/migrations.integration.spec.ts` (gira se c'è
+`DATABASE_URL`: container dev e job CI `integration-tests`) crea un DB
+temporaneo `migr_<random>` (helper `createTempDatabase` in
+`vitest.global-setup.ts`, mai il DB di `DATABASE_URL`) e controlla:
+
+- tutte le `MIGRATIONS` girano da zero;
+- **scarto schema/entity congelato**: le `upQueries` di
+  `createSchemaBuilder().log()` (cosa farebbe `synchronize` sopra le
+  migration) devono coincidere con `KNOWN_DRIFT` nello spec. Entity cambiata
+  senza migration (o viceversa) → test rosso con la query nel diff: scrivere
+  la migration. Una voce di `KNOWN_DRIFT` che sparisce (es. aggiunto
+  l'`@Index` mancante) → test rosso: toglierla dalla lista. Mai aggiungere
+  voci per far passare una modifica nuova, salvo scarto voluto e commentato;
+- **reversibilità dell'ultima migration**: `undoLastMigration()` +
+  `runMigrations()`, scarto invariato. Saltato se l'ultima ha
+  `static readonly irreversible = true` — da mettere su ogni migration con
+  `down()` no-op o che non ripristina lo schema (oggi: `AddCancelledStatus`,
+  `AddCheckingInadStatus`, `AddPendingReviewStatus`,
+  `CreateDomicileVerificationJobs`, `RemoveInipecSettings`).
+
+```bash
+docker compose exec backend node_modules/.bin/vitest run migrations.integration
+```
+
+`vitest.global-setup.ts` sta fuori da `src/`: non è nel bind mount, dopo
+averlo modificato serve `docker compose build backend` (o `docker cp` nel
+container per una prova).
 
 ## TypeORM v1 — select/relations vogliono forma oggetto, non più string[]
 

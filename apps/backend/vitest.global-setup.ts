@@ -1,6 +1,39 @@
 import 'reflect-metadata';
+import { randomBytes } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { ENTITIES, MIGRATIONS } from './src/database/schema.list.js';
+
+/**
+ * Crea un database vuoto `<prefix>_<random>` sullo stesso server di
+ * `adminUrl` (mai toccato: serve solo per CREATE/DROP DATABASE) e ne
+ * ritorna l'URL con la funzione che lo droppa. Per i test di integrazione
+ * che devono partire da zero senza pestarsi i piedi con maxForks.
+ */
+export async function createTempDatabase(
+  adminUrl: string,
+  prefix: string,
+): Promise<{ url: string; drop: () => Promise<void> }> {
+  const name = `${prefix}_${randomBytes(6).toString('hex')}`;
+  const admin = await new DataSource({ type: 'postgres', url: adminUrl }).initialize();
+  try {
+    await admin.query(`CREATE DATABASE ${name}`);
+  } catch (err) {
+    await admin.destroy();
+    throw err;
+  }
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  return {
+    url: url.toString(),
+    drop: async () => {
+      try {
+        await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      } finally {
+        await admin.destroy();
+      }
+    },
+  };
+}
 
 /**
  * Esegue tutte le migration (stessa lista dell'app) sul DB indicato e

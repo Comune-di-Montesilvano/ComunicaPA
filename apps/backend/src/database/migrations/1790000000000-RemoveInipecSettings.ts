@@ -4,6 +4,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 // inipec.* non esistono più nel registry. Le righe residue sarebbero comunque
 // ignorate in lettura (getAllMasked itera il registry), le togliamo per pulizia.
 export class RemoveInipecSettings1790000000000 implements MigrationInterface {
+  // down() no-op: le righe inipec.* cancellate non si ripristinano.
+  static readonly irreversible = true;
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DELETE FROM "app_settings" WHERE "key" LIKE 'inipec.%'`);
   }

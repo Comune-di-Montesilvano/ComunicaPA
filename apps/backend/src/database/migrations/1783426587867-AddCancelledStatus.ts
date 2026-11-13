@@ -1,6 +1,8 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class AddCancelledStatus1783426587867 implements MigrationInterface {
+    // ALTER TYPE ADD VALUE: Postgres non rimuove valori enum, down() no-op.
+    static readonly irreversible = true;
     name = 'AddCancelledStatus1783426587867'
 
     public async up(queryRunner: QueryRunner): Promise<void> {

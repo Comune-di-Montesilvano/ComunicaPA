@@ -1,6 +1,8 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class AddPendingReviewStatus1789700000000 implements MigrationInterface {
+    // ALTER TYPE ADD VALUE: Postgres non rimuove valori enum, down() no-op.
+    static readonly irreversible = true;
     name = 'AddPendingReviewStatus1789700000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
