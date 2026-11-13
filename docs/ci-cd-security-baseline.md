@@ -77,7 +77,7 @@ Non disponibili su ComunicaPA: secret scanning `non_provider_patterns` e `validi
 |---|---|---|
 | `deletion`, `non_fast_forward` | — | main non si cancella né si riscrive |
 | `pull_request` | approvazioni richieste 0 (unico maintainer), thread risolti obbligatori, solo squash | nessun push diretto |
-| `required_status_checks` | `run-tests`, `pdf-extractor-tests`, `dependency-review`, `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` ×4; non strict | la coda rimette già la PR in pari |
+| `required_status_checks` | `run-tests`, `pdf-extractor-tests`, `integration-tests`, `dependency-review`, `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` ×4; non strict | la coda rimette già la PR in pari |
 | `merge_queue` | squash, ALLGREEN, build/merge fino a 5, timeout check 60 min | ogni commit su main è testato così com'è |
 | `code_scanning` | CodeQL: alert `errors`, sicurezza `high_or_higher` | una PR non introduce alert nuovi |
 | bypass | **nessuno** (admin compresi) | il cancello vale per tutti |
@@ -141,7 +141,8 @@ PR ──► check leggeri (lint, type-check, dependency-review, pnpm-audit, tri
         │        (gate preso dalla base); segreti e misconfig sempre assoluti
         ▼
 merge queue ──► check completi sul commit che verrà unito
-        │        (build, test, pytest, build immagini + Trivy differenziale su latest)
+        │        (build, test, test di integrazione su Postgres/Redis, pytest,
+        │         build immagini + Trivy differenziale su latest)
         ▼
 main ──► security.yml (giornaliero, assoluto) · CodeQL · Scorecard · security-alerts
         │   └─ fallito → security-autofix (anche giornaliero 02:30): PR con le
@@ -169,7 +170,7 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 
 | Workflow | Trigger | Ruolo |
 |---|---|---|
-| `tests.yml` | PR, merge queue | `run-tests` (sulla PR: test degli script di sicurezza, install, lint, type-check; in coda + build e test), `pdf-extractor-tests` (solo in coda: pytest, test di `pip_fix.py`) |
+| `tests.yml` | PR, merge queue | `run-tests` (sulla PR: test degli script di sicurezza, install, lint, type-check; in coda + build e test), `pdf-extractor-tests` (solo in coda: pytest, test di `pip_fix.py`), `images` + `integration-tests` (solo in coda: `images` legge da `docker-compose.yml`, unica fonte, le immagini postgres/redis con digest e fallisce se mancano o non sono fissate per digest; `integration-tests` le usa come `services:`, così un bump Dependabot del compose arriva anche qui; required check resta solo `integration-tests`: gira con `!cancelled()` anche se `images` fallisce e in quel caso fallisce al primo step, invece di risultare saltato (che per un required check varrebbe verde); globalSetup Vitest che esegue le migration con `TEST_DB_MIGRATE=1`; spec `*.integration.spec.ts`/`*.parity.spec.ts` in UTC e in Europe/Rome) |
 | `security.yml` | PR, coda, push main, giornaliero 05:00 | `dependency-review` (solo PR, HIGH+, rispetta `ignoreGhsas`), `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` (sulla PR job verde senza scansione, per step; scansione in coda/main/giornaliero); vulnerabilità differenziali su PR e coda (`trivy-image` in coda: rispetto alla `latest` pubblicata), assolute su main e nel giornaliero |
 | `security-autofix.yml` | giornaliero 02:30, Sicurezza fallita su main, dispatch (`force`, `dry_run`) | corregge da solo le HIGH/CRITICAL con versione corretta (vedi §5 "Correzioni autonome") |
 | CodeQL (default setup) | PR, main, settimanale | SAST, suite extended |

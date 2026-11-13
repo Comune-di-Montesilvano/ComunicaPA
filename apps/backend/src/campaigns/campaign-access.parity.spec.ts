@@ -5,8 +5,9 @@ import { canViewCampaign, visibleCampaignSql } from './campaign-access.util.js';
 
 /**
  * Parità canViewCampaign (TS) / visibleCampaignSql (SQL) su Postgres vero:
- * fixture dentro BEGIN … ROLLBACK, niente resta nel DB. La CI non ha
- * Postgres e la salta; in dev: vitest run campaign-access.parity.
+ * fixture dentro BEGIN … ROLLBACK, niente resta nel DB. In CI gira nel
+ * job integration-tests (run-tests non ha DB e la salta); in dev:
+ * vitest run campaign-access.parity.
  */
 const FIXTURES = [
   { key: 'bozza-rossi', createdBy: 'rossi', signerUsername: null, status: CampaignStatus.DRAFT, isTest: false },

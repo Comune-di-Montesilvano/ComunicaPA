@@ -16,6 +16,9 @@ export default defineConfig({
     include: ['**/*.spec.ts'],
     environment: 'node',
     setupFiles: ['../vitest.setup.ts'],
+    // Migra il DB di test prima della suite, solo con TEST_DB_MIGRATE=1
+    // (job CI integration-tests): mai sul DB dev creato da synchronize.
+    globalSetup: ['../vitest.global-setup.ts'],
     // Stesso vincolo gia' noto per jest (--maxWorkers=2, vedi CLAUDE.md):
     // troppi worker paralleli saturano CPU/RAM e gli hook
     // Test.createTestingModule vanno in timeout non per un bug reale ma

@@ -9,8 +9,11 @@
     // implicito di cui gode il tsconfig.json prod (via reference transitivi
     // di altri @types), non necessario finora ma reso esplicito per non
     // dipendere da quella catena solo per questo progetto di type-check.
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    // Lo spec del globalSetup Vitest importa vitest.global-setup.ts (fuori
+    // da src/): solo type-check, niente emit, quindi rootDir piu' largo.
+    "rootDir": "."
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "vitest.global-setup.ts"],
   "exclude": ["node_modules", "dist"]
 }
