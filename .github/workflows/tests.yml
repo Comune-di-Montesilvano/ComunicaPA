@@ -78,6 +78,9 @@ jobs:
       - name: Type-check backend spec files
         run: pnpm --filter backend exec tsc -p tsconfig.spec.json --noEmit
 
+      - name: Type-check frontend-admin test files
+        run: pnpm --filter frontend-admin exec tsc -p tsconfig.test.json --noEmit
+
       # Solo in merge queue: sulla PR lo step risulta saltato e il check resta verde.
       - name: Build (stesso comando usato nelle immagini Docker)
         if: github.event_name != 'pull_request'
