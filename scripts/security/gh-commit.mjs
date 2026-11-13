@@ -4,6 +4,7 @@
 // firma nel runner). Crea o riallinea il branch su `--base` prima del commit.
 //
 //   GH_TOKEN=... node scripts/security/gh-commit.mjs --repo owner/name --branch b --base <sha> --message "..."
+//        [--allow <percorso> ...]
 // Stampa lo SHA del commit.
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -50,10 +51,13 @@ async function gh(token, method, url, body) {
 async function main() {
   const { values: a } = parseArgs({ options: {
     repo: { type: 'string' }, branch: { type: 'string' }, base: { type: 'string' }, message: { type: 'string' },
+    // Allowlist esplicita al posto di allowedFiles (es. refresh dei lockfile, anche di progetti
+    // che l'autofix non tocca). Ripetibile, stessa sintassi (`*` = un segmento).
+    allow: { type: 'string', multiple: true, default: [] },
   } });
   const token = process.env.GH_TOKEN;
   const status = execFileSync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { encoding: 'utf8' });
-  const fileChanges = buildFileChanges(status, (p) => readFileSync(p));
+  const fileChanges = buildFileChanges(status, (p) => readFileSync(p), a.allow.length ? a.allow : undefined);
   if (!fileChanges.additions.length && !fileChanges.deletions.length) throw new Error('nessuna modifica da committare');
 
   // Branch sul commit base (creato o riallineato con force: è un branch del solo bot).
