@@ -6,12 +6,13 @@
 //   node scripts/security/base-image.mjs --images node:26-alpine,python:3.14-slim --out result.json
 //        [--force] [--dry-run]
 // Risultato per immagine: { image, tag, action: fix|pending|unfixable, digest?, eta?, reason?, files? }
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { MIN_AGE_HOURS } from './choose-version.mjs';
+import { loadConfig, allDockerfiles } from './config.mjs';
 
 const FROM_RE = /^(\s*FROM\s+(?:--\S+\s+)*)(\S+?):([^\s@:/]+)@(sha256:[a-f0-9]{64})(.*)$/i;
 
@@ -99,18 +100,9 @@ function describe(ref) {
   };
 }
 
-export function dockerfiles(root = '.') {
-  const out = [];
-  for (const base of ['apps', 'services']) {
-    if (!existsSync(join(root, base))) continue;
-    for (const d of readdirSync(join(root, base))) {
-      for (const f of ['Dockerfile', 'Dockerfile.dev']) {
-        const p = join(root, base, d, f);
-        if (existsSync(p)) out.push(p);
-      }
-    }
-  }
-  return out;
+/** Dockerfile della config (produzione + extraDockerfiles) presenti sotto `root`. */
+export function dockerfiles(root = '.', config = loadConfig()) {
+  return allDockerfiles(config).map((p) => join(root, p)).filter((p) => existsSync(p));
 }
 
 /** image:tag dell'ultimo stage (immagine di runtime) del Dockerfile di produzione di un'app. */
@@ -120,8 +112,8 @@ export function runtimeImage(dockerfileText) {
 }
 
 /** Controlla (e se fix e non dryRun applica) il digest più recente di ogni image:tag. */
-export function checkImages(refs, { root = '.', force = false, dryRun = false, now = new Date(), skip = {} } = {}) {
-  const files = dockerfiles(root);
+export function checkImages(refs, { root = '.', config, force = false, dryRun = false, now = new Date(), skip = {} } = {}) {
+  const files = dockerfiles(root, config);
   const results = [];
   for (const ref of refs) {
     const i = ref.lastIndexOf(':');

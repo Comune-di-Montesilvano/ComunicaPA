@@ -9,21 +9,16 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { loadConfig, allowedMatcher } from './config.mjs';
 
-// Solo questi file possono finire in un commit del bot (merge automatico, nessuna revisione
-// umana): un tool di terze parti eseguito durante la correzione (pip-tools, sdist, pnpm) che
-// scrivesse altrove — script dei gate, workflow, sorgenti — fa fallire il commit.
-const ALLOWED = [
-  /^pnpm-lock\.yaml$/, /^pnpm-workspace\.yaml$/,
-  /^(?:(?:apps|packages)\/[^/]+\/)?package\.json$/,
-  /^services\/[^/]+\/requirements(?:-dev)?\.(?:in|txt)$/,
-  /^(?:apps|services)\/[^/]+\/Dockerfile(?:\.dev)?$/,
-];
-
-export const isAllowedPath = (p) => ALLOWED.some((re) => re.test(p));
+// Solo i file di `allowedFiles` (autofix.config.json) possono finire in un commit del bot
+// (merge automatico, nessuna revisione umana): un tool di terze parti eseguito durante la
+// correzione (pip-tools, sdist, pnpm) che scrivesse altrove — script dei gate, workflow,
+// sorgenti — fa fallire il commit.
 
 /** Da `git status --porcelain=v1 -z` alle fileChanges di createCommitOnBranch. */
-export function buildFileChanges(statusZ, readFile) {
+export function buildFileChanges(statusZ, readFile, allowedFiles = loadConfig().allowedFiles) {
+  const isAllowedPath = allowedMatcher(allowedFiles);
   const parts = statusZ.split('\0').filter(Boolean);
   const additions = [], deletions = [], refused = [];
   const check = (p) => { if (!isAllowedPath(p)) refused.push(p); };

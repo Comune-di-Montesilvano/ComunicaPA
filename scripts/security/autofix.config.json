@@ -1,0 +1,31 @@
+{
+  "pnpmDirs": ["."],
+  "dockerfiles": {
+    "backend": "apps/backend/Dockerfile",
+    "frontend-admin": "apps/frontend-admin/Dockerfile",
+    "frontend-citizen": "apps/frontend-citizen/Dockerfile",
+    "pdf-extractor": "services/pdf-extractor/Dockerfile"
+  },
+  "extraDockerfiles": [
+    "apps/backend/Dockerfile.dev",
+    "apps/frontend-admin/Dockerfile.dev",
+    "apps/frontend-citizen/Dockerfile.dev",
+    "services/pdf-extractor/Dockerfile.dev"
+  ],
+  "allowedFiles": [
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "package.json",
+    "apps/*/package.json",
+    "packages/*/package.json",
+    "services/*/requirements.in",
+    "services/*/requirements.txt",
+    "services/*/requirements-dev.in",
+    "services/*/requirements-dev.txt",
+    "apps/*/Dockerfile",
+    "apps/*/Dockerfile.dev",
+    "services/*/Dockerfile",
+    "services/*/Dockerfile.dev"
+  ],
+  "pip": { "dir": "services/pdf-extractor" }
+}
