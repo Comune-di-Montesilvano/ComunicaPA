@@ -124,3 +124,115 @@ jobs:
             pip install -q --no-cache-dir --require-hashes --no-deps -r /repo/services/pdf-extractor/requirements-dev.txt
             python -m unittest discover -s /repo/scripts/security/test -p "test_*.py"
           '
+
+  # Test di integrazione su Postgres e Redis veri (*.integration.spec.ts, *.parity.spec.ts e
+  # lo spec del globalSetup): job separato perche' i service container partono per tutto il
+  # job a prescindere dagli if degli step, e su run-tests rallenterebbero le PR.
+  # Solo in merge queue: sulla PR il job risulta saltato, che per un required check vale verde.
+  integration-tests:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Stesse immagini e digest di docker-compose.yml (lo step "Digest service" lo verifica).
+    services:
+      postgres:
+        image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+        env:
+          POSTGRES_USER: comunicapa
+          POSTGRES_PASSWORD: comunicapa
+          POSTGRES_DB: comunicapa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U comunicapa -d comunicapa_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://comunicapa:comunicapa@localhost:5432/comunicapa_test
+      REDIS_URL: redis://localhost:6379
+      # Il globalSetup Vitest migra il DB solo con questa variabile (mai sul DB dev).
+      TEST_DB_MIGRATE: '1'
+
+    steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Un bump di postgres/redis in docker-compose.yml (Dependabot) va riportato nei service
+      # qui sopra: i test devono girare sulle stesse immagini della produzione.
+      - name: Digest service uguali a docker-compose.yml
+        run: |
+          fail=0
+          for img in postgres redis; do
+            compose=$(grep -oE "image: ${img}:[^[:space:]]+@sha256:[0-9a-f]{64}" docker-compose.yml | sort -u || true)
+            ci=$(grep -oE "image: ${img}:[^[:space:]]+@sha256:[0-9a-f]{64}" .github/workflows/tests.yml | sort -u || true)
+            if [ -z "$compose" ] || [ -z "$ci" ] || [ "$compose" != "$ci" ]; then
+              echo "::error::Immagine ${img} diversa tra docker-compose.yml e tests.yml"
+              diff <(echo "$compose") <(echo "$ci") || true
+              fail=1
+            fi
+          done
+          exit $fail
+
+      # Versione di pnpm dal campo packageManager di package.json (unica fonte, la stessa
+      # che corepack installa nei Dockerfile).
+      - name: Setup PNPM
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      # Major di Node dall'immagine base del backend (aggiornata da Dependabot): la CI
+      # testa sulla stessa versione che gira in produzione.
+      - name: Versione Node dall'immagine base
+        id: node
+        run: |
+          major=$(sed -nE 's/^FROM node:([0-9]+)-.*/\1/p' apps/backend/Dockerfile | head -n1)
+          [ -n "$major" ] || { echo "::error::FROM node:<major> non trovato in apps/backend/Dockerfile"; exit 1; }
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ steps.node.outputs.major }}
+          cache: 'pnpm'
+
+      # pnpm v11 blocca i lifecycle script per default (ERR_PNPM_IGNORED_BUILDS)
+      # - stesso pattern gia' in uso nei Dockerfile (vedi CLAUDE.md). esbuild
+      # (dipendenza vite) va ricostruito esplicitamente dopo l'install.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild esbuild (necessario per vite, bloccato da --ignore-scripts)
+        run: pnpm rebuild esbuild
+
+      - name: Build shared-types
+        run: pnpm --filter @comunicapa/shared-types run build
+
+      # Filtro Vitest per sottostringa del path: *.integration.spec.ts, *.parity.spec.ts e
+      # database/global-setup.spec.ts. Due fusi: CI in UTC, container dev in Europe/Rome.
+      - name: Test di integrazione (UTC)
+        env:
+          TZ: UTC
+        run: pnpm --filter backend exec vitest run integration parity global-setup
+
+      - name: Test di integrazione (Europe/Rome)
+        env:
+          TZ: Europe/Rome
+        run: pnpm --filter backend exec vitest run integration parity global-setup

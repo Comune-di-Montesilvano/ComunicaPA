@@ -7,7 +7,8 @@ import { postalLegalOutcome } from '../campaigns/postal-legal-outcome.util.js';
  * Parità regola TS (legalAttentionOf) / gemella SQL su Postgres vero: fixture
  * dentro BEGIN … ROLLBACK, niente resta nel DB. Gira solo dove c'è un DB
  * (container dev: `docker compose exec backend node_modules/.bin/vitest run
- * legal-attention.parity`); la CI non ha Postgres e la salta.
+ * legal-attention.parity`); in CI gira nel job integration-tests
+ * (run-tests non ha DB e la salta).
  */
 type Fixture = {
   key: string;
