@@ -1,6 +1,8 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class CreateDomicileVerificationJobs1789900000000 implements MigrationInterface {
+    // down() non ricrea app_io_verification_jobs/inad_verification_jobs droppate in up().
+    static readonly irreversible = true;
     name = 'CreateDomicileVerificationJobs1789900000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {

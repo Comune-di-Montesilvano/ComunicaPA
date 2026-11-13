@@ -1,7 +1,6 @@
-import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataSource } from 'typeorm';
-import setup, { migrateTestDatabase } from '../../vitest.global-setup.js';
+import setup, { createTempDatabase, migrateTestDatabase } from '../../vitest.global-setup.js';
 import { MIGRATIONS } from './schema.list.js';
 
 /**
@@ -52,20 +51,12 @@ describe('vitest.global-setup — gate TEST_DB_MIGRATE', () => {
 
 describe.skipIf(!process.env.DATABASE_URL)('migrateTestDatabase su Postgres', () => {
   it('migra un DB vuoto', async () => {
-    const name = `gs_${randomBytes(6).toString('hex')}`;
-    const admin = await new DataSource({ type: 'postgres', url: process.env.DATABASE_URL }).initialize();
+    const db = await createTempDatabase(process.env.DATABASE_URL!, 'gs');
     try {
-      await admin.query(`CREATE DATABASE ${name}`);
-      const url = new URL(process.env.DATABASE_URL!);
-      url.pathname = `/${name}`;
-      try {
-        expect(await migrateTestDatabase(url.toString())).toBe(MIGRATIONS.length);
-        expect(await migrateTestDatabase(url.toString())).toBe(0);
-      } finally {
-        await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-      }
+      expect(await migrateTestDatabase(db.url)).toBe(MIGRATIONS.length);
+      expect(await migrateTestDatabase(db.url)).toBe(0);
     } finally {
-      await admin.destroy();
+      await db.drop();
     }
   }, 60000);
 });
