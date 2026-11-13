@@ -2,34 +2,16 @@ import 'reflect-metadata';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { DataSource } from 'typeorm';
-import { AppSetting } from '../entities/app-setting.entity.js';
-import { Campaign } from '../entities/campaign.entity.js';
-import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
-import { Recipient } from '../entities/recipient.entity.js';
-import { MailServerConfig } from '../entities/mail-server-config.entity.js';
-import { IoServiceConfig } from '../entities/io-service-config.entity.js';
-import { Template } from '../entities/template.entity.js';
-import { DownloadEvent } from '../entities/download-event.entity.js';
-import { AuditLog } from '../entities/audit-log.entity.js';
-import { PostalProviderConfig } from '../entities/postal-provider-config.entity.js';
-import { DomicileVerificationJob } from '../entities/domicile-verification-job.entity.js';
-import { EnrichmentJob } from '../entities/enrichment-job.entity.js';
-import { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
-import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity.js';
-import { CampaignBulkRetryJob } from '../entities/campaign-bulk-retry-job.entity.js';
-import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
-import { NotificationReview } from '../entities/notification-review.entity.js';
-import { RemoteSignJob } from '../entities/remote-sign-job.entity.js';
+import { ENTITIES } from './schema.list.js';
 
 // DataSource per la CLI TypeORM (migration:generate / migration:run).
-// Il runtime dell'app usa database.module.ts, che condivide entity e migrations.
-// Elenco entities allineato a database.module.ts: se disallineato, migration:generate
-// può proporre DROP TABLE per le entity mancanti qui ma presenti a runtime.
+// Il runtime dell'app usa database.module.ts: entity e migration vivono in schema.list.ts
+// (se disallineate, migration:generate può proporre DROP TABLE per le entity mancanti).
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default new DataSource({
   type: 'postgres',
   url: process.env['DATABASE_URL'],
-  entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, DomicileVerificationJob, EnrichmentJob, EnrichmentAddressOverride, OperatorDirectoryEntry, CampaignBulkRetryJob, PostalPosteTracking, NotificationReview, RemoteSignJob],
+  entities: ENTITIES,
   migrations: [`${__dirname}/migrations/*.{ts,js}`],
 });

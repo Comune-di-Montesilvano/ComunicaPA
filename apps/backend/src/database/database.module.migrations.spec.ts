@@ -1,22 +1,31 @@
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
+import { ENTITIES, MIGRATIONS } from './schema.list.js';
 
-// database.module.ts elenca le migration a mano: una migration presente in
-// migrations/ ma non registrata lì non gira mai in produzione (migrationsRun),
-// mentre i test/DB temporanei che caricano la cartella con un glob passano.
-describe('database.module — registrazione migration', () => {
-  it('ogni migration in migrations/ è importata e registrata', () => {
-    const dir = join(__dirname, 'migrations');
-    const moduleSource = readFileSync(join(__dirname, 'database.module.ts'), 'utf8');
-    const migrationsArray = moduleSource.match(/migrations:\s*\[([^\]]*)\]/)?.[1] ?? '';
+// schema.list.ts elenca entity e migration a mano: una migration non registrata
+// non gira mai in produzione (migrationsRun), una entity mancante fa proporre
+// DROP TABLE a migration:generate. I test/DB temporanei che caricano la cartella
+// con un glob passerebbero comunque.
+function exportedClasses(dir: string, accept: (f: string) => boolean): string[] {
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts') && accept(f))
+    .map((f) => readFileSync(join(dir, f), 'utf8').match(/export class (\w+)/)?.[1])
+    .filter((name): name is string => !!name);
+}
 
-    const missing = readdirSync(dir)
-      .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))
-      .map((f) => readFileSync(join(dir, f), 'utf8').match(/export class (\w+)/)?.[1])
-      .filter((name): name is string => !!name)
-      .filter((name) => !new RegExp(`\\b${name}\\b`).test(migrationsArray));
+describe('schema.list — registrazione', () => {
+  it('ogni migration in migrations/ è in MIGRATIONS', () => {
+    const names = exportedClasses(join(__dirname, 'migrations'), () => true);
+    expect(names.length).toBeGreaterThan(0);
+    const registered = MIGRATIONS.map((m) => m.name);
+    expect(names.filter((n) => !registered.includes(n))).toEqual([]);
+  });
 
-    expect(missing).toEqual([]);
+  it('ogni entity in entities/ è in ENTITIES', () => {
+    const names = exportedClasses(join(__dirname, '..', 'entities'), (f) => f.endsWith('.entity.ts'));
+    expect(names.length).toBeGreaterThan(0);
+    const registered = ENTITIES.map((e) => e.name);
+    expect(names.filter((n) => !registered.includes(n))).toEqual([]);
   });
 });

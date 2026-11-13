@@ -2,7 +2,7 @@
 
 ## Migration DB
 
-Dev: `synchronize` allinea lo schema automaticamente. Prod: le migration in `apps/backend/src/database/migrations/` girano da sole all'avvio (`migrationsRun` in `database.module.ts` — vanno anche registrate lì nell'array `migrations`). Dopo aver modificato un'entity, generare la migration con un DB temporaneo:
+Dev: `synchronize` allinea lo schema automaticamente. Prod: le migration in `apps/backend/src/database/migrations/` girano da sole all'avvio (`migrationsRun` in `database.module.ts` — vanno anche registrate in `database/schema.list.ts`, array `MIGRATIONS`). Dopo aver modificato un'entity, generare la migration con un DB temporaneo:
 
 ```bash
 docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "CREATE DATABASE migration_gen;"
@@ -14,7 +14,7 @@ docker compose exec -e DATABASE_URL="postgresql://comunicapa:${PGPASS}@postgres:
 docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "DROP DATABASE migration_gen;"
 ```
 
-**Bug reale — migration scritta ma non registrata è invisibile, nessun errore.** Una migration con solo `CREATE INDEX` raw (nessun `@Index` sull'entity) dimenticata nell'array `migrations` di `database.module.ts` non produce log né eccezioni: gli indici restano assenti sia in prod (mai eseguita) sia in dev (`synchronize` sincronizza solo i metadata delle entity, non SQL raw di una migration) — sintomo osservato solo indirettamente come lentezza su una query, non un errore. Dopo aver scritto una migration, verificare SEMPRE che la classe sia sia importata sia presente nell'array `migrations` (`grep NomeMigration database.module.ts`). Se serve testarla subito in dev senza aspettare un redeploy prod, applicare a mano l'SQL della migration sul DB dev (`docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "..."`, idempotente con `IF NOT EXISTS`).
+**Bug reale — migration scritta ma non registrata è invisibile, nessun errore.** Una migration con solo `CREATE INDEX` raw (nessun `@Index` sull'entity) dimenticata nell'array `MIGRATIONS` di `database/schema.list.ts` non produce log né eccezioni: gli indici restano assenti sia in prod (mai eseguita) sia in dev (`synchronize` sincronizza solo i metadata delle entity, non SQL raw di una migration) — sintomo osservato solo indirettamente come lentezza su una query, non un errore. Dopo aver scritto una migration, verificare SEMPRE che la classe sia sia importata sia presente nell'array `MIGRATIONS` (`grep NomeMigration schema.list.ts`; lo spec `database.module.migrations.spec.ts` lo verifica). Se serve testarla subito in dev senza aspettare un redeploy prod, applicare a mano l'SQL della migration sul DB dev (`docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "..."`, idempotente con `IF NOT EXISTS`).
 
 **`repository.save({ id: 'stringa-fissa', ... })` su una colonna
 `@PrimaryGeneratedColumn('uuid')` fallisce sempre** ("invalid input
@@ -28,8 +28,8 @@ un id fisso: lasciarlo autogenerato e leggere sempre `ORDER BY
 <colonna-timestamp> DESC LIMIT 1`.
 
 **Stessa cosa vale per una entity NUOVA**: va aggiunta sia all'array
-`entities:` sia (se introduce una migration) all'array `migrations:` di
-`database.module.ts` — mancare `entities:` fa fallire silenziosamente
+`ENTITIES` sia (se introduce una migration) all'array `MIGRATIONS` di
+`database/schema.list.ts` — mancare `ENTITIES` fa fallire silenziosamente
 l'injection del Repository per quella entity, nessun errore a compile-time.
 
 ## Upgrade major di Postgres — mai solo il bump dell'immagine, serve una migrazione automatica nel compose
