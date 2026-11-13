@@ -165,7 +165,9 @@ jobs:
   # Solo in merge queue: sulla PR il job risulta saltato, che per un required check vale verde.
   integration-tests:
     needs: images
-    if: github.event_name != 'pull_request'
+    # !cancelled(): se images fallisce il job parte lo stesso e fallisce al primo step, invece
+    # di risultare saltato (un required check saltato vale verde e images non e' required).
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -201,6 +203,16 @@ jobs:
       TEST_DB_MIGRATE: '1'
 
     steps:
+      # Con images fallito le immagini dei service sono vuote (service non avviati): il job
+      # deve fallire qui, non proseguire ne' risultare saltato.
+      - name: Immagini dei service disponibili
+        if: needs.images.result != 'success'
+        env:
+          IMAGES_RESULT: ${{ needs.images.result }}
+        run: |
+          echo "::error::Job images non riuscito (${IMAGES_RESULT}): immagini postgres/redis non lette da docker-compose.yml"
+          exit 1
+
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
       - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
