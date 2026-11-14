@@ -28,7 +28,7 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { getUnsignedBackupDir, getUploadsDir } from '../attachments/attachment-paths.js';
-import { CHUNK_ROOT, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { CHUNK_ROOT, initChunkedUpload, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
 
 /**
  * Giro HTTP reale (supertest) su SignedAttachmentsController: controller,
@@ -400,10 +400,10 @@ describe('SignedAttachmentsController (integration: path traversal, limiti uploa
     });
 
     it('sessione creata prima del campo owner (meta senza owner) → accettata', async () => {
-      const uploadId = await upload(BOZZA_A, 'avviso.pdf', Buffer.from('%PDF-1.4 firmato-legacy'));
-      const metaPath = join(safeChunkUploadDir(uploadId)!, 'meta.json');
-      const { owner: _owner, ...legacy } = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-      fs.writeFileSync(metaPath, JSON.stringify(legacy));
+      // Sessione aperta senza owner (come prima del campo): initChunkedUpload senza il terzo argomento.
+      const uploadId = initChunkedUpload('avviso.pdf', 1);
+      createdUploads.push(uploadId);
+      await request(server()).post(`${base(BOZZA_A)}/chunk/${uploadId}/0`).set(ADMIN).attach('chunk', Buffer.from('%PDF-1.4 firmato-legacy'), 'blob').expect(200);
 
       await request(server()).post(`${base(BOZZA_A)}/complete/${uploadId}`).set(ADMIN).expect(200, { replaced: 1, rejected: [] });
     });

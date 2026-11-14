@@ -65,9 +65,8 @@ describe('sessione di upload legata a chi la apre', () => {
   });
 
   it('cartella senza meta.json (sessione incompleta) → not-found', () => {
-    const id = randomUUID();
-    created.push(id);
-    fs.mkdirSync(chunkUploadDir(id), { recursive: true });
+    const id = init(OWNER_A);
+    fs.rmSync(join(chunkUploadDir(id), 'meta.json'));
     expect(chunkedUploadAccess(id, OWNER_A)).toBe('not-found');
   });
 
