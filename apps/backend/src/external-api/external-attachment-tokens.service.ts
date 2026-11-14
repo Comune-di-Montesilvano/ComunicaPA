@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 import { randomUUID } from 'crypto';
 import { apiClientUploadOwner, assembleChunkedUpload, assertChunkedUploadAccess, cleanupChunkedUpload } from '../campaigns/chunked-upload.util.js';
 import { getAttachmentsRoot } from '../attachments/attachment-paths.js';
@@ -28,7 +28,12 @@ export class ExternalAttachmentTokensService {
       const token = randomUUID();
       const dir = this.tokenDir(clientId, token);
       fs.mkdirSync(dir, { recursive: true });
-      fs.copyFileSync(path, join(dir, filename));
+      // filename è già un basename (initChunkedUpload): la destinazione resta in dir.
+      const target = resolve(dir, filename);
+      if (!target.startsWith(resolve(dir) + sep)) {
+        throw new Error('Nome file allegato non valido');
+      }
+      fs.copyFileSync(path, target);
       const meta: TokenMeta = { filename, createdAt: new Date().toISOString(), consumed: false };
       fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
       return { token };

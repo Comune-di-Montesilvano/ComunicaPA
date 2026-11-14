@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { basename, join } from 'path';
+import { basename, join, resolve, sep } from 'path';
 import { randomUUID } from 'crypto';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { diskStorage, type StorageEngine } from 'multer';
@@ -81,7 +81,13 @@ export function chunkUploadDir(uploadId: string): string {
     // Nest è un 400, mai un 500.
     throw new BadRequestException('uploadId non valido: atteso un UUID');
   }
-  return join(CHUNK_ROOT, uploadId);
+  // Seconda barriera esplicita (oltre al pattern UUID): la directory risolta
+  // deve stare sotto CHUNK_ROOT.
+  const dir = resolve(CHUNK_ROOT, uploadId);
+  if (!dir.startsWith(CHUNK_ROOT + sep)) {
+    throw new BadRequestException('uploadId non valido: atteso un UUID');
+  }
+  return dir;
 }
 
 export function chunkPartPath(uploadId: string, index: number): string {
