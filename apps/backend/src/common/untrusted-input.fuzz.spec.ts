@@ -1,10 +1,12 @@
 import fc from 'fast-check';
+import { readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { getAttachmentsRoot, getUploadsDir, safeGetUploadsDir } from '../attachments/attachment-paths.js';
 import { resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { escapeLdapFilterValue } from '../auth/ldap/ldap.service.js';
 import { escapeCsvField } from '../campaigns/csv.util.js';
-import { isValidChunkIndex, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { cleanupChunkedUpload, initChunkedUpload, isValidChunkIndex, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { flattenZipEntryName } from '../campaigns/zip-extract.util.js';
 import { SEND_TIMELINE_STRIPPED_KEYS, stripSendPii } from '../channels/send/send-status-history.util.js';
 import type { Recipient } from '../entities/recipient.entity.js';
 import { safeAttachmentPath } from '../remote-sign/attachment-writer.util.js';
@@ -120,6 +122,34 @@ describe('fuzz: path da input non fidato', () => {
         if (dir !== null) expect(dirname(dir)).toBe('/tmp/comunicapa-uploads/chunked');
       }),
       RUNS,
+    );
+  });
+
+  it('flattenZipEntryName: una voce .pdf (unica estratta) resta un file dentro la cartella di estrazione', () => {
+    fc.assert(
+      fc.property(tricky, (entryName) => {
+        const name = flattenZipEntryName(`${entryName}.pdf`);
+        expect(name).not.toMatch(/[/\\]/);
+        expect(dirname(resolve(join('/estrazione', name)))).toBe('/estrazione');
+      }),
+      RUNS,
+    );
+  });
+
+  // Scrive su disco (meta.json per sessione): meno run, sessione rimossa subito.
+  it('initChunkedUpload: il filename salvato resta un file dentro la cartella della sessione', () => {
+    fc.assert(
+      fc.property(tricky, (filename) => {
+        const uploadId = initChunkedUpload(filename, 1);
+        try {
+          const dir = safeChunkUploadDir(uploadId)!;
+          const meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8')) as { filename: string };
+          expect(dirname(resolve(join(dir, `assembled-${meta.filename}`)))).toBe(dir);
+        } finally {
+          cleanupChunkedUpload(uploadId);
+        }
+      }),
+      { numRuns: 200 },
     );
   });
 
