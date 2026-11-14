@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -18,6 +19,15 @@ export enum AttemptStatus {
 }
 
 @Entity('notification_attempts')
+// Indici di AddRecipientAndAttemptIndexes (nome identico alla migration).
+@Index('idx_notification_attempts_recipient_id', ['recipientId'])
+@Index('idx_notification_attempts_send_status', ['sendStatus'])
+@Index('idx_notification_attempts_postal_status', ['postalStatus'])
+@Index('idx_notification_attempts_postal_delivery_status', ['postalDeliveryStatus'])
+// (recipient_id, attempt_number DESC): @Index non sa dichiarare una colonna
+// DESC, in dev lo creerebbe ASC (diverso da prod). synchronize: false =
+// dichiarato, mai creato né droppato da synchronize (in dev resta assente).
+@Index('idx_notification_attempts_recipient_attempt', { synchronize: false })
 export class NotificationAttempt {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

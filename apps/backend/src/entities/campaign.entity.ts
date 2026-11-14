@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -20,6 +21,9 @@ export enum CampaignStatus {
 }
 
 @Entity('campaigns')
+// Indici creati dalle migration (nome identico): dichiarati qui perché
+// synchronize li crei anche in dev e non li consideri estranei.
+@Index('IDX_campaigns_group_id', ['groupId']) // AddCampaignGroupId
 export class Campaign {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

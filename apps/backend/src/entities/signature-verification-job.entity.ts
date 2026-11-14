@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 export enum SignatureVerificationJobStatus {
   QUEUED = 'queued',
@@ -8,6 +8,7 @@ export enum SignatureVerificationJobStatus {
 }
 
 @Entity('signature_verification_jobs')
+@Index('IDX_signature_verification_jobs_campaign_id', ['campaignId']) // CreateSignatureVerificationJobs
 export class SignatureVerificationJob {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

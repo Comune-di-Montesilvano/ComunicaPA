@@ -70,7 +70,7 @@ docker compose down -v
 docker compose -f docker-compose.yml config --quiet
 ```
 
-**DB dev = `synchronize`, niente migration → mancano gli indici definiti solo in migration** (es. `1786600000000-AddRecipientAndAttemptIndexes`: `notification_attempts(recipient_id…)`, `recipients(campaign_id)`). Query con subquery correlate in dev fanno seq scan (secondi) mentre in prod sono ms: per un benchmark creare quegli indici dentro una transazione `BEGIN … ROLLBACK` insieme ai dati finti.
+**DB dev = `synchronize`, niente migration → crea solo gli indici dichiarati con `@Index` nelle entity.** Gli indici delle migration hanno l'`@Index` con lo stesso nome (synchronize li crea anche in dev), tranne `idx_notification_attempts_recipient_attempt` (`recipient_id, attempt_number DESC`, `synchronize: false`: TypeORM non sa il DESC) che in dev manca. Query che lo usano in dev possono fare seq scan (secondi) mentre in prod sono ms: per un benchmark crearlo dentro una transazione `BEGIN … ROLLBACK` insieme ai dati finti. Indice nuovo in migration = `@Index('<stesso nome>')` nell'entity, altrimenti `migrations.integration` va in rosso.
 
 Hot-reload: i frontend Vite ricaricano da soli; il watch di NestJS spesso NON vede le modifiche sui bind mount Windows — dopo modifiche a `apps/backend/src/` fare `docker compose restart backend` e verificare che `dist/` sia più recente di `src/` (`docker compose exec backend ls -la dist/... src/...`).
 

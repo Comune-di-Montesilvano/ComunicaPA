@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -19,6 +20,7 @@ export interface DomicileInadBatch {
 }
 
 @Entity('domicile_verification_jobs')
+@Index('IDX_domicile_verification_jobs_created_by', ['createdBy', 'createdAt']) // AddDomicileVerificationJobOwner
 export class DomicileVerificationJob {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

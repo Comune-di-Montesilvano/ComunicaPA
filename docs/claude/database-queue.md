@@ -82,7 +82,19 @@ temporaneo `migr_<random>` (helper `createTempDatabase` in
   senza migration (o viceversa) → test rosso con la query nel diff: scrivere
   la migration. Una voce di `KNOWN_DRIFT` che sparisce (es. aggiunto
   l'`@Index` mancante) → test rosso: toglierla dalla lista. Mai aggiungere
-  voci per far passare una modifica nuova, salvo scarto voluto e commentato;
+  voci per far passare una modifica nuova, salvo scarto voluto e commentato.
+  Gli indici creati dalle migration sono dichiarati nelle entity con lo
+  **stesso nome** (`@Index('IDX_campaigns_group_id', ['groupId'])`): su un
+  DB migrato synchronize non li tocca (confronta per nome e colonne), su un
+  DB dev li crea. Indice che TypeORM non sa rappresentare (colonna `DESC`,
+  espressione): `@Index('<nome>', { synchronize: false })`, mai creato né
+  droppato da synchronize — oggi `idx_notification_attempts_recipient_attempt`,
+  quindi assente in dev. Restano in `KNOWN_DRIFT` le FK con nome esplicito in
+  migration (l'entity vuole il nome hash), la FK self-reference
+  `campaigns.parent_campaign_id` (nessun `@ManyToOne`) e l'unique
+  `IDX_enrichment_address_overrides_job_pdf` (`@Index` senza nome
+  nell'entity): allinearle cambierebbe nomi di vincoli/indici, si fa solo
+  insieme a una migration;
 - **reversibilità dell'ultima migration**: `undoLastMigration()` +
   `runMigrations()`, scarto invariato. Saltato se l'ultima ha
   `static readonly irreversible = true` — da mettere su ogni migration con
@@ -148,7 +160,9 @@ download, filtro "Canale download") degenera in scan completo della
 tabella per riga senza indice — su campagne grandi (~19k destinatari)
 sembra "il filtro si applica solo al poll successivo" quando in realtà è
 solo lento oltre la finestra percepita come immediata.
-`CREATE INDEX IF NOT EXISTS ON download_events(recipient_id)`.
+Indice `idx_download_events_recipient_id` (migration
+`AddDownloadEventsRecipientIdIndex`, dichiarato anche con `@Index`
+nell'entity: presente pure in dev).
 
 
 ## Contatori denormalizzati — mai usarli per statistiche
