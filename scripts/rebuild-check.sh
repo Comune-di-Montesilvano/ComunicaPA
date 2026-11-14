@@ -166,7 +166,7 @@ cause_c_json=$(printf '%s\n' "${cause_c[@]}" | jq -Rcn '[inputs | select(length 
   if $skip; then
     echo "**Esito: skip** — nessuna causa, \`latest\` resta invariato."
   else
-    echo "Codice cambiato (causa a): **$code_changed** — job e2e $($code_changed && echo eseguito || echo saltato)."
+    echo "Codice cambiato (causa a): **$code_changed** — e2e: $($code_changed && echo richiesto || echo "non richiesto")."
     echo
     echo "**Esito: rebuild** — cause per immagine (label \`comunicapa.rebuild.reason\`):"
     echo
