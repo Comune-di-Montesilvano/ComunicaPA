@@ -42,6 +42,20 @@ describe('renderAppIoMarkdown', () => {
   it('data: non diventa un link', () => {
     expect(renderAppIoMarkdown('[x](data:text/html,<script>alert(1)</script>)')).not.toContain('<a ');
   });
+  it('asterischi nell URL non diventano corsivo/grassetto dentro href', () => {
+    const html = renderAppIoMarkdown('Vedi [qui](https://x.it/a*b*c) e [doc](https://x.it/**k**)');
+    expect(html).toContain('href="https://x.it/a*b*c"');
+    expect(html).toContain('href="https://x.it/**k**"');
+    expect(html).not.toContain('<em>');
+    expect(html).not.toContain('<strong>');
+  });
+
+  it('grassetto e corsivo nel testo del link restano formattati', () => {
+    expect(renderAppIoMarkdown('[**Paga** *ora*](https://x.it/p)')).toBe(
+      '<p><a href="https://x.it/p" target="_blank" rel="noopener"><strong>Paga</strong> <em>ora</em></a></p>',
+    );
+  });
+
   it('lista "- item" e paragrafi separati da riga vuota', () => {
     expect(renderAppIoMarkdown('- uno\n- due\n\nfine')).toBe('<ul><li>uno</li><li>due</li></ul><p>fine</p>');
   });

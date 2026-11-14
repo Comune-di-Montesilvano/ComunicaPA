@@ -6,6 +6,10 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function applyEmphasis(text: string): string {
+  return text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
 /**
  * Converte il markdown minimale generato da processTemplate() (App IO: **bold**,
  * *italic*, [testo](url), liste "- item", paragrafi separati da riga vuota) in
@@ -16,14 +20,19 @@ export function escapeHtml(text: string): string {
  */
 export function renderAppIoMarkdown(markdown: string): string {
   const escaped = escapeHtml(markdown);
+  // I link diventano segnaposto prima di grassetto/corsivo: gli asterischi
+  // dell'URL non devono essere trasformati dentro href (solo il testo del link).
+  const links: string[] = [];
   const withLinks = escaped.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener">$1</a>',
+    (_m, label: string, url: string) => {
+      links.push(`<a href="${url}" target="_blank" rel="noopener">${applyEmphasis(label)}</a>`);
+      return `\uE000${links.length - 1}\uE000`;
+    },
   );
-  const withBold = withLinks.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  const withItalic = withBold.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  const withEmphasis = applyEmphasis(withLinks).replace(/\uE000(\d+)\uE000/g, (_m, i: string) => links[Number(i)]!);
 
-  const paragraphs = withItalic.split(/\n{2,}/).map((block) => {
+  const paragraphs = withEmphasis.split(/\n{2,}/).map((block) => {
     const lines = block.split('\n');
     if (lines.every((l) => /^\s*-\s+/.test(l) && l.trim() !== '')) {
       const items = lines.map((l) => `<li>${l.replace(/^\s*-\s+/, '')}</li>`).join('');
