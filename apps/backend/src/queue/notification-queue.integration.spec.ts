@@ -250,6 +250,29 @@ describe.skipIf(!process.env.REDIS_URL)('BullMQ su Redis reale', () => {
       expect(await appIoQueue.getJobCounts()).toEqual(countsBefore);
       expect(await (await appIoQueue.getJob(orphan.attemptId))?.getState()).toBe('completed');
     });
+
+    it('job failed (worker che fallisce) → markedFailed: 1, non riaccodato', async () => {
+      // Motore dedicato (POSTAL), attempts 1: il job resta 'failed' in coda.
+      const orphan = { ...row('queued'), channelType: 'POSTAL', campaignChannelType: 'POSTAL' };
+      const postalQueue = notificationQueues.getQueue('POSTAL');
+      makeWorker(CHANNEL_QUEUES.POSTAL, async () => {
+        throw new Error('boom');
+      });
+      await postalQueue.add(NOTIFICATION_JOB_SEND, jobData(orphan.attemptId, 'POSTAL'), { jobId: orphan.attemptId, attempts: 1 });
+      await waitForState(postalQueue, orphan.attemptId, 'failed');
+      const countsBefore = await postalQueue.getJobCounts();
+
+      const { service, attemptUpdate } = buildService([orphan]);
+      const result = await service.reconcileEngine('POSTAL');
+
+      expect(result).toEqual({ checked: 1, repaired: 0, markedFailed: 1 });
+      expect(attemptUpdate).toHaveBeenCalledWith(
+        { id: orphan.attemptId, status: 'queued' },
+        expect.objectContaining({ status: 'failed' }),
+      );
+      expect(await postalQueue.getJobCounts()).toEqual(countsBefore);
+      expect(await (await postalQueue.getJob(orphan.attemptId))?.getState()).toBe('failed');
+    });
   });
 
   describe('CampaignsService.retryRecipient con coda reale', () => {

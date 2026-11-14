@@ -25,6 +25,12 @@ updates:
       default-days: 7
       semver-major-days: 14
     open-pull-requests-limit: 10
+    # @playwright/test (e2e/package.json) va bumpato a mano INSIEME al tag/digest di PW_IMAGE
+    # in e2e/run.sh (shell, invisibile a Dependabot): una versione sfasata rompe il job e2e
+    # di release.yml e congela `latest`. Lo step "Versione Playwright allineata" di tests.yml
+    # fa fallire la PR se i due sono diversi.
+    ignore:
+      - dependency-name: "@playwright/test"
     groups:
       npm-minor-patch:
         update-types:

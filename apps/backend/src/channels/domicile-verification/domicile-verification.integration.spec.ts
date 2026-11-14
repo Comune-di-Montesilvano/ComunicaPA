@@ -17,7 +17,7 @@ import { IoServiceConfig } from '../../entities/io-service-config.entity.js';
 import { InadService } from '../inad/inad.service.js';
 import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
 import { APP_IO_VERIFY_BULK_QUEUE } from '../../io-services/app-io-verify-bulk-job.types.js';
-import { MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../../campaigns/chunked-upload.util.js';
+import { CHUNK_ROOT, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../../campaigns/chunked-upload.util.js';
 
 /**
  * Giro HTTP reale (supertest) su DomicileVerificationController: controller,
@@ -139,7 +139,6 @@ describe('DomicileVerificationController (integration: path traversal, limiti up
   describe('POST verify/upload/chunk/:uploadId/:index — path traversal', () => {
     // Percorso relativo dalla radice chunk al bersaglio: join(radice, uploadId)
     // senza validazione risolverebbe esattamente in `target`.
-    const CHUNK_ROOT = '/tmp/comunicapa-uploads/chunked';
     const relFromChunkDir = () => relative(CHUNK_ROOT, target);
 
     it('sanity: il payload relativo punta davvero al bersaglio', () => {

@@ -5,7 +5,7 @@ import { getAttachmentsRoot, getUploadsDir, safeGetUploadsDir } from '../attachm
 import { resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { escapeLdapFilterValue } from '../auth/ldap/ldap.service.js';
 import { escapeCsvField } from '../campaigns/csv.util.js';
-import { cleanupChunkedUpload, initChunkedUpload, isValidChunkIndex, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { CHUNK_ROOT, cleanupChunkedUpload, initChunkedUpload, isValidChunkIndex, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
 import { flattenZipEntryName } from '../campaigns/zip-extract.util.js';
 import { SEND_TIMELINE_STRIPPED_KEYS, stripSendPii } from '../channels/send/send-status-history.util.js';
 import type { Recipient } from '../entities/recipient.entity.js';
@@ -119,7 +119,7 @@ describe('fuzz: path da input non fidato', () => {
     fc.assert(
       fc.property(fc.oneof(tricky, fc.uuid(), fc.anything()), (uploadId) => {
         const dir = safeChunkUploadDir(uploadId);
-        if (dir !== null) expect(dirname(dir)).toBe('/tmp/comunicapa-uploads/chunked');
+        if (dir !== null) expect(dirname(dir)).toBe(CHUNK_ROOT);
       }),
       RUNS,
     );

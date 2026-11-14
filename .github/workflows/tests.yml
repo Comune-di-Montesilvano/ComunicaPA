@@ -89,6 +89,17 @@ jobs:
       - name: Type-check e2e
         run: pnpm --filter @comunicapa/e2e run typecheck
 
+      # @playwright/test e l'immagine Playwright di e2e/run.sh devono avere la stessa versione
+      # (Dependabot ignora il pacchetto: si bumpano a mano insieme).
+      - name: Versione Playwright allineata (package.json e run.sh)
+        run: |
+          pkg=$(node -p "require('./e2e/package.json').devDependencies['@playwright/test']")
+          img=$(sed -nE 's#^PW_IMAGE="[^"]*/playwright:v([0-9]+\.[0-9]+\.[0-9]+)-.*#\1#p' e2e/run.sh)
+          if [ -z "$pkg" ] || [ "$pkg" != "$img" ]; then
+            echo "::error file=e2e/run.sh::@playwright/test ($pkg) e PW_IMAGE ($img) non allineati: bump manuale di entrambi"
+            exit 1
+          fi
+
       # Solo in merge queue: sulla PR lo step risulta saltato e il check resta verde.
       - name: Build (stesso comando usato nelle immagini Docker)
         if: github.event_name != 'pull_request'
@@ -241,6 +252,12 @@ jobs:
       TEST_DB_MIGRATE: '1'
 
     steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
       # Con images fallito le immagini dei service sono vuote (service non avviati): il job
       # deve fallire qui, non proseguire ne' risultare saltato.
       - name: Immagini dei service disponibili
@@ -250,12 +267,6 @@ jobs:
         run: |
           echo "::error::Job images non riuscito (${IMAGES_RESULT}): immagini postgres/redis non lette da docker-compose.yml"
           exit 1
-
-      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
-      # post-step e nella pagina insights StepSecurity della run.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
-        with:
-          egress-policy: audit
 
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

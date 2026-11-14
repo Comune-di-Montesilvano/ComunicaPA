@@ -58,7 +58,7 @@ svuota Mailpit.
 | `tests/settings-secret.spec.ts` | `@phase1`: mail-config con password salvata da UI → in UI e API solo `••••••••`; `@phase2` (dopo il restart del backend) → "Invia Test" riuscito, quindi la password è stata decifrata dal processo nuovo |
 
 Regole: ogni flusso crea i propri dati con un suffisso random (`runSuffix()`), nessun
-`waitForTimeout` (solo `expect`/`expect.poll`), nessun retry, dati solo fittizi
+`waitForTimeout` (solo `expect`/`expect.poll`), un retry solo in CI (il test che passa al secondo tentativo risulta "flaky"), dati solo fittizi
 (`ROSSI MARIO`/`RSSMRA80A01H501U`, `ACME SRL`/`12345678903`). Un difetto di prodotto trovato da un
 test non si corregge qui: commento `KNOWN_GAP` e `test.fail()` sul test.
 
@@ -66,4 +66,4 @@ test non si corregge qui: commento `KNOWN_GAP` e `test.fail()` sul test.
 
 Cambiare insieme la versione esatta di `@playwright/test` in `package.json` (lockfile con la
 procedura di `CLAUDE.md`) e l'immagine `PW_IMAGE` in `run.sh` (tag `v<versione>-noble` + digest
-da `docker buildx imagetools inspect`).
+da `docker buildx imagetools inspect`). Dependabot ignora `@playwright/test` (`.github/dependabot.yml`) e lo step "Versione Playwright allineata" di `tests.yml` fa fallire la PR se i due non coincidono: i due valori si bumpano sempre insieme.

@@ -12,7 +12,8 @@ import { randomUUID } from 'crypto';
  * toccare la configurazione del proxy (fuori da questo repo).
  */
 
-const CHUNK_ROOT = '/tmp/comunicapa-uploads/chunked';
+/** Radice dei chunk (esportata: i test di path traversal la usano per costruire i payload). */
+export const CHUNK_ROOT = '/tmp/comunicapa-uploads/chunked';
 
 /** Margine di sicurezza (4x) sulla dimensione chunk usata dal client (512KB). */
 export const MAX_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
