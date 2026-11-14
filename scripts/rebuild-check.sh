@@ -10,7 +10,8 @@
 # conta come causa (si ricostruisce, come prima): mai uno skip per un errore.
 #
 # Output (GITHUB_OUTPUT): skip, reasons (JSON app → cause, per la label
-# comunicapa.rebuild.reason), cause_c (JSON array delle app con causa c).
+# comunicapa.rebuild.reason), cause_c (JSON array delle app con causa c), code_changed
+# (true se almeno un'immagine ha causa a o non e' verificabile: decide il job e2e).
 # Esito di ogni controllo per ogni immagine in GITHUB_STEP_SUMMARY e nel log.
 #
 #   MAIN_REF=origin/main scripts/rebuild-check.sh    # richiede docker, git, jq, trivy
@@ -41,12 +42,16 @@ trivy image --download-db-only --quiet || db_ok=false
 
 declare -A reason
 cause_c=()
+# Causa a su almeno un'immagine (o latest/revision non verificabile): codice cambiato, il
+# job e2e di release.yml gira. Solo patch OS / CVE → false, e2e saltato.
+code_changed=false
 rows=()
 
 for app in "${APPS[@]}"; do
   repo="$REGISTRY/comunicapa-$app"
   if ! docker pull -q "$repo:latest" >/dev/null; then
     reason[$app]="latest assente o non leggibile"
+    code_changed=true
     rows+=("| $app | ⚠️ latest assente o non leggibile | — | — |")
     continue
   fi
@@ -58,11 +63,16 @@ for app in "${APPS[@]}"; do
   # a. Commit su main dopo la revision di latest.
   if [[ -z "$rev" ]]; then
     a="label revision assente"
+    code_changed=true
   elif git cat-file -e "$rev^{commit}" 2>/dev/null; then
     n=$(git rev-list --count "$rev..$MAIN_REF")
-    if ((n > 0)); then a="$n commit dopo ${rev:0:7}"; fi
+    if ((n > 0)); then
+      a="$n commit dopo ${rev:0:7}"
+      code_changed=true
+    fi
   else
     a="revision ${rev:0:7} non trovata nel repo"
+    code_changed=true
   fi
 
   # b. Patch di sistema. Distro e package manager letti dall'immagine, senza rete.
@@ -141,6 +151,7 @@ cause_c_json=$(printf '%s\n' "${cause_c[@]}" | jq -Rcn '[inputs | select(length 
   echo "skip=$skip"
   echo "reasons=$reasons"
   echo "cause_c=$cause_c_json"
+  echo "code_changed=$code_changed"
 } >>"$OUT"
 
 {
@@ -155,6 +166,8 @@ cause_c_json=$(printf '%s\n' "${cause_c[@]}" | jq -Rcn '[inputs | select(length 
   if $skip; then
     echo "**Esito: skip** — nessuna causa, \`latest\` resta invariato."
   else
+    echo "Codice cambiato (causa a): **$code_changed** — job e2e $($code_changed && echo eseguito || echo saltato)."
+    echo
     echo "**Esito: rebuild** — cause per immagine (label \`comunicapa.rebuild.reason\`):"
     echo
     for app in "${APPS[@]}"; do

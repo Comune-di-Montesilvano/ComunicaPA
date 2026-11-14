@@ -33,6 +33,10 @@ Le immagini sono quelle `ghcr.io/...:${IMAGE_TAG:-latest}` già presenti in loca
 scarica solo se mancano): si testano le immagini, non il working tree. Per le ultime,
 `docker pull ghcr.io/comune-di-montesilvano/comunicapa-<servizio>:latest` prima del run.
 
+In CI lo lancia il job `e2e` di `.github/workflows/release.yml` con `IMAGE_TAG=e2e` (tag locale
+sui digest appena firmati dalla run, come il job `smoke`), solo quando il codice è cambiato; il
+type-check (`pnpm --filter @comunicapa/e2e run typecheck`) gira invece sulle PR in `tests.yml`.
+
 Il pacchetto non ha uno script `test`: `pnpm -r test` / `test:coverage` (CI) non lo eseguono.
 
 ## Configurazione

@@ -84,6 +84,11 @@ jobs:
       - name: Type-check frontend-citizen test files
         run: pnpm --filter frontend-citizen exec tsc -p tsconfig.test.json --noEmit
 
+      # Solo tsc del pacchetto e2e (dipendenze gia' installate dal workspace, browser mai
+      # scaricati con --ignore-scripts): Playwright gira solo nel job e2e di release.yml.
+      - name: Type-check e2e
+        run: pnpm --filter @comunicapa/e2e run typecheck
+
       # Solo in merge queue: sulla PR lo step risulta saltato e il check resta verde.
       - name: Build (stesso comando usato nelle immagini Docker)
         if: github.event_name != 'pull_request'
