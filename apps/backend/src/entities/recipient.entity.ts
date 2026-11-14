@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -22,6 +23,9 @@ export enum RecipientStatus {
 }
 
 @Entity('recipients')
+// Indici di AddRecipientAndAttemptIndexes (nome identico alla migration).
+@Index('idx_recipients_campaign_id', ['campaignId'])
+@Index('idx_recipients_status', ['status'])
 export class Recipient {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

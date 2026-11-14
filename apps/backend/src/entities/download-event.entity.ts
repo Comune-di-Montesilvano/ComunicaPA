@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -15,6 +16,7 @@ import type { Recipient } from './recipient.entity.js';
  * su Recipient/extraData, non li sostituisce (retrocompatibilità UI).
  */
 @Entity('download_events')
+@Index('idx_download_events_recipient_id', ['recipientId']) // AddDownloadEventsRecipientIdIndex
 export class DownloadEvent {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
