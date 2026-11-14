@@ -148,6 +148,11 @@ confrontare con un altro branch senza rischio: `git diff <ref> -- <path>`
 # Suite backend (Vitest — maxForks:2 già impostato in vitest.config.ts, niente flag da passare)
 docker compose exec backend node_modules/.bin/vitest run
 
+# Copertura (v8, text-summary a video + report HTML in apps/<app>/coverage/; in CI lo stesso comando: `pnpm -r test:coverage`)
+docker compose exec backend node_modules/.bin/vitest run --coverage
+docker compose exec frontend-admin node_modules/.bin/vitest run --coverage
+docker compose exec frontend-citizen node_modules/.bin/vitest run --coverage
+
 # Test singolo/focalizzato
 docker compose exec backend node_modules/.bin/vitest run <pattern>
 
