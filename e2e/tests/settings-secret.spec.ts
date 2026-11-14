@@ -63,6 +63,7 @@ test('@phase1 mail-config con password: la UI mostra solo il valore mascherato',
 });
 
 test('@phase2 dopo il restart del backend il test connessione con password riesce', async ({ page }) => {
+  // Presuppone che run.sh abbia riavviato il backend (`docker compose ... restart backend`) dopo la fase 1.
   const { suffix, configName } = JSON.parse(readFileSync(STATE_FILE, 'utf8')) as State;
 
   await openEmailServers(page);

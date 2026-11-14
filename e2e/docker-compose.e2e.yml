@@ -3,6 +3,16 @@
 #   docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml -p e2e --env-file e2e/.env.e2e up -d
 # L'env file lo genera e2e/run.sh (secret random, LDAP_HOST=mock). Dettagli in e2e/README.md.
 services:
+  # Frontend solo su loopback: con LDAP_HOST=mock il login admin/admin non deve essere
+  # raggiungibile dalla LAN. !override sostituisce la lista porte del compose base.
+  frontend-admin:
+    ports: !override
+      - "127.0.0.1:${ADMIN_PORT:-3100}:8080"
+
+  frontend-citizen:
+    ports: !override
+      - "127.0.0.1:${CITIZEN_PORT:-3101}:8080"
+
   # SMTP finto: accetta qualunque credenziale anche senza TLS, cosi' le mail-config con
   # password (flusso settings-secret) si provano davvero. API REST su 8025 per le asserzioni.
   mailpit:

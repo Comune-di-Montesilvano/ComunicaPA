@@ -66,20 +66,18 @@ MSYS_NO_PATHCONV=1 docker run -d --name "$PW_CONTAINER" --init --ipc=host \
   -e CITIZEN_URL=http://frontend-citizen:8080 \
   -e API_URL=http://frontend-admin:8080/api \
   -e MAILPIT_URL=http://mailpit:8025 \
-  -v "$ROOT:/src:ro" \
   -v "$ROOT/e2e/test-results:/work/e2e/test-results" \
   -v "$ROOT/e2e/playwright-report:/work/e2e/playwright-report" \
   "$PW_IMAGE" sleep infinity >/dev/null
 
-# Copia nel container (non bind mount: pnpm sul bind mount Windows e' lentissimo) dei soli
-# manifest del workspace + pacchetto e2e, poi install del solo e2e dal lockfile.
-MSYS_NO_PATHCONV=1 docker exec "$PW_CONTAINER" bash -ec '
-  mkdir -p /work
-  cd /src
-  tar -cf - --exclude=node_modules --exclude=test-results --exclude=playwright-report --exclude=.env.e2e \
-    package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc pnpm.yaml tsconfig.base.json e2e \
-    | tar -C /work -xf -
-  cd /work
+# Nel container entrano SOLO i manifest del workspace e il pacchetto e2e (mai il resto del repo,
+# es. il .env di root con credenziali reali): tar dall'host via stdin, niente bind mount del repo
+# (pnpm sul bind mount Windows e' anche lentissimo). Poi install del solo e2e dal lockfile.
+tar -cf - --exclude=node_modules --exclude=test-results --exclude=playwright-report \
+  --exclude=.env.e2e --exclude=.e2e-state \
+  package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc pnpm.yaml tsconfig.base.json e2e \
+  | MSYS_NO_PATHCONV=1 docker exec -i "$PW_CONTAINER" tar -C /work -xf -
+MSYS_NO_PATHCONV=1 docker exec -w /work "$PW_CONTAINER" bash -ec '
   # Stessa versione di corepack della procedura lockfile (CLAUDE.md); --force: l immagine ha gia /usr/bin/yarn.
   npm install -g --force corepack@0.36.0 >/dev/null 2>&1
   corepack enable pnpm
