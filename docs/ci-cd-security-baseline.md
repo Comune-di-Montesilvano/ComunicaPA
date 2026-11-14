@@ -119,6 +119,9 @@ gh api repos/<owner>/<repo>/rulesets/<id> -q '{bypass_actors, rules}'
   `block` con `allowed-endpoints` nei job che pubblicano e in quelli di `release.yml` che li
   precedono (`smoke`, `e2e`). Elenco host ricavato dal log DNS del
   post-step di qualche run in audit; l'infrastruttura Actions è consentita in automatico.
+  Docker Hub serve i layer da più CDN (`production.cloudflare.docker.com`,
+  `production.cloudfront.docker.com`, `docker-images-prod.s3.dualstack.us-east-1.amazonaws.com`):
+  vanno consentiti tutti, la scelta cambia da una richiesta all'altra (tag v1.21.1: build bloccata sull'host S3).
 - `timeout-minutes` su ogni job; `concurrency` su ogni workflow (eccezione: `scorecard.yml`):
   `cancel-in-progress: true` sui check di sola lettura, `false` su quelli che scrivono
   (release: un push interrotto lascia manifest incompleti; autofix, pulizia ghcr, auto-merge).
