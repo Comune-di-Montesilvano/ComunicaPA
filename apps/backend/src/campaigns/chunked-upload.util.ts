@@ -22,7 +22,8 @@ export const MAX_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 
 /**
  * Età massima di una sessione di upload (mtime della sua cartella, aggiornato
- * a ogni chunk scritto): oltre, `sweepStaleChunkedUploads` la rimuove.
+ * a ogni nuovo file di chunk creato — non quando si riscrive un chunk già
+ * presente): oltre, `sweepStaleChunkedUploads` la rimuove.
  */
 export const CHUNK_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -228,10 +229,17 @@ export function sweepStaleChunkedUploads(
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory() || !isValidUploadId(entry.name)) continue;
     const dir = join(root, entry.name);
-    const stat = fs.lstatSync(dir);
-    if (!stat.isDirectory() || now - stat.mtimeMs <= maxAgeMs) continue;
-    fs.rmSync(dir, { recursive: true, force: true });
-    removed++;
+    // Una voce sparita nel frattempo (complete concorrente) o non rimovibile
+    // (EBUSY/EACCES) non deve fermare la pulizia delle altre: si salta e la
+    // si riprova al giro successivo.
+    try {
+      const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
+      if (!stat?.isDirectory() || now - stat.mtimeMs <= maxAgeMs) continue;
+      fs.rmSync(dir, { recursive: true, force: true });
+      removed++;
+    } catch {
+      continue;
+    }
   }
   return removed;
 }
@@ -274,17 +282,15 @@ export async function assembleChunkedUpload(uploadId: string): Promise<{ path: s
 }
 
 /**
- * Best-effort, chiamata quasi sempre da un blocco `finally` a valle di un
- * `try/catch` che ha già gestito l'esito reale (vedi
- * enrichment.controller.ts, io-services.controller.ts, campaigns.controller.ts
- * — pattern identico in tutti e 4). Un `uploadId` malformato/già invalidato
- * qui non deve MAI lanciare: un throw dentro un `finally` sovrascrive
- * silenziosamente il risultato/l'eccezione già prodotti dal blocco `try`
- * (bug reale trovato in verifica di questo stesso fix — un `complete()` che
- * gestiva correttamente un uploadId non valido rispondendo `{blocked:true}`
- * tornava invece una promise rigettata perché il `finally` la sovrascriveva).
- * Nessun dato sensibile a rischio nel no-op: un id di forma invalida non ha
- * comunque mai potuto risolvere a una directory reale sotto CHUNK_ROOT.
+ * Best-effort, chiamata dal blocco `finally` di ogni `complete` chunked
+ * (campagne CSV destinatari e allegati, arricchimento, verifica domicili,
+ * allegati firmati, external-api — 6 percorsi, stesso schema): uploadId e
+ * owner sono già stati verificati da `assertChunkedUploadAccess` PRIMA del
+ * `try` (400/404 escono come HTTP, una sessione altrui non arriva mai qui).
+ * Non deve comunque MAI lanciare: un throw dentro un `finally` sovrascrive
+ * silenziosamente il risultato/l'eccezione già prodotti dal blocco `try`.
+ * Un id di forma invalida è un no-op: non può risolvere a una directory
+ * sotto CHUNK_ROOT.
  */
 export function cleanupChunkedUpload(uploadId: string): void {
   if (!isValidUploadId(uploadId)) return;

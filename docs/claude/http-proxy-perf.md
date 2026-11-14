@@ -36,11 +36,11 @@ ottenendo un file troncato (`ADM-ZIP: Invalid filename` su central
 directory incompleta) — race intermittente, più probabile su file grandi
 (più tempo di flush). Fix: avvolgere `out.end()` in una Promise che
 risolve su `finish`/rigetta su `error`, dentro il blocco `finally` prima
-del `return`. Questa funzione è condivisa da 4 percorsi upload (campagne
-CSV destinatari, campagne allegati, arricchimento tracciati, io-services
-verify-bulk) — qualunque modifica a `chunked-upload.util.ts` va verificata
-con lo stesso rigore su tutti e quattro, non solo sul percorso che si sta
-toccando.
+del `return`. Questa funzione è condivisa da 6 percorsi upload (campagne
+CSV destinatari, campagne allegati, arricchimento tracciati, verifica
+domicili, allegati firmati, external-api) — qualunque modifica a
+`chunked-upload.util.ts` va verificata con lo stesso rigore su tutti e sei,
+non solo sul percorso che si sta toccando.
 
 **Ciclo di vita di una sessione chunk (`CHUNK_ROOT/<uploadId>`, volume
 persistente: contiene i file caricati).** Route chunked: campagne CSV e
