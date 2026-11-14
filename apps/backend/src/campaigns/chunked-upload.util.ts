@@ -124,6 +124,12 @@ export function initChunkedUpload(filename: string, totalChunks: number, owner?:
   if (!Number.isInteger(totalChunks) || totalChunks < 1) {
     throw new Error('totalChunks deve essere un intero >= 1');
   }
+  // Nome base valutato prima di creare la sessione: '', '.' e '..' non sono
+  // nomi di file (join(dir, '..') punterebbe alla directory padre).
+  const safeFilename = basename(filename);
+  if (safeFilename === '' || safeFilename === '.' || safeFilename === '..') {
+    throw new BadRequestException('Nome file non valido');
+  }
   const uploadId = randomUUID();
   const dir = chunkUploadDir(uploadId);
   fs.mkdirSync(dir, { recursive: true });
@@ -137,7 +143,6 @@ export function initChunkedUpload(filename: string, totalChunks: number, owner?:
   // — un filename tipo "../../../../app/dist/main.js" senza sanitizzazione
   // risolverebbe fuori dalla directory di upload/token (scrittura file
   // arbitraria nel container).
-  const safeFilename = basename(filename);
   const meta: ChunkUploadMeta = { filename: safeFilename, totalChunks, ...(owner ? { owner } : {}) };
   fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
   return uploadId;
@@ -161,7 +166,7 @@ export function chunkedUploadAccess(uploadId: unknown, owner: string | undefined
   if (!isValidUploadId(uploadId)) return 'invalid';
   let meta: ChunkUploadMeta;
   try {
-    meta = JSON.parse(fs.readFileSync(join(CHUNK_ROOT, uploadId, 'meta.json'), 'utf8')) as ChunkUploadMeta;
+    meta = JSON.parse(fs.readFileSync(join(chunkUploadDir(uploadId), 'meta.json'), 'utf8')) as ChunkUploadMeta;
   } catch {
     return 'not-found';
   }
