@@ -56,6 +56,15 @@ describe('OidcCitizenStrategy', () => {
     return module.get(OidcCitizenStrategy);
   };
 
+  it('validate() rifiuta un token operatore (type operator) anche senza JWKS', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    await expect(
+      strategy.validate(reqWith('tok'), { sub: 'debug', username: 'debug', role: 'admin', type: 'operator' }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
   it('validate() lancia UnauthorizedException se issuer non corrisponde', async () => {
     settingsValues = { 'oidc.issuer': 'https://issuer.test', 'oidc.audience': '' };
     strategy = await buildStrategy();
