@@ -35,11 +35,17 @@ describe('AuditLogsController (contratto HTTP)', () => {
     expect(svc.findAll).toHaveBeenCalledWith({ page: undefined, pageSize: undefined, search: undefined, operatorFilter: undefined });
   });
 
-  // Comportamento attuale: i parametri sono @Query stringhe senza DTO, quindi
-  // un valore non numerico non da 400 ma arriva al service come NaN.
-  it('GET: page non numerica NON e respinta (nessun DTO) -> 200 con NaN al service', async () => {
+  it.each(['page=abc', 'page=0', 'pageSize=0', 'pageSize=201', 'pageSize=1.5'])(
+    'GET: %s -> 400, service non chiamato',
+    async (q) => {
+      await request(userApp.getHttpServer()).get(`/admin/audit-logs?${q}`).expect(400);
+      expect(svc.findAll).not.toHaveBeenCalled();
+    },
+  );
+
+  it('GET: page e pageSize numerici arrivano al service come numeri', async () => {
     svc.findAll.mockResolvedValue({ items: [], total: 0 });
-    await request(userApp.getHttpServer()).get('/admin/audit-logs?page=abc').expect(200);
-    expect(Number.isNaN(svc.findAll.mock.calls[0]![0].page)).toBe(true);
+    await request(userApp.getHttpServer()).get('/admin/audit-logs?page=3&pageSize=200').expect(200);
+    expect(svc.findAll.mock.calls[0]![0]).toMatchObject({ page: 3, pageSize: 200 });
   });
 });

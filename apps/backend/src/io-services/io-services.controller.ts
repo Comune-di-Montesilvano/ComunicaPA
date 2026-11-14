@@ -48,7 +48,7 @@ export class IoServicesController {
   @Post('verify-profile')
   @Roles('user', 'admin')
   @HttpCode(HttpStatus.OK)
-  verifyProfile(@Body() body: { codiceFiscale: string }) {
+  verifyProfile(@Body() body: TestIoServiceDto) {
     return this.svc.verifyProfile(body.codiceFiscale);
   }
 }
