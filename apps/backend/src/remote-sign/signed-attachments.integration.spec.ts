@@ -28,7 +28,7 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { getUnsignedBackupDir, getUploadsDir } from '../attachments/attachment-paths.js';
-import { MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { CHUNK_ROOT, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
 
 /**
  * Giro HTTP reale (supertest) su SignedAttachmentsController: controller,
@@ -226,7 +226,6 @@ describe('SignedAttachmentsController (integration: path traversal, limiti uploa
   });
 
   describe('POST signed-attachments/upload/chunk/:uploadId/:index — path traversal', () => {
-    const CHUNK_ROOT = '/tmp/comunicapa-uploads/chunked';
     const target = () => join(tempRoot, 'uploads');
 
     it.each([

@@ -22,6 +22,14 @@ describe('schema.list — registrazione', () => {
     expect(names.filter((n) => !registered.includes(n))).toEqual([]);
   });
 
+  // migrations.integration.spec.ts legge l'ultimo elemento come "ultima migration":
+  // undoLastMigration() ripristina quella col timestamp piu' alto.
+  it('MIGRATIONS è ordinato per timestamp (suffisso numerico del nome)', () => {
+    const ts = MIGRATIONS.map((m) => Number(m.name.match(/(\d{13})$/)?.[1]));
+    expect(ts.every((n) => Number.isFinite(n))).toBe(true);
+    expect(ts).toEqual([...ts].sort((a, b) => a - b));
+  });
+
   it('ogni entity in entities/ è in ENTITIES', () => {
     const names = exportedClasses(join(__dirname, '..', 'entities'), (f) => f.endsWith('.entity.ts'));
     expect(names.length).toBeGreaterThan(0);

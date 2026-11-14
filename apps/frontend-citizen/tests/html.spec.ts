@@ -27,6 +27,21 @@ describe('renderAppIoMarkdown', () => {
     expect(out).not.toContain('<script>');
     expect(out).toContain('&lt;script&gt;');
   });
+  it('virgolette nell URL restano entita, nessun attributo extra iniettabile', () => {
+    const out = renderAppIoMarkdown('[x](https://example.org/a"onmouseover="alert(1))');
+    expect(out).toContain('href="https://example.org/a&quot;onmouseover=&quot;alert(1"');
+    expect(out).not.toMatch(/<a [^>]*\sonmouseover=/);
+  });
+  it('& nell URL diventa &amp; (query string valida in HTML)', () => {
+    expect(renderAppIoMarkdown('[x](https://example.org/p?a=1&b=2)')).toContain('href="https://example.org/p?a=1&amp;b=2"');
+  });
+  it('schema in maiuscolo non ammesso come link (solo http/https/mailto minuscoli)', () => {
+    expect(renderAppIoMarkdown('[x](HTTPS://example.org)')).not.toContain('<a ');
+    expect(renderAppIoMarkdown('[x](JavaScript:alert(1))')).not.toContain('<a ');
+  });
+  it('data: non diventa un link', () => {
+    expect(renderAppIoMarkdown('[x](data:text/html,<script>alert(1)</script>)')).not.toContain('<a ');
+  });
   it('lista "- item" e paragrafi separati da riga vuota', () => {
     expect(renderAppIoMarkdown('- uno\n- due\n\nfine')).toBe('<ul><li>uno</li><li>due</li></ul><p>fine</p>');
   });

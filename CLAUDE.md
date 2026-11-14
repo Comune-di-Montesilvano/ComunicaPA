@@ -174,12 +174,12 @@ docker compose exec frontend-citizen node_modules/.bin/tsc -p tsconfig.test.json
 # Unit test frontend-admin (Vitest, logica pura di src/, ambiente node). tests/ e vitest.config.ts
 # NON sono bind-mountati nel servizio dev (solo src/ e public/): `docker compose exec` non li vede
 # finché non si ricostruisce l'immagine, quindi `docker run` sull'immagine dev con i file montati.
-# Con TZ=UTC e TZ=Europe/Rome; in CI gira `pnpm test` (vitest + scripts/check-guida.mjs).
-A=apps/frontend-admin; MSYS_NO_PATHCONV=1 docker run --rm -e TZ=UTC   -v "$(pwd)/$A/src:/app/$A/src" -v "$(pwd)/$A/tests:/app/$A/tests"   -v "$(pwd)/$A/vitest.config.ts:/app/$A/vitest.config.ts"   -v comunicapa_admin_node_modules:/app/node_modules   -w /app/$A comunicapa/frontend-admin:dev node_modules/.bin/vitest run
+# Con TZ=UTC e TZ=Europe/Rome; in CI gira `pnpm -r test:coverage` (vitest --coverage + scripts/check-guida.mjs).
+A=apps/frontend-admin; for tz in UTC Europe/Rome; do MSYS_NO_PATHCONV=1 docker run --rm -e TZ=$tz  -v "$(pwd)/$A/src:/app/$A/src" -v "$(pwd)/$A/tests:/app/$A/tests"   -v "$(pwd)/$A/vitest.config.ts:/app/$A/vitest.config.ts"   -v comunicapa_admin_node_modules:/app/node_modules   -w /app/$A comunicapa/frontend-admin:dev node_modules/.bin/vitest run; done
 
 # Unit test frontend-citizen (Vitest, src/lib, ambiente node): stesso schema di frontend-admin
-# (tests/ e vitest.config.ts non sono bind-mountati, `docker run` sull'immagine dev). Sempre con TZ=UTC e TZ=Europe/Rome.
-A=apps/frontend-citizen; MSYS_NO_PATHCONV=1 docker run --rm -e TZ=UTC   -v "$(pwd)/$A/src:/app/$A/src" -v "$(pwd)/$A/tests:/app/$A/tests"   -v "$(pwd)/$A/vitest.config.ts:/app/$A/vitest.config.ts"   -v comunicapa_citizen_node_modules:/app/node_modules   -w /app/$A comunicapa/frontend-citizen:dev node_modules/.bin/vitest run
+# (tests/ e vitest.config.ts non sono bind-mountati, `docker run` sull'immagine dev). Il ciclo `for tz` li lancia con entrambi i fusi.
+A=apps/frontend-citizen; for tz in UTC Europe/Rome; do MSYS_NO_PATHCONV=1 docker run --rm -e TZ=$tz  -v "$(pwd)/$A/src:/app/$A/src" -v "$(pwd)/$A/tests:/app/$A/tests"   -v "$(pwd)/$A/vitest.config.ts:/app/$A/vitest.config.ts"   -v comunicapa_citizen_node_modules:/app/node_modules   -w /app/$A comunicapa/frontend-citizen:dev node_modules/.bin/vitest run; done
 
 # Token operatore admin per testare le API senza login LDAP (solo dev)
 docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/node_modules/jsonwebtoken');console.log(jwt.sign({sub:'debug',username:'debug',role:'admin',type:'operator'},process.env.JWT_SECRET,{expiresIn:'10m'}))"
