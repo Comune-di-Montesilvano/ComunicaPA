@@ -1,0 +1,18 @@
+# Overlay E2E sullo stack di PRODUZIONE (docker-compose.yml): aggiunge solo Mailpit.
+# Mai da solo e mai col progetto `comunicapa` (stack dev):
+#   docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml -p e2e --env-file e2e/.env.e2e up -d
+# L'env file lo genera e2e/run.sh (secret random, LDAP_HOST=mock). Dettagli in e2e/README.md.
+services:
+  # SMTP finto: accetta qualunque credenziale anche senza TLS, cosi' le mail-config con
+  # password (flusso settings-secret) si provano davvero. API REST su 8025 per le asserzioni.
+  mailpit:
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      # Solo per ispezione manuale (UI Mailpit); i test la raggiungono sulla rete interna.
+      - "127.0.0.1:${MAILPIT_PORT:-18025}:8025"
+    networks:
+      - comunicapa-net
