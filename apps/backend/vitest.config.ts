@@ -28,6 +28,9 @@ export default defineConfig({
     testTimeout: 15000,
     hookTimeout: 15000,
     coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'html'],
+      reportOnFailure: true,
       include: ['**/*.(t|j)s'],
       reportsDirectory: '../coverage',
     },

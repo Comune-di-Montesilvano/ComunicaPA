@@ -89,9 +89,22 @@ jobs:
         if: github.event_name != 'pull_request'
         run: pnpm build
 
-      - name: Run integrated tests
+      # Stessa suite di `pnpm test` con --coverage (v8, report HTML): informativa, senza soglie.
+      - name: Run integrated tests (con copertura)
         if: github.event_name != 'pull_request'
-        run: pnpm test
+        run: pnpm -r test:coverage
+
+      - name: Upload report di copertura
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            apps/backend/coverage/
+            apps/frontend-admin/coverage/
+            apps/frontend-citizen/coverage/
+          retention-days: 7
+          if-no-files-found: warn
 
   # Suite pytest del pdf-extractor nell'immagine dev (stessa base e stesse librerie di
   # sistema della produzione), dipendenze di test installate dal lock con hash.
