@@ -1,5 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, type LogLevel } from '@nestjs/common';
+import { Logger, ValidationPipe, type LogLevel } from '@nestjs/common';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import type { Repository } from 'typeorm';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { mkdirSync } from 'fs';
@@ -8,6 +10,8 @@ import { AppModule } from './app.module.js';
 import type { AppConfiguration } from './config/configuration.js';
 import { assertProductionSecrets } from './config/production-guards.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
+import { AppSetting } from './entities/app-setting.entity.js';
+import { enforceAuthModeLock } from './auth/auth-mode-lock.js';
 
 // docker-compose.yml passa già LOG_LEVEL al container (default 'info'), ma
 // finora nessun codice lo leggeva: il default NestJS esclude 'debug'/
@@ -65,6 +69,21 @@ async function bootstrap(): Promise<void> {
   const logLevelName = (process.env['LOG_LEVEL'] ?? 'info').toLowerCase();
   const logger = LOG_LEVELS_BY_NAME[logLevelName] ?? LOG_LEVELS_BY_NAME['info'];
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger });
+
+  // Blocco modalità mock (vedi auth/auth-mode-lock.ts). Qui e non in un
+  // onModuleInit/onApplicationBootstrap: NestFactory.create ha già aperto la
+  // connessione DB (provider TypeORM istanziati) ma non ha ancora eseguito gli
+  // hook di init (worker BullMQ, cron) né aperto la porta HTTP, che partono
+  // solo con app.listen() — nessuna route è servita prima di questo check.
+  try {
+    await enforceAuthModeLock(
+      app.get(ConfigService).get<string>('ldap.host') ?? '',
+      app.get<Repository<AppSetting>>(getRepositoryToken(AppSetting)),
+    );
+  } catch (err) {
+    new Logger('AuthModeLock').error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 
   // Default Nest/Express è 100kb, troppo basso per body legittimi non-file
   // (es. POST recipients/retry-bulk con array di UUID — 3205 destinatari
