@@ -17,7 +17,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { ApiKeyGuard } from './guards/api-key.guard.js';
 import { ExternalApiClientsService } from './external-api-clients.service.js';
 import { ExternalApiError } from './external-api.error.js';
-import { chunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { chunkUploadDir, initChunkedUpload, operatorUploadOwner } from '../campaigns/chunked-upload.util.js';
 
 /**
  * Boot reale di controller+guard+filter con richieste HTTP vere: intercetta
@@ -200,6 +200,38 @@ describe('external/v2 — status code contratto HTTP reale (integration)', () =>
       .attach('chunk', Buffer.from('payload malevolo'), 'chunk.bin')
       .expect(200);
     expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('POST external/v2/attachments/upload/chunk su una sessione aperta da altri (operatore) → NOT_FOUND, nessun chunk scritto', async () => {
+    const uploadId = initChunkedUpload('avviso.pdf', 1, operatorUploadOwner({ sub: 'operatore-a' }));
+    createdUploadIds.push(uploadId);
+    const res = await request(app.getHttpServer())
+      .post('/external/v2/attachments/upload/chunk')
+      .set('X-Api-Key', VALID_KEY)
+      .field('uploadId', uploadId)
+      .field('index', '0')
+      .attach('chunk', Buffer.from('contenuto di test'), 'chunk.bin')
+      .expect(200);
+    expect(res.body).toMatchObject({ success: false, error: { code: 'NOT_FOUND' } });
+    expect(fs.readdirSync(chunkUploadDir(uploadId))).toEqual(['meta.json']);
+  });
+
+  it('POST external/v2/attachments/upload/chunk sulla propria sessione (init dello stesso client) → HTTP 200', async () => {
+    const init = await request(app.getHttpServer())
+      .post('/external/v2/attachments/upload/init')
+      .set('X-Api-Key', VALID_KEY)
+      .send({ filename: 'avviso.pdf', totalChunks: 1 })
+      .expect(200);
+    const uploadId = init.body.uploadId as string;
+    createdUploadIds.push(uploadId);
+    await request(app.getHttpServer())
+      .post('/external/v2/attachments/upload/chunk')
+      .set('X-Api-Key', VALID_KEY)
+      .field('uploadId', uploadId)
+      .field('index', '0')
+      .attach('chunk', Buffer.from('contenuto di test'), 'chunk.bin')
+      .expect(200, { success: true });
+    expect(fs.readdirSync(chunkUploadDir(uploadId)).sort()).toEqual(['0.part', 'meta.json']);
   });
 
   it('POST external/v2/attachments/upload/complete (successo, uploadId UUID valido) → HTTP 200', async () => {

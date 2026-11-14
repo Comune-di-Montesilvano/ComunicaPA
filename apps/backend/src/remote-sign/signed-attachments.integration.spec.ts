@@ -149,7 +149,7 @@ describe('SignedAttachmentsController (integration: path traversal, limiti uploa
     app = moduleRef.createNestApplication();
     app.use((req: any, _res: any, next: any) => {
       if (req.headers['x-user']) {
-        req.user = { username: req.headers['x-user'], role: req.headers['x-role'], type: 'operator' };
+        req.user = { sub: req.headers['x-user'], username: req.headers['x-user'], role: req.headers['x-role'], type: 'operator' };
       }
       next();
     });
@@ -297,11 +297,16 @@ describe('SignedAttachmentsController (integration: path traversal, limiti uploa
       expect(fs.existsSync(join(tempRoot, 'avviso.pdf'))).toBe(false);
     });
 
-    // KNOWN_GAP-F6 (findings): a differenza degli altri complete chunked
-    // (cleanupChunkedUpload nel finally) qui la sessione resta su disco.
-    it.fails('KNOWN_GAP-F6: sessione chunk rimossa dopo complete', async () => {
+    it('sessione chunk rimossa dopo complete', async () => {
       const uploadId = await upload(BOZZA_A, 'avviso.pdf', Buffer.from('%PDF-1.4 firmato'));
       await request(server()).post(`${base(BOZZA_A)}/complete/${uploadId}`).set(OP_A).expect(200);
+      expect(fs.existsSync(safeChunkUploadDir(uploadId)!)).toBe(false);
+    });
+
+    it('sessione chunk rimossa anche quando l’elaborazione fallisce (ZIP non valido)', async () => {
+      const uploadId = await upload(BOZZA_A, 'firmati.zip', Buffer.from('non è uno zip'));
+      const res = await request(server()).post(`${base(BOZZA_A)}/complete/${uploadId}`).set(OP_A).expect(200);
+      expect(res.body).toEqual({ error: 'ZIP non valido o danneggiato' });
       expect(fs.existsSync(safeChunkUploadDir(uploadId)!)).toBe(false);
     });
 
@@ -342,7 +347,8 @@ describe('SignedAttachmentsController (integration: path traversal, limiti uploa
 
       await request(server()).post(`${base(INVIATA_A)}/complete/${uploadId}`).set(OP_B).expect(403);
 
-      expect(fs.readdirSync(safeChunkUploadDir(uploadId)!).sort()).toEqual(['0.part', 'meta.json']);
+      // Nessun file assemblato e sessione comunque rimossa (cleanup in finally).
+      expect(fs.existsSync(safeChunkUploadDir(uploadId)!)).toBe(false);
       expect(verificationBulk.startForCampaign).not.toHaveBeenCalled();
     });
 
@@ -363,16 +369,52 @@ describe('SignedAttachmentsController (integration: path traversal, limiti uploa
       await request(server()).post(`${base(encodeURIComponent('../../etc'))}/complete/44444444-5555-4666-8777-888888888888`).set(OP_A).expect(400);
     });
 
-    // Comportamento attuale (vedi findings F5): un uploadId malformato fa
-    // lanciare a assembleChunkedUpload un Error generico, non un 4xx.
-    it('uploadId con ../ → nessun file letto né scritto, risposta 500 (comportamento attuale)', async () => {
+    it('uploadId con ../ → 400, nessun file letto né scritto', async () => {
       const res = await request(server())
         .post(`${base(BOZZA_A)}/complete/${encodeURIComponent('../../../../etc')}`)
         .set(OP_A);
 
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(400);
       expect(fs.readFileSync(join(getUploadsDir(BOZZA_A), 'avviso.pdf'), 'utf8')).toBe('%PDF-1.4 originale');
       expect(verificationBulk.startForCampaign).not.toHaveBeenCalled();
+    });
+
+    it('uploadId UUID senza sessione → 404', async () => {
+      await request(server()).post(`${base(BOZZA_A)}/complete/44444444-5555-4666-8777-888888888888`).set(OP_A).expect(404);
+    });
+  });
+
+  describe('sessione di upload legata all’operatore che l’ha aperta', () => {
+    it('sessione di operatore-a usata da un altro operatore (admin) → chunk e complete 404, sessione intatta', async () => {
+      const uploadId = await upload(BOZZA_A, 'avviso.pdf', Buffer.from('%PDF-1.4 firmato-a'));
+      const dir = safeChunkUploadDir(uploadId)!;
+
+      await request(server()).post(`${base(BOZZA_A)}/chunk/${uploadId}/1`).set(ADMIN).attach('chunk', Buffer.from('%PDF-1.4 altro'), 'blob').expect(404);
+      await request(server()).post(`${base(BOZZA_A)}/complete/${uploadId}`).set(ADMIN).expect(404);
+
+      expect(fs.readdirSync(dir).sort()).toEqual(['0.part', 'meta.json']);
+      expect(fs.readFileSync(join(getUploadsDir(BOZZA_A), 'avviso.pdf'), 'utf8')).toBe('%PDF-1.4 originale');
+
+      // Il proprietario la completa normalmente.
+      await request(server()).post(`${base(BOZZA_A)}/complete/${uploadId}`).set(OP_A).expect(200, { replaced: 1, rejected: [] });
+    });
+
+    it('sessione creata prima del campo owner (meta senza owner) → accettata', async () => {
+      const uploadId = await upload(BOZZA_A, 'avviso.pdf', Buffer.from('%PDF-1.4 firmato-legacy'));
+      const metaPath = join(safeChunkUploadDir(uploadId)!, 'meta.json');
+      const { owner: _owner, ...legacy } = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      fs.writeFileSync(metaPath, JSON.stringify(legacy));
+
+      await request(server()).post(`${base(BOZZA_A)}/complete/${uploadId}`).set(ADMIN).expect(200, { replaced: 1, rejected: [] });
+    });
+
+    it('sessione inesistente e sessione altrui: stessa risposta sul chunk', async () => {
+      const uploadId = await upload(BOZZA_A, 'avviso.pdf', Buffer.from('%PDF-1.4'));
+      const altrui = await request(server()).post(`${base(BOZZA_A)}/chunk/${uploadId}/1`).set(ADMIN).attach('chunk', Buffer.from('x'), 'blob');
+      const inesistente = await request(server()).post(`${base(BOZZA_A)}/chunk/44444444-5555-4666-8777-888888888888/0`).set(ADMIN).attach('chunk', Buffer.from('x'), 'blob');
+      expect(altrui.status).toBe(404);
+      expect(inesistente.status).toBe(404);
+      expect(altrui.body).toEqual(inesistente.body);
     });
   });
 });

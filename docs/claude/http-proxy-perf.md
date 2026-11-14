@@ -42,6 +42,26 @@ verify-bulk) — qualunque modifica a `chunked-upload.util.ts` va verificata
 con lo stesso rigore su tutti e quattro, non solo sul percorso che si sta
 toccando.
 
+**Ciclo di vita di una sessione chunk (`CHUNK_ROOT/<uploadId>`, volume
+persistente: contiene i file caricati).** Route chunked: campagne CSV e
+allegati, arricchimento, verifica domicili, allegati firmati, external-api.
+- `init` salva in `meta.json` l'owner (`operatorUploadOwner(req.user)` =
+  `operator:<sub>`, `apiClientUploadOwner(id)` = `api:<clientId>`). Sessioni
+  senza owner (create prima del campo) accettate da chiunque.
+- `chunk` operatore: sempre `FileInterceptor('chunk', operatorChunkUploadOptions())`,
+  mai un `diskStorage` scritto a mano — uploadId malformato 400, sessione
+  inesistente o di un altro owner 404 (stessa risposta, non si rivela che
+  esiste).
+- `complete`: `assertChunkedUploadAccess(uploadId, owner)` PRIMA del
+  `try` (400/404 escono come HTTP, una sessione altrui non viene mai
+  rimossa), poi `try { … } finally { cleanupChunkedUpload(uploadId) }`
+  anche quando l'elaborazione a valle fallisce o i permessi sulla
+  campagna mancano. Nuove route chunked: stesso schema.
+- `ChunkedUploadSweeperService` (cron orario, `campaigns/`) rimuove le
+  sessioni con mtime della cartella oltre 24 h (`CHUNK_SESSION_MAX_AGE_MS`):
+  solo cartelle figlie con nome UUID, symlink ignorati, log col solo
+  conteggio.
+
 ## Lavoro pesante sincrono in un handler HTTP — non solo timeout proxy, affama TUTTO
 
 Oltre al noto rischio timeout proxy esterno (vedi sopra), un endpoint che fa

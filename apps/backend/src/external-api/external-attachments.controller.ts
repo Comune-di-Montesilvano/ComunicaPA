@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post, Req, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, NotFoundException, Post, Req, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
@@ -6,7 +6,7 @@ import { Public } from '../auth/decorators/public.decorator.js';
 import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard.js';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
-import { initChunkedUpload, isValidChunkIndex, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { apiClientUploadOwner, chunkedUploadAccess, initChunkedUpload, isValidChunkIndex, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
 import { InitAttachmentUploadDto } from './dto/init-attachment-upload.dto.js';
 import { ChunkAttachmentUploadDto } from './dto/chunk-attachment-upload.dto.js';
 import { CompleteAttachmentUploadDto } from './dto/complete-attachment-upload.dto.js';
@@ -20,8 +20,8 @@ export class ExternalAttachmentsController {
 
   @Post('init')
   @HttpCode(HttpStatus.OK)
-  init(@Body() body: InitAttachmentUploadDto) {
-    const uploadId = initChunkedUpload(body.filename, body.totalChunks);
+  init(@Body() body: InitAttachmentUploadDto, @Req() req: RequestWithApiClient) {
+    const uploadId = initChunkedUpload(body.filename, body.totalChunks, apiClientUploadOwner(req.apiClient.id));
     return { success: true, uploadId };
   }
 
@@ -50,6 +50,15 @@ export class ExternalAttachmentsController {
           const dir = safeChunkUploadDir(uploadId);
           if (!dir) {
             return cb(new BadRequestException('uploadId non valido'), '');
+          }
+          // Sessione esistente di un altro owner (altro client o operatore):
+          // stessa risposta di una sessione inesistente. Senza meta.json la
+          // cartella viene creata come prima (eventuali residui li rimuove
+          // il sweeper).
+          const apiClientId = (req as unknown as Partial<RequestWithApiClient>).apiClient?.id;
+          const owner = apiClientId ? apiClientUploadOwner(apiClientId) : undefined;
+          if (fs.existsSync(`${dir}/meta.json`) && chunkedUploadAccess(uploadId, owner) !== 'ok') {
+            return cb(new NotFoundException('Sessione di upload non trovata o scaduta'), '');
           }
           fs.mkdirSync(dir, { recursive: true });
           cb(null, dir);

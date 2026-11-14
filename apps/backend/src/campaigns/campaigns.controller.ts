@@ -46,11 +46,11 @@ import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-rep
 import { buildPostalReportAttualeCsv, buildPostalReportStoricoCsv } from './postal-report-csv.util.js';
 import {
   assembleChunkedUpload,
+  assertChunkedUploadAccess,
   cleanupChunkedUpload,
   initChunkedUpload,
-  isValidChunkIndex,
-  MAX_CHUNK_SIZE_BYTES,
-  safeChunkUploadDir,
+  operatorChunkUploadOptions,
+  operatorUploadOwner,
 } from './chunked-upload.util.js';
 
 type CampaignWithOwnerDisplay = Campaign & {
@@ -278,42 +278,19 @@ export class CampaignsController {
   @Post(':id/recipients/upload/init')
   initRecipientsChunkedUpload(
     @Body() body: { filename?: string; totalChunks?: number },
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): { uploadId: string } {
     const filename = body.filename?.trim();
     const totalChunks = Number(body.totalChunks);
     if (!filename || !Number.isInteger(totalChunks) || totalChunks < 1) {
       throw new BadRequestException('filename e totalChunks (intero >= 1) richiesti');
     }
-    return { uploadId: initChunkedUpload(filename, totalChunks) };
+    return { uploadId: initChunkedUpload(filename, totalChunks, operatorUploadOwner(req.user)) };
   }
 
   @Post(':id/recipients/upload/chunk/:uploadId/:index')
   @UseInterceptors(
-    FileInterceptor('chunk', {
-      storage: diskStorage({
-        destination: (req, _file, cb) => {
-          // safeChunkUploadDir() mai un throw: dentro un callback diskStorage
-          // sincrono un throw grezzo sfugge come uncaughtException e abbatte
-          // l'intero processo Node (nessun handler globale in questo repo —
-          // bug reale, review fix path-traversal external-api chunk()/complete()).
-          const dir = safeChunkUploadDir(req.params['uploadId']);
-          if (!dir || !fs.existsSync(dir)) {
-            cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
-            return;
-          }
-          cb(null, dir);
-        },
-        filename: (req, _file, cb) => {
-          const index = req.params['index'];
-          if (!isValidChunkIndex(index)) {
-            cb(new BadRequestException('index non valido'), '');
-            return;
-          }
-          cb(null, `${index}.part`);
-        },
-      }),
-      limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
-    }),
+    FileInterceptor('chunk', operatorChunkUploadOptions()),
   )
   uploadRecipientsChunk(): { ok: true } {
     return { ok: true };
@@ -325,6 +302,8 @@ export class CampaignsController {
     @Param('uploadId') uploadId: string,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ imported: number; campaignId: string; blocked?: boolean; message?: string }> {
+    // 400/404 prima del try: una sessione altrui non va mai rimossa.
+    assertChunkedUploadAccess(uploadId, operatorUploadOwner(req.user));
     try {
       const { path } = await assembleChunkedUpload(uploadId);
       const result = await this.campaignsService.uploadCsv(id, path);
@@ -423,38 +402,19 @@ export class CampaignsController {
   @Post(':id/attachments/upload/init')
   initAttachmentsChunkedUpload(
     @Body() body: { filename?: string; totalChunks?: number },
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): { uploadId: string } {
     const filename = body.filename?.trim();
     const totalChunks = Number(body.totalChunks);
     if (!filename || !Number.isInteger(totalChunks) || totalChunks < 1) {
       throw new BadRequestException('filename e totalChunks (intero >= 1) richiesti');
     }
-    return { uploadId: initChunkedUpload(filename, totalChunks) };
+    return { uploadId: initChunkedUpload(filename, totalChunks, operatorUploadOwner(req.user)) };
   }
 
   @Post(':id/attachments/upload/chunk/:uploadId/:index')
   @UseInterceptors(
-    FileInterceptor('chunk', {
-      storage: diskStorage({
-        destination: (req, _file, cb) => {
-          const dir = safeChunkUploadDir(req.params['uploadId']);
-          if (!dir || !fs.existsSync(dir)) {
-            cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
-            return;
-          }
-          cb(null, dir);
-        },
-        filename: (req, _file, cb) => {
-          const index = req.params['index'];
-          if (!isValidChunkIndex(index)) {
-            cb(new BadRequestException('index non valido'), '');
-            return;
-          }
-          cb(null, `${index}.part`);
-        },
-      }),
-      limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
-    }),
+    FileInterceptor('chunk', operatorChunkUploadOptions()),
   )
   uploadAttachmentsChunk(): { ok: true } {
     return { ok: true };
@@ -466,6 +426,8 @@ export class CampaignsController {
     @Param('uploadId') uploadId: string,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[]; campaignId: string; blocked?: boolean; message?: string }> {
+    // 400/404 prima del try: una sessione altrui non va mai rimossa.
+    assertChunkedUploadAccess(uploadId, operatorUploadOwner(req.user));
     try {
       await this.campaignsService.assertDraftForAttachments(id);
       const { path, filename } = await assembleChunkedUpload(uploadId);

@@ -14,11 +14,13 @@ describe('ExternalAttachmentsController', () => {
     tokens = { completeUpload: jest.fn().mockResolvedValue({ token: 'tok-1' }) };
     controller = new ExternalAttachmentsController(tokens as unknown as ExternalAttachmentTokensService);
     (chunkedUpload.initChunkedUpload as jest.Mock).mockReturnValue('upload-1');
+    (chunkedUpload.apiClientUploadOwner as jest.Mock).mockImplementation((id: string) => `api:${id}`);
   });
 
-  it('init ritorna uploadId', () => {
-    const result = controller.init({ filename: 'avviso.pdf', totalChunks: 2 });
+  it('init ritorna uploadId, sessione intestata al client', () => {
+    const result = controller.init({ filename: 'avviso.pdf', totalChunks: 2 }, req);
     expect(result).toEqual({ success: true, uploadId: 'upload-1' });
+    expect(chunkedUpload.initChunkedUpload).toHaveBeenCalledWith('avviso.pdf', 2, 'api:client-1');
   });
 
   it('complete ritorna attachmentToken scoped al client della richiesta', async () => {

@@ -17,6 +17,7 @@ import { OperatorDirectoryModule } from '../operator-directory/operator-director
 import { ChannelModule } from '../channels/channel.module.js';
 import { CampaignsService } from './campaigns.service.js';
 import { CampaignsController } from './campaigns.controller.js';
+import { ChunkedUploadSweeperService } from './chunked-upload-sweeper.service.js';
 import { RetentionCleanupService } from './retention-cleanup.service.js';
 import { InadCheckSyncService } from './inad-check-sync.service.js';
 import { CampaignContentCorrectionService } from './campaign-content-correction.service.js';
@@ -39,6 +40,7 @@ import { CampaignAccessInterceptor } from './campaign-access.interceptor.js';
   providers: [
     CampaignsService,
     RetentionCleanupService,
+    ChunkedUploadSweeperService,
     InadCheckSyncService,
     CampaignContentCorrectionService,
     CampaignBulkRetryService,

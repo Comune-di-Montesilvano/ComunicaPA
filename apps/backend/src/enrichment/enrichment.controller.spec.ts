@@ -1,6 +1,13 @@
 import { vi } from 'vitest';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import * as fs from 'fs';
+import { join } from 'path';
 import { TraceFormat } from '../entities/enrichment-job.entity.js';
 import { EnrichmentController } from './enrichment.controller.js';
+import { chunkUploadDir, cleanupChunkedUpload, initChunkedUpload, operatorUploadOwner } from '../campaigns/chunked-upload.util.js';
+
+const OP = { user: { sub: 'op', username: 'op' } } as any;
+const OTHER_OP = { user: { sub: 'altro', username: 'altro' } } as any;
 
 describe('EnrichmentController', () => {
   let svc: any;
@@ -26,18 +33,37 @@ describe('EnrichmentController', () => {
   });
 
   it('init: valida filename e totalChunks', () => {
-    expect(() => controller.initUpload({ filename: '', totalChunks: 1 })).toThrow();
-    expect(() => controller.initUpload({ filename: 'x.zip', totalChunks: 0 })).toThrow();
+    expect(() => controller.initUpload({ filename: '', totalChunks: 1 }, OP)).toThrow();
+    expect(() => controller.initUpload({ filename: 'x.zip', totalChunks: 0 }, OP)).toThrow();
   });
 
-  it('complete: batchId mancante/non valido → blocked (mai eccezione non-2xx)', async () => {
-    const result = await controller.completeUpload('upload-inesistente', { batchId: 'non-un-uuid' });
-    expect(result.blocked).toBe(true);
+  it('init: sessione intestata all’operatore', () => {
+    const { uploadId } = controller.initUpload({ filename: 'x.zip', totalChunks: 1 }, OP);
+    const meta = JSON.parse(fs.readFileSync(join(chunkUploadDir(uploadId), 'meta.json'), 'utf8'));
+    expect(meta.owner).toBe(operatorUploadOwner(OP.user));
+    cleanupChunkedUpload(uploadId);
   });
 
-  it('complete: sessione upload inesistente → blocked', async () => {
-    const result = await controller.completeUpload('upload-inesistente', { batchId: '11111111-1111-1111-1111-111111111111' });
+  it('complete: batchId mancante/non valido → blocked, sessione rimossa', async () => {
+    const uploadId = initChunkedUpload('x.zip', 1, operatorUploadOwner(OP.user));
+    const result = await controller.completeUpload(uploadId, { batchId: 'non-un-uuid' }, OP);
     expect(result.blocked).toBe(true);
+    expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
+  });
+
+  it('complete: uploadId malformato → 400', async () => {
+    await expect(controller.completeUpload('upload-inesistente', { batchId: '11111111-1111-1111-1111-111111111111' }, OP)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('complete: sessione upload inesistente → 404', async () => {
+    await expect(controller.completeUpload('11111111-2222-4333-8444-555555555555', { batchId: '11111111-1111-1111-1111-111111111111' }, OP)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('complete: sessione di un altro operatore → 404, sessione intatta', async () => {
+    const uploadId = initChunkedUpload('x.zip', 1, operatorUploadOwner(OP.user));
+    await expect(controller.completeUpload(uploadId, { batchId: '11111111-1111-1111-1111-111111111111' }, OTHER_OP)).rejects.toBeInstanceOf(NotFoundException);
+    expect(fs.existsSync(join(chunkUploadDir(uploadId), 'meta.json'))).toBe(true);
+    cleanupChunkedUpload(uploadId);
   });
 
   it('initBatch: ritorna un batchId', () => {

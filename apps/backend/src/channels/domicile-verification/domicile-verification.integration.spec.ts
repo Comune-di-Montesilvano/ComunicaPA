@@ -113,7 +113,7 @@ describe('DomicileVerificationController (integration: path traversal, limiti up
     app = moduleRef.createNestApplication();
     app.use((req: any, _res: any, next: any) => {
       if (req.headers['x-user']) {
-        req.user = { username: req.headers['x-user'], role: req.headers['x-role'], type: 'operator' };
+        req.user = { sub: req.headers['x-user'], username: req.headers['x-user'], role: req.headers['x-role'], type: 'operator' };
       }
       next();
     });
@@ -179,12 +179,23 @@ describe('DomicileVerificationController (integration: path traversal, limiti up
       expect(fs.readdirSync(dir)).toEqual(['meta.json']);
     });
 
-    it('uploadId UUID valido ma sessione inesistente → 400', async () => {
+    it('uploadId UUID valido ma sessione inesistente → 404', async () => {
       await request(server())
         .post('/admin/domicile-verification/verify/upload/chunk/44444444-5555-4666-8777-888888888888/0')
         .set(OP_A)
         .attach('chunk', Buffer.from('cf\n'), 'blob')
-        .expect(400);
+        .expect(404);
+    });
+
+    it('sessione di operatore-a usata da operatore-b → 404, nessun chunk scritto', async () => {
+      const uploadId = await initUpload();
+      const dir = safeChunkUploadDir(uploadId)!;
+      await request(server())
+        .post(`/admin/domicile-verification/verify/upload/chunk/${uploadId}/0`)
+        .set(OP_B)
+        .attach('chunk', Buffer.from('cf\n'), 'blob')
+        .expect(404);
+      expect(fs.readdirSync(dir)).toEqual(['meta.json']);
     });
 
     it('init: filename con ../ ridotto a basename nei metadati della sessione', async () => {
@@ -225,16 +236,46 @@ describe('DomicileVerificationController (integration: path traversal, limiti up
   describe('POST verify/upload/complete/:uploadId', () => {
     const body = { hasHeaders: true, cfColumn: 'cf', ioServiceId: IO_SERVICE_ID };
 
-    it('uploadId con ../ → esito bloccato, nessun job creato', async () => {
+    it('uploadId con ../ → 400, nessun job creato', async () => {
       const createJob = jest.spyOn(service, 'createJob');
-      const res = await request(server())
+      await request(server())
         .post(`/admin/domicile-verification/verify/upload/complete/${encodeURIComponent('../../../../etc')}`)
+        .set(OP_A)
+        .send(body)
+        .expect(400);
+
+      expect(createJob).not.toHaveBeenCalled();
+    });
+
+    it('sessione di operatore-a completata da operatore-b → 404, sessione intatta, nessun job', async () => {
+      const createJob = jest.spyOn(service, 'createJob');
+      const uploadId = await initUpload();
+      await request(server())
+        .post(`/admin/domicile-verification/verify/upload/complete/${uploadId}`)
+        .set(OP_B)
+        .send(body)
+        .expect(404);
+      expect(createJob).not.toHaveBeenCalled();
+      expect(fs.readdirSync(safeChunkUploadDir(uploadId)!)).toEqual(['meta.json']);
+    });
+
+    it('elaborazione a valle fallita → esito bloccato, sessione chunk comunque rimossa', async () => {
+      jest.spyOn(service, 'createJob').mockRejectedValue(new Error('colonna CF assente'));
+      const uploadId = await initUpload('tracciato.csv', 1);
+      await request(server())
+        .post(`/admin/domicile-verification/verify/upload/chunk/${uploadId}/0`)
+        .set(OP_A)
+        .attach('chunk', Buffer.from(CSV_ASSENTI), 'blob')
+        .expect(201);
+
+      const res = await request(server())
+        .post(`/admin/domicile-verification/verify/upload/complete/${uploadId}`)
         .set(OP_A)
         .send(body)
         .expect(201);
 
       expect(res.body.blocked).toBe(true);
-      expect(createJob).not.toHaveBeenCalled();
+      expect(fs.existsSync(safeChunkUploadDir(uploadId)!)).toBe(false);
     });
 
     it('flusso completo: job intestato all’operatore autenticato, sessione chunk rimossa', async () => {

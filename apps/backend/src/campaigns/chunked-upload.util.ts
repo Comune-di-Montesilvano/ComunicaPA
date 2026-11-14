@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import { randomUUID } from 'crypto';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { diskStorage, type StorageEngine } from 'multer';
 
 /**
  * Assemblaggio lato server di upload spezzati in chunk dal browser: il reverse
@@ -18,9 +20,34 @@ export const CHUNK_ROOT = '/tmp/comunicapa-uploads/chunked';
 /** Margine di sicurezza (4x) sulla dimensione chunk usata dal client (512KB). */
 export const MAX_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 
+/**
+ * Età massima di una sessione di upload (mtime della sua cartella, aggiornato
+ * a ogni chunk scritto): oltre, `sweepStaleChunkedUploads` la rimuove.
+ */
+export const CHUNK_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Messaggio unico per sessione inesistente, scaduta o aperta da altri: nessuna distinzione verso il client. */
+const SESSION_NOT_FOUND_MESSAGE = 'Sessione di upload non trovata o scaduta';
+
 interface ChunkUploadMeta {
   filename: string;
   totalChunks: number;
+  /**
+   * Chi ha aperto la sessione (`operatorUploadOwner`/`apiClientUploadOwner`).
+   * Assente nelle sessioni create prima dell'introduzione del campo: accettate
+   * da chiunque, scadono comunque col sweeper.
+   */
+  owner?: string;
+}
+
+/** Owner di una sessione aperta da un operatore (JWT `sub`), `undefined` senza utente. */
+export function operatorUploadOwner(user: { sub?: string } | undefined): string | undefined {
+  return user?.sub ? `operator:${user.sub}` : undefined;
+}
+
+/** Owner di una sessione aperta da un client della API esterna. */
+export function apiClientUploadOwner(clientId: string): string {
+  return `api:${clientId}`;
 }
 
 // uploadId è SEMPRE generato server-side da initChunkedUpload() (randomUUID()
@@ -49,7 +76,9 @@ export function isValidUploadId(uploadId: unknown): uploadId is string {
  */
 export function chunkUploadDir(uploadId: string): string {
   if (!isValidUploadId(uploadId)) {
-    throw new Error(`uploadId non valido: atteso un UUID, ricevuto "${String(uploadId)}"`);
+    // BadRequestException (sottoclasse di Error): se arriva fino al filtro
+    // Nest è un 400, mai un 500.
+    throw new BadRequestException('uploadId non valido: atteso un UUID');
   }
   return join(CHUNK_ROOT, uploadId);
 }
@@ -71,9 +100,10 @@ export function chunkPartPath(uploadId: string, index: number): string {
  * callback `destination` che chiamano questa funzione esposti esattamente a
  * questo — un operatore autenticato con un `uploadId` malformato poteva
  * far crashare l'intero backend con una singola richiesta. Ogni callback
- * `destination` deve usare QUESTA funzione (mai `chunkUploadDir()` diretta)
- * e reagire a `null` con `cb(new BadRequestException(...), '')`, mai un
- * throw.
+ * `destination` deve usare QUESTA funzione o `chunkedUploadAccess()` (mai
+ * `chunkUploadDir()` diretta) e reagire all'errore con
+ * `cb(new BadRequestException(...), '')`, mai un throw. Le route operatore
+ * usano `operatorChunkUploadOptions()`, che lo fa già.
  */
 export function safeChunkUploadDir(uploadId: unknown): string | null {
   if (!isValidUploadId(uploadId)) return null;
@@ -89,7 +119,7 @@ export function isValidChunkIndex(index: unknown): index is string {
   return typeof index === 'string' && /^\d+$/.test(index);
 }
 
-export function initChunkedUpload(filename: string, totalChunks: number): string {
+export function initChunkedUpload(filename: string, totalChunks: number, owner?: string): string {
   if (!Number.isInteger(totalChunks) || totalChunks < 1) {
     throw new Error('totalChunks deve essere un intero >= 1');
   }
@@ -107,7 +137,7 @@ export function initChunkedUpload(filename: string, totalChunks: number): string
   // risolverebbe fuori dalla directory di upload/token (scrittura file
   // arbitraria nel container).
   const safeFilename = basename(filename);
-  const meta: ChunkUploadMeta = { filename: safeFilename, totalChunks };
+  const meta: ChunkUploadMeta = { filename: safeFilename, totalChunks, ...(owner ? { owner } : {}) };
   fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
   return uploadId;
 }
@@ -115,9 +145,95 @@ export function initChunkedUpload(filename: string, totalChunks: number): string
 function readMeta(uploadId: string): ChunkUploadMeta {
   const metaPath = join(chunkUploadDir(uploadId), 'meta.json');
   if (!fs.existsSync(metaPath)) {
-    throw new Error(`Sessione di upload "${uploadId}" non trovata o già completata/scaduta`);
+    throw new NotFoundException(SESSION_NOT_FOUND_MESSAGE);
   }
   return JSON.parse(fs.readFileSync(metaPath, 'utf8')) as ChunkUploadMeta;
+}
+
+/**
+ * Esito dell'accesso a una sessione, mai un throw (usabile nei callback
+ * sincroni di multer): `invalid` = uploadId non a forma di UUID; `not-found` =
+ * sessione inesistente, senza meta.json leggibile o aperta da un altro owner
+ * (stessa risposta: non si rivela che la sessione esiste).
+ */
+export function chunkedUploadAccess(uploadId: unknown, owner: string | undefined): 'ok' | 'invalid' | 'not-found' {
+  if (!isValidUploadId(uploadId)) return 'invalid';
+  let meta: ChunkUploadMeta;
+  try {
+    meta = JSON.parse(fs.readFileSync(join(CHUNK_ROOT, uploadId, 'meta.json'), 'utf8')) as ChunkUploadMeta;
+  } catch {
+    return 'not-found';
+  }
+  if (meta.owner !== undefined && meta.owner !== owner) return 'not-found';
+  return 'ok';
+}
+
+/** Come `chunkedUploadAccess`, ma lancia 400 (forma) o 404 (sessione): da chiamare PRIMA del try/finally di cleanup. */
+export function assertChunkedUploadAccess(uploadId: unknown, owner: string | undefined): asserts uploadId is string {
+  const access = chunkedUploadAccess(uploadId, owner);
+  if (access === 'invalid') throw new BadRequestException('uploadId non valido: atteso un UUID');
+  if (access === 'not-found') throw new NotFoundException(SESSION_NOT_FOUND_MESSAGE);
+}
+
+/**
+ * Opzioni multer comuni alle route operatore `.../upload/chunk/:uploadId/:index`:
+ * scrivono solo dentro una sessione esistente aperta dallo stesso operatore
+ * (`req.user.sub`, già impostato dal guard JWT quando multer gira). Mai un
+ * throw nei callback (vedi `safeChunkUploadDir`): errori passati a `cb`, che
+ * Nest rilancia così come sono (400/404).
+ */
+export function operatorChunkUploadOptions(): { storage: StorageEngine; limits: { fileSize: number } } {
+  return {
+    storage: diskStorage({
+      destination: (req, _file, cb) => {
+        const uploadId = req.params['uploadId'];
+        const access = chunkedUploadAccess(uploadId, operatorUploadOwner((req as { user?: { sub?: string } }).user));
+        if (access === 'invalid') {
+          cb(new BadRequestException('uploadId non valido: atteso un UUID'), '');
+          return;
+        }
+        if (access === 'not-found') {
+          cb(new NotFoundException(SESSION_NOT_FOUND_MESSAGE), '');
+          return;
+        }
+        cb(null, join(CHUNK_ROOT, uploadId as string));
+      },
+      filename: (req, _file, cb) => {
+        const index = req.params['index'];
+        if (!isValidChunkIndex(index)) {
+          cb(new BadRequestException('index non valido'), '');
+          return;
+        }
+        cb(null, `${index}.part`);
+      },
+    }),
+    limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
+  };
+}
+
+/**
+ * Rimuove da `root` le sessioni di upload abbandonate (mai completate,
+ * rifiutate prima del complete, residui di crash): solo cartelle figlie
+ * dirette con nome UUID, mtime più vecchio di `maxAgeMs`. Symlink e file
+ * ignorati (`Dirent.isDirectory()` è false per un symlink): non si esce mai
+ * da `root`. Ritorna il numero di sessioni rimosse.
+ */
+export function sweepStaleChunkedUploads(
+  root: string = CHUNK_ROOT,
+  maxAgeMs: number = CHUNK_SESSION_MAX_AGE_MS,
+  now: number = Date.now(),
+): number {
+  if (!fs.existsSync(root)) return 0;
+  let removed = 0;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !isValidUploadId(entry.name)) continue;
+    const dir = join(root, entry.name);
+    const stat = fs.lstatSync(dir);
+    if (!stat.isDirectory() || now - stat.mtimeMs <= maxAgeMs) continue;
+    fs.rmSync(dir, { recursive: true, force: true });
+    removed++;
+  }
+  return removed;
 }
 
 /** Concatena i chunk salvati su disco in un unico file, nell'ordine 0..N-1. */
@@ -127,7 +243,7 @@ export async function assembleChunkedUpload(uploadId: string): Promise<{ path: s
 
   for (let i = 0; i < meta.totalChunks; i++) {
     if (!fs.existsSync(chunkPartPath(uploadId, i))) {
-      throw new Error(`Chunk ${i + 1}/${meta.totalChunks} mancante per l'upload "${uploadId}"`);
+      throw new BadRequestException(`Chunk ${i + 1}/${meta.totalChunks} mancante: ricaricare il file`);
     }
   }
 

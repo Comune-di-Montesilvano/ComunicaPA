@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
 import { join } from 'path';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
@@ -21,6 +22,7 @@ describe('ExternalAttachmentTokensService', () => {
   const root = '/tmp/comunicapa-uploads/external-attachments-test';
 
   beforeEach(() => {
+    vi.clearAllMocks();
     service = new ExternalAttachmentTokensService();
     (service as any).root = root;
     fs.rmSync(root, { recursive: true, force: true });
@@ -41,6 +43,32 @@ describe('ExternalAttachmentTokensService', () => {
 
     expect(token).toEqual(expect.any(String));
     expect(chunkedUpload.assembleChunkedUpload).toHaveBeenCalledWith('upload-1');
+    expect(chunkedUpload.cleanupChunkedUpload).toHaveBeenCalledWith('upload-1');
+  });
+
+  it('completeUpload verifica che la sessione sia del client prima di assemblare', async () => {
+    (chunkedUpload.apiClientUploadOwner as jest.Mock).mockImplementation((id: string) => `api:${id}`);
+    (chunkedUpload.assertChunkedUploadAccess as jest.Mock).mockImplementation(() => {
+      throw new NotFoundException('Sessione di upload non trovata o scaduta');
+    });
+
+    await expect(service.completeUpload('client-2', 'upload-1')).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(chunkedUpload.assertChunkedUploadAccess).toHaveBeenCalledWith('upload-1', 'api:client-2');
+    expect(chunkedUpload.assembleChunkedUpload).not.toHaveBeenCalled();
+    // Sessione altrui: mai rimossa.
+    expect(chunkedUpload.cleanupChunkedUpload).not.toHaveBeenCalled();
+  });
+
+  it('completeUpload rimuove la sessione anche se la materializzazione del token fallisce', async () => {
+    (chunkedUpload.assertChunkedUploadAccess as jest.Mock).mockImplementation(() => undefined);
+    (chunkedUpload.assembleChunkedUpload as jest.Mock).mockResolvedValue({ path: '/tmp/fake-assembled.pdf', filename: 'avviso.pdf' });
+    (fs.mkdirSync as jest.Mock).mockImplementation(() => undefined);
+    (fs.copyFileSync as jest.Mock).mockImplementation(() => {
+      throw new Error('ENOSPC');
+    });
+
+    await expect(service.completeUpload('client-1', 'upload-1')).rejects.toThrow('ENOSPC');
     expect(chunkedUpload.cleanupChunkedUpload).toHaveBeenCalledWith('upload-1');
   });
 
