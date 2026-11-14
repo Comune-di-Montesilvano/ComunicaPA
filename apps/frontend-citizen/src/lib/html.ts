@@ -27,10 +27,10 @@ export function renderAppIoMarkdown(markdown: string): string {
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
     (_m, label: string, url: string) => {
       links.push(`<a href="${url}" target="_blank" rel="noopener">${applyEmphasis(label)}</a>`);
-      return `\u0000${links.length - 1}\u0000`;
+      return `\uE000${links.length - 1}\uE000`;
     },
   );
-  const withEmphasis = applyEmphasis(withLinks).replace(/\u0000(\d+)\u0000/g, (_m, i: string) => links[Number(i)]!);
+  const withEmphasis = applyEmphasis(withLinks).replace(/\uE000(\d+)\uE000/g, (_m, i: string) => links[Number(i)]!);
 
   const paragraphs = withEmphasis.split(/\n{2,}/).map((block) => {
     const lines = block.split('\n');
