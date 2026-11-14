@@ -52,6 +52,9 @@ jobs:
       reasons: ${{ steps.check.outputs.reasons || steps.mode.outputs.reasons }}
       # JSON array delle app ricostruite per la causa c (CVE con fix).
       cause_c: ${{ steps.check.outputs.cause_c || '[]' }}
+      # 'true' se il codice e' cambiato: tag, rebuild manuale, o causa a (commit su main) nel
+      # controllo dello schedule. Solo patch OS / CVE → 'false': il job e2e salta.
+      code_changed: ${{ steps.check.outputs.code_changed || steps.mode.outputs.code_changed || 'false' }}
     steps:
       # Traffico in uscita limitato agli host elencati (anche dentro i container di
       # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
@@ -100,10 +103,13 @@ jobs:
           auto=false
           skip=false
           check=false
+          # Schedule/dry run: lo decide il controllo cause (code_changed di rebuild-check.sh).
+          code_changed=false
           reason=
           if [[ "$EVENT_NAME" == "push" && "$REF_TYPE" == "tag" ]]; then
             version="$REF_NAME"
             reason="tag $REF_NAME"
+            code_changed=true
           elif [[ "$EVENT_NAME" == "schedule" || "$DRY_RUN" == "true" ]]; then
             # Rebuild solo se il controllo cause ne trova una; il dry run si ferma li'.
             auto=true
@@ -112,6 +118,7 @@ jobs:
           elif [[ "$REBUILD_LATEST" == "true" ]]; then
             auto=true
             reason="rebuild manuale (workflow_dispatch)"
+            code_changed=true
           else
             echo "::notice::Dispatch senza rebuild_latest: niente da buildare."
             skip=true
@@ -125,6 +132,7 @@ jobs:
             echo "auto=$auto"
             echo "skip=$skip"
             echo "check=$check"
+            echo "code_changed=$code_changed"
             echo "reasons=$(jq -cn --arg r "$reason" \
               '{backend: $r, "frontend-admin": $r, "frontend-citizen": $r, "pdf-extractor": $r}')"
             echo "version=${version:-dev}"
@@ -385,9 +393,9 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "$IMAGE@$DIGEST"
 
-      # Digest firmato e tag previsti per i job smoke e publish: i tag arrivano solo dopo
-      # lo smoke test dello stack completo.
-      - name: Digest e tag per smoke e publish
+      # Digest firmato e tag previsti per i job smoke, e2e e publish: i tag arrivano solo
+      # dopo smoke ed e2e sullo stack completo.
+      - name: Digest e tag per smoke, e2e e publish
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
@@ -472,10 +480,101 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.yml -p smoke --env-file smoke.env down -v || true
 
+  # E2E Playwright (e2e/run.sh: stack di produzione + Mailpit, LDAP_HOST=mock, secret random)
+  # sulle 4 immagini appena firmate, per digest come smoke e in parallelo a smoke. Solo se il
+  # codice e' cambiato (setup.code_changed): un rebuild per sole patch OS / CVE non lo esegue.
+  # Fallito → publish non parte e `latest` resta quello precedente.
+  e2e:
+    needs: [setup, build-push]
+    if: needs.setup.outputs.skip != 'true' && needs.setup.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          # Allowlist di smoke (stack + Mailpit da Docker Hub) piu': immagine Playwright da MCR
+          # (blob su *.data.mcr.microsoft.com), corepack/pnpm e pacchetto e2e da npm. Il Chromium
+          # dei test carica i CSS esterni dei frontend (Google Fonts, Font Awesome su cdnjs):
+          # bloccati, una richiesta appesa ritarderebbe l'evento load delle pagine.
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            production.cloudflare.docker.com:443
+            mcr.microsoft.com:443
+            *.data.mcr.microsoft.com:443
+            registry.npmjs.org:443
+            fonts.googleapis.com:443
+            fonts.gstatic.com:443
+            cdnjs.cloudflare.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: handoff
+
+      # Tag locale `e2e` sui digest firmati (come `smoke`): run.sh lo passa al compose con
+      # IMAGE_TAG e il compose lo usa senza pull. Si testano le immagini di questa run, mai latest.
+      - name: Immagini della run
+        run: |
+          set -euo pipefail
+          for app in backend frontend-admin frontend-citizen pdf-extractor; do
+            img=ghcr.io/comune-di-montesilvano/comunicapa-$app
+            digest=$(cat "handoff/release-$app/digest")
+            docker pull -q "$img@$digest"
+            docker tag "$img@$digest" "$img:e2e"
+          done
+
+      # Progetto compose `e2e`, fase 1 → restart backend → fase 2 (global-setup riattende
+      # /version), `down -v` nel trap di run.sh anche su errore.
+      - name: E2E Playwright
+        env:
+          IMAGE_TAG: e2e
+        run: bash e2e/run.sh
+
+      # Solo su fallimento: il report HTML contiene i valori digitati (secret random del run).
+      - name: Upload report e2e
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-${{ github.run_id }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # Rete di sicurezza se il trap di run.sh non e' arrivato: l'env file e' gia' rimosso,
+      # valori fittizi per le variabili obbligatorie (`:?`) che down non usa.
+      - name: Stop stack
+        if: always()
+        env:
+          JWT_SECRET: down
+          DOWNLOAD_LINK_SECRET: down
+        run: |
+          docker rm -f e2e-playwright || true
+          docker compose -f docker-compose.yml -f e2e/docker-compose.e2e.yml -p e2e down -v || true
+
   # Solo ora le immagini diventano raggiungibili per tag (indice copiato cosi' com'e',
-  # attestazioni SBOM/provenance comprese).
+  # attestazioni SBOM/provenance comprese). e2e saltato (codice non cambiato) e' ammesso,
+  # fallito o cancellato no.
   publish:
-    needs: [setup, smoke]
+    needs: [setup, smoke, e2e]
+    if: >-
+      !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.skip != 'true' &&
+      needs.smoke.result == 'success' &&
+      (needs.e2e.result == 'success' || needs.e2e.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:

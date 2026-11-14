@@ -1,0 +1,16 @@
+{
+  "name": "@comunicapa/e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Test end-to-end Playwright sullo stack di produzione di prova (vedi README.md)",
+  "scripts": {
+    "e2e": "E2E_PHASE=phase1 playwright test --grep-invert @phase2",
+    "e2e:phase2": "E2E_PHASE=phase2 playwright test --grep @phase2",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^6.0.3"
+  }
+}

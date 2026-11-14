@@ -116,7 +116,8 @@ gh api repos/<owner>/<repo>/rulesets/<id> -q '{bypass_actors, rules}'
 - Ogni `uses:` fissato per **SHA completo** con il tag in commento (`# v4`); Dependabot li aggiorna.
 - `actions/checkout` con `persist-credentials: false`.
 - Primo step di ogni job: `step-security/harden-runner`. `egress-policy: audit` ovunque,
-  `block` con `allowed-endpoints` nei job che pubblicano. Elenco host ricavato dal log DNS del
+  `block` con `allowed-endpoints` nei job che pubblicano e in quelli di `release.yml` che li
+  precedono (`smoke`, `e2e`). Elenco host ricavato dal log DNS del
   post-step di qualche run in audit; l'infrastruttura Actions è consentita in automatico.
 - `timeout-minutes` su ogni job; `concurrency` su ogni workflow (eccezione: `scorecard.yml`):
   `cancel-in-progress: true` sui check di sola lettura, `false` su quelli che scrivono
@@ -157,7 +158,10 @@ release.yml (tag v* · controllo giornaliero 04:30 · dispatch)
                   rebuild: nessuna regressione rispetto a latest) → SBOM
                   → attestazioni provenance + SBOM → firma cosign keyless
    smoke:         stack compose di produzione con i 4 digest → smoke-stack.sh
-   publish ×4:    solo se smoke verde → tag vX.Y.Z / latest / latest-YYYYMMDD
+   e2e:           (in parallelo a smoke, solo se code_changed: tag, rebuild manuale,
+                  causa a) stesso stack + Mailpit, Playwright (e2e/run.sh)
+   publish ×4:    solo se smoke verde ed e2e verde o saltato → tag vX.Y.Z / latest /
+                  latest-YYYYMMDD
         │
         ▼
 deploy ──► verify-images (cosign, VERIFY_IMAGES=true) → servizi avviati solo se verificati
@@ -170,13 +174,13 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 
 | Workflow | Trigger | Ruolo |
 |---|---|---|
-| `tests.yml` | PR, merge queue | `run-tests` (sulla PR: test degli script di sicurezza, install, lint, type-check inclusi spec backend e test frontend-admin e frontend-citizen; in coda + build e test con copertura v8: `pnpm -r test:coverage`, guardia che ogni pacchetto con `test` abbia `test:coverage` (`pnpm -r` salta gli altri), report dei quattro pacchetti caricati come artifact `coverage-<run_id>` con `actions/upload-artifact` pinnata per SHA, `retention-days: 7`, `!cancelled()`, solo in coda; informativa, nessuna soglia), `pdf-extractor-tests` (solo in coda: pytest, test di `pip_fix.py`), `images` + `integration-tests` (solo in coda: `images` legge da `docker-compose.yml`, unica fonte, le immagini postgres/redis con digest e fallisce se mancano o non sono fissate per digest; `integration-tests` le usa come `services:`, così un bump Dependabot del compose arriva anche qui; required check resta solo `integration-tests`: gira con `!cancelled()` anche se `images` fallisce e in quel caso fallisce al primo step, invece di risultare saltato (che per un required check varrebbe verde); globalSetup Vitest che esegue le migration con `TEST_DB_MIGRATE=1`; spec `*.integration.spec.ts`/`*.parity.spec.ts` in UTC e in Europe/Rome) |
+| `tests.yml` | PR, merge queue | `run-tests` (sulla PR: test degli script di sicurezza, install, lint, type-check inclusi spec backend, test frontend-admin e frontend-citizen e pacchetto `e2e` (solo `tsc`, Playwright mai); in coda + build e test con copertura v8: `pnpm -r test:coverage`, guardia che ogni pacchetto con `test` abbia `test:coverage` (`pnpm -r` salta gli altri), report dei quattro pacchetti caricati come artifact `coverage-<run_id>` con `actions/upload-artifact` pinnata per SHA, `retention-days: 7`, `!cancelled()`, solo in coda; informativa, nessuna soglia), `pdf-extractor-tests` (solo in coda: pytest, test di `pip_fix.py`), `images` + `integration-tests` (solo in coda: `images` legge da `docker-compose.yml`, unica fonte, le immagini postgres/redis con digest e fallisce se mancano o non sono fissate per digest; `integration-tests` le usa come `services:`, così un bump Dependabot del compose arriva anche qui; required check resta solo `integration-tests`: gira con `!cancelled()` anche se `images` fallisce e in quel caso fallisce al primo step, invece di risultare saltato (che per un required check varrebbe verde); globalSetup Vitest che esegue le migration con `TEST_DB_MIGRATE=1`; spec `*.integration.spec.ts`/`*.parity.spec.ts` in UTC e in Europe/Rome) |
 | `security.yml` | PR, coda, push main, giornaliero 05:00 | `dependency-review` (solo PR, HIGH+, rispetta `ignoreGhsas`), `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` (sulla PR job verde senza scansione, per step; scansione in coda/main/giornaliero); vulnerabilità differenziali su PR e coda (`trivy-image` in coda: rispetto alla `latest` pubblicata), assolute su main e nel giornaliero |
 | `security-autofix.yml` | giornaliero 02:30, Sicurezza fallita su main, dispatch (`force`, `dry_run`) | corregge da solo le HIGH/CRITICAL con versione corretta (vedi §5 "Correzioni autonome") |
 | CodeQL (default setup) | PR, main, settimanale | SAST, suite extended |
 | `scorecard.yml` | push main, settimanale | OpenSSF Scorecard, risultati pubblici |
 | `security-alerts.yml` | giornaliero, push main | fallisce e apre/aggiorna una issue se ci sono alert code scanning (CodeQL, Trivy) high/critical aperti su main, Scorecard escluso; la chiude quando non ce ne sono. La regola code scanning blocca solo i nuovi. **Non** è un check richiesto: bloccherebbe anche la PR che corregge l'alert |
-| `release.yml` | tag `v*`, giornaliero, dispatch | build, firma, smoke, pubblicazione; il giornaliero ricostruisce `latest` solo su causa reale (`scripts/rebuild-check.sh`) |
+| `release.yml` | tag `v*`, giornaliero, dispatch | build, firma, smoke, e2e Playwright (solo se il codice è cambiato), pubblicazione; il giornaliero ricostruisce `latest` solo su causa reale (`scripts/rebuild-check.sh`). Si collauda solo con dispatch su `main` dopo il merge |
 | `ghcr-cleanup.yml` | settimanale | rimuove i digest orfani (build non pubblicati) e le loro firme |
 | `dependabot-automerge.yml` | PR Dependabot | auto-merge minor/patch via token GitHub App (la PR passa comunque dalla merge queue); major e cambi di runtime (es. tag `python` 3.14 → 3.15, che Dependabot classifica minor) restano manuali |
 | `toolchain-version-check.yml`, `trivy-version-check.yml` | settimanale (lunedì) | issue quando escono nuove versioni dei tool fissati |
@@ -259,6 +263,20 @@ l'alert o il cooldown ferma la PR. Elementi da replicare:
 - **Smoke test** dello stack completo (`scripts/smoke-stack.sh`): servizi su, frontend e API
   via reverse proxy, query autenticata sul DB (migration applicate), upload su disco,
   servizio PDF, filesystem in sola lettura, log senza errori di filesystem.
+- **E2E Playwright** (job `e2e`, dal 2026-11-14): `e2e/run.sh` con `IMAGE_TAG=e2e` sulle 4
+  immagini della run (tag locale sui digest, come `smoke`), progetto compose `e2e` + Mailpit,
+  secret random, `LDAP_HOST=mock`; fase 1 → restart backend → fase 2. Gira in parallelo a
+  `smoke` solo se `setup.code_changed` è `true`: tag, `rebuild_latest`, o causa a nel controllo
+  dello schedule (`rebuild-check.sh` emette `code_changed`); un rebuild per sole patch OS/CVE lo
+  salta. `publish` richiede `e2e` verde o saltato (`!cancelled()` esplicito): fallito o
+  cancellato → nessun tag spostato. `harden-runner` in `block`: allowlist di `smoke` +
+  `mcr.microsoft.com`/`*.data.mcr.microsoft.com` (immagine Playwright), `registry.npmjs.org`
+  (corepack, pnpm, pacchetto e2e), `fonts.googleapis.com`/`fonts.gstatic.com`/
+  `cdnjs.cloudflare.com` (CSS esterni caricati dai frontend nel Chromium dei test).
+  `timeout-minutes: 30`. Report HTML e trace caricati come artifact `e2e-report-<run_id>`
+  **solo su fallimento**, `retention-days: 3` (il report contiene i valori digitati nei form,
+  secret random del run). Si collauda solo dopo il merge: `gh workflow run release.yml --ref
+  main -f dry_run=true` (mostra `code_changed` nel summary) poi `-f rebuild_latest=true`.
 - Tag: `vX.Y.Z` solo dal maintainer (ruleset), `latest` e `latest-YYYYMMDD` dal rebuild
   giornaliero (solo nei giorni con una causa); il `latest-YYYYMMDD` precedente = rollback
   immediato.

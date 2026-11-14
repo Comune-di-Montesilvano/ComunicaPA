@@ -1,6 +1,8 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  # Test E2E Playwright (nessuno script `test`: girano solo con e2e/run.sh, mai in `pnpm -r test`)
+  - 'e2e'
 allowBuilds:
   '@nestjs/core': false
   esbuild: true
