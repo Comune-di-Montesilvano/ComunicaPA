@@ -80,12 +80,9 @@ describe('IoServicesController (contratto HTTP)', () => {
     expect(svc.verifyProfile).toHaveBeenCalledWith('RSSMRA80A01H501U');
   });
 
-  // Comportamento attuale: il body e tipizzato inline (non una classe DTO),
-  // quindi la ValidationPipe non lo valida e un body vuoto arriva al service.
-  it('POST verify-profile: body senza CF NON e respinto dalla pipe (nessun DTO) -> 200', async () => {
-    svc.verifyProfile.mockResolvedValue({});
+  it('POST verify-profile: body senza CF -> 400, service non chiamato', async () => {
     const res = await request(app.getHttpServer()).post('/admin/io-services/verify-profile').send({});
-    expect(res.status).toBe(200);
-    expect(svc.verifyProfile).toHaveBeenCalledWith(undefined);
+    expect(res.status).toBe(400);
+    expect(svc.verifyProfile).not.toHaveBeenCalled();
   });
 });
