@@ -21,6 +21,9 @@ services:
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      # Niente reverse DNS sul client SMTP prima del banner: in CI (harden-runner in block)
+      # la lookup PTR resta appesa e il backend chiude con "Greeting never received".
+      MP_SMTP_DISABLE_RDNS: "true"
     ports:
       # Solo per ispezione manuale (UI Mailpit); i test la raggiungono sulla rete interna.
       - "127.0.0.1:${MAILPIT_PORT:-18025}:8025"
