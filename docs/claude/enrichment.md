@@ -55,6 +55,27 @@ proxy esterno ~1MB descritto sopra: `POST
 /admin/enrichment/upload/{init,chunk,complete}`, chunk client-side,
 riassemblati lato server prima di processare lo ZIP.
 
+**Lotti multi-ZIP (`UPLOAD_BATCH_ROOT/<batchId>`,
+`enrichment-batch-upload.util.ts`).** `upload/batch/init` crea la cartella
+con `.batch.json` = owner (`operatorUploadOwner`, come le sessioni chunk);
+`upload/complete/:uploadId` (body `batchId`) e `upload/batch/:batchId/complete`
+chiamano `assertUploadBatchAccess`: batchId malformato o mancante 400, lotto
+inesistente/già completato/di un altro operatore 404 (stessa risposta).
+Lotti senza `.batch.json` o senza owner (pre-deploy) accettati.
+- Il complete del lotto crea `.completed` con `wx` (`claimUploadBatch`): una
+  sola volta, un secondo complete è 404 e non accoda un secondo merge.
+- Rifiuto dopo il claim (formato, lotto vuoto, accodamento fallito): lotto
+  rimosso nel `finally` del controller. Accodato: NON rimosso lì, il job
+  `merge-batch` riceve i `zipPaths` assoluti dentro il lotto e li legge
+  dopo che la richiesta è tornata — lo rimuove `processMergeBatch` nel
+  proprio `finally`, a merge concluso (successo o fallimento).
+- `ChunkedUploadSweeperService` (stesso cron orario delle sessioni chunk)
+  rimuove i lotti con mtime oltre 24 h (aggiornato a ogni pezzo aggiunto)
+  SOLO se non hanno `.completed`: un lotto completato è del job in coda e
+  non viene mai toccato dallo sweeper, anche se la coda è lenta. Residuo
+  accettato: un lotto completato il cui job sparisse da Redis senza girare
+  resta su disco.
+
 **Retention**: `enrichment.retentionDays` (default 30, chiave in
 `settings.registry.ts`) — job e file (ZIP sorgente, CSV/ZIP risultato)
 più vecchi vengono ripuliti da `EnrichmentRetentionService`, stesso

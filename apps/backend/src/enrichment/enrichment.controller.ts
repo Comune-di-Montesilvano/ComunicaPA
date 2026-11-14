@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -27,16 +28,18 @@ import {
   assertChunkedUploadAccess,
   cleanupChunkedUpload,
   initChunkedUpload,
-  isValidUploadId,
   operatorChunkUploadOptions,
   operatorUploadOwner,
 } from '../campaigns/chunked-upload.util.js';
 import { getEnrichmentResultCsv } from './enrichment-paths.js';
 import {
   addToUploadBatch,
+  assertUploadBatchAccess,
+  claimUploadBatch,
   cleanupUploadBatch,
   initUploadBatch,
   listUploadBatchFiles,
+  UPLOAD_BATCH_NOT_FOUND_MESSAGE,
 } from './enrichment-batch-upload.util.js';
 
 @Controller('admin/enrichment')
@@ -80,8 +83,8 @@ export class EnrichmentController {
 
   @Post('upload/batch/init')
   @Roles('user', 'admin')
-  initBatch(): { batchId: string } {
-    return { batchId: initUploadBatch() };
+  initBatch(@Req() req: Request & { user: JwtOperatorPayload }): { batchId: string } {
+    return { batchId: initUploadBatch(operatorUploadOwner(req.user)) };
   }
 
   @Post('upload/complete/:uploadId')
@@ -92,17 +95,22 @@ export class EnrichmentController {
     @Body() body: { batchId?: string },
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ ok?: true; blocked?: boolean; message?: string }> {
+    const owner = operatorUploadOwner(req.user);
     // 400/404 prima del try: una sessione altrui non va mai rimossa.
-    assertChunkedUploadAccess(uploadId, operatorUploadOwner(req.user));
+    assertChunkedUploadAccess(uploadId, owner);
     try {
-      if (!body.batchId || !isValidUploadId(body.batchId)) {
-        return { blocked: true, message: 'batchId mancante o non valido' };
+      // Lotto malformato (400), inesistente, già completato o di un altro
+      // operatore (404): esce come HTTP; la sessione chunk, che è del
+      // chiamante, viene comunque rimossa dal finally.
+      const batchId = body.batchId;
+      assertUploadBatchAccess(batchId, owner);
+      try {
+        const { path, filename } = await assembleChunkedUpload(uploadId);
+        addToUploadBatch(batchId, path, filename);
+        return { ok: true };
+      } catch (err: any) {
+        return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dello ZIP' };
       }
-      const { path, filename } = await assembleChunkedUpload(uploadId);
-      addToUploadBatch(body.batchId, path, filename);
-      return { ok: true };
-    } catch (err: any) {
-      return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dello ZIP' };
     } finally {
       cleanupChunkedUpload(uploadId);
     }
@@ -116,26 +124,31 @@ export class EnrichmentController {
     @Body() body: { traceFormat?: TraceFormat; searchPayments?: boolean },
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
-    if (!isValidUploadId(batchId)) {
-      return { blocked: true, message: 'batchId non valido' };
+    // 400/404 prima di tutto: un lotto altrui non va mai toccato.
+    assertUploadBatchAccess(batchId, operatorUploadOwner(req.user));
+    // Una sola volta (due complete concorrenti: il secondo è un 404): da qui
+    // il lotto non accetta altri pezzi e lo sweeper non lo tocca più.
+    if (!claimUploadBatch(batchId)) {
+      throw new NotFoundException(UPLOAD_BATCH_NOT_FOUND_MESSAGE);
     }
-    if (!body.traceFormat || !Object.values(TraceFormat).includes(body.traceFormat)) {
-      cleanupUploadBatch(batchId);
-      return { blocked: true, message: 'Formato tracciato non riconosciuto' };
-    }
-    const files = listUploadBatchFiles(batchId);
-    if (files.length === 0) {
-      cleanupUploadBatch(batchId);
-      return { blocked: true, message: 'Nessun file caricato per questo batch' };
-    }
-    const sourceFilename =
-      files.length === 1 ? files[0].filename : `${files.length} file: ${files.map((f) => f.filename).join(', ')}`.slice(0, 512);
-    // Merge ZIP (CPU-bound, fino a diversi GB) va su job BullMQ/worker_thread,
-    // mai qui — vedi commento su EnrichmentService.enqueueBatchMerge. Il batch
-    // dir viene ripulito dal processor a job concluso (successo o fallimento),
-    // non qui: i file servono ancora al worker dopo che questa richiesta torna.
+    // Il lotto viene rimosso nel finally, salvo quando è stato consegnato al
+    // job di merge: i pezzi servono ancora al worker dopo che questa richiesta
+    // torna (zipPaths assoluti nel payload BullMQ) e li ripulisce
+    // `processMergeBatch` nel proprio finally, a job concluso.
+    let handedOff = false;
     try {
-      return await this.svc.enqueueBatchMerge({
+      if (!body.traceFormat || !Object.values(TraceFormat).includes(body.traceFormat)) {
+        return { blocked: true, message: 'Formato tracciato non riconosciuto' };
+      }
+      const files = listUploadBatchFiles(batchId);
+      if (files.length === 0) {
+        return { blocked: true, message: 'Nessun file caricato per questo batch' };
+      }
+      const sourceFilename =
+        files.length === 1 ? files[0].filename : `${files.length} file: ${files.map((f) => f.filename).join(', ')}`.slice(0, 512);
+      // Merge ZIP (CPU-bound, fino a diversi GB) va su job BullMQ/worker_thread,
+      // mai qui — vedi commento su EnrichmentService.enqueueBatchMerge.
+      const result = await this.svc.enqueueBatchMerge({
         batchId,
         zipPaths: files.map((f) => f.path),
         zipFilenames: files.map((f) => f.filename),
@@ -144,9 +157,12 @@ export class EnrichmentController {
         searchPayments: body.searchPayments ?? true,
         createdBy: req.user.username,
       });
+      handedOff = true;
+      return result;
     } catch (err: any) {
-      cleanupUploadBatch(batchId);
       return { blocked: true, message: err?.message ?? 'Errore durante la creazione del job' };
+    } finally {
+      if (!handedOff) cleanupUploadBatch(batchId);
     }
   }
 

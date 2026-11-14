@@ -1,10 +1,12 @@
 import { vi } from 'vitest';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
+import * as os from 'os';
 import { join } from 'path';
 import { TraceFormat } from '../entities/enrichment-job.entity.js';
 import { EnrichmentController } from './enrichment.controller.js';
 import { chunkUploadDir, cleanupChunkedUpload, initChunkedUpload, operatorUploadOwner } from '../campaigns/chunked-upload.util.js';
+import { addToUploadBatch, cleanupUploadBatch, UPLOAD_BATCH_ROOT } from './enrichment-batch-upload.util.js';
 
 const OP = { user: { sub: 'op', username: 'op' } } as any;
 const OTHER_OP = { user: { sub: 'altro', username: 'altro' } } as any;
@@ -44,11 +46,33 @@ describe('EnrichmentController', () => {
     cleanupChunkedUpload(uploadId);
   });
 
-  it('complete: batchId mancante/non valido → blocked, sessione rimossa', async () => {
-    const uploadId = initChunkedUpload('x.zip', 1, operatorUploadOwner(OP.user));
-    const result = await controller.completeUpload(uploadId, { batchId: 'non-un-uuid' }, OP);
-    expect(result.blocked).toBe(true);
+  it('complete: batchId mancante/non valido → 400, sessione rimossa', async () => {
+    for (const batchId of ['non-un-uuid', undefined]) {
+      const uploadId = initChunkedUpload('x.zip', 1, operatorUploadOwner(OP.user));
+      await expect(controller.completeUpload(uploadId, { batchId }, OP)).rejects.toBeInstanceOf(BadRequestException);
+      expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
+    }
+  });
+
+  it('complete: lotto di un altro operatore o inesistente → 404, lotto intatto, sessione rimossa', async () => {
+    const { batchId } = controller.initBatch(OTHER_OP);
+    for (const target of [batchId, '11111111-2222-4333-8444-555555555555']) {
+      const uploadId = initChunkedUpload('x.zip', 1, operatorUploadOwner(OP.user));
+      await expect(controller.completeUpload(uploadId, { batchId: target }, OP)).rejects.toBeInstanceOf(NotFoundException);
+      expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
+    }
+    expect(fs.readdirSync(join(UPLOAD_BATCH_ROOT, batchId))).toEqual(['.batch.json']);
+    cleanupUploadBatch(batchId);
+  });
+
+  it('complete: pezzo aggiunto al proprio lotto', async () => {
+    const { batchId } = controller.initBatch(OP);
+    const uploadId = initChunkedUpload('pezzo.zip', 1, operatorUploadOwner(OP.user));
+    fs.writeFileSync(join(chunkUploadDir(uploadId), '0.part'), 'zip');
+    await expect(controller.completeUpload(uploadId, { batchId }, OP)).resolves.toEqual({ ok: true });
+    expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, batchId, '0000_pezzo.zip'))).toBe(true);
     expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
+    cleanupUploadBatch(batchId);
   });
 
   it('complete: uploadId malformato → 400', async () => {
@@ -66,48 +90,81 @@ describe('EnrichmentController', () => {
     cleanupChunkedUpload(uploadId);
   });
 
-  it('initBatch: ritorna un batchId', () => {
-    const result = controller.initBatch();
+  it('initBatch: ritorna un batchId intestato all’operatore', () => {
+    const result = controller.initBatch(OP);
     expect(result.batchId).toMatch(/^[0-9a-f]{8}-/i);
+    const meta = JSON.parse(fs.readFileSync(join(UPLOAD_BATCH_ROOT, result.batchId, '.batch.json'), 'utf8'));
+    expect(meta.owner).toBe(operatorUploadOwner(OP.user));
+    cleanupUploadBatch(result.batchId);
   });
 
-  it('completeBatch: batchId non valido → blocked, enqueueBatchMerge non chiamato', async () => {
-    const result = await controller.completeBatch('non-un-uuid', { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
-    expect(result.blocked).toBe(true);
+  it('completeBatch: batchId non valido → 400, enqueueBatchMerge non chiamato', async () => {
+    await expect(controller.completeBatch('non-un-uuid', { traceFormat: TraceFormat.MAGGIOLI }, OP)).rejects.toBeInstanceOf(BadRequestException);
     expect(svc.enqueueBatchMerge).not.toHaveBeenCalled();
   });
 
-  it('completeBatch: traceFormat non valido → blocked', async () => {
-    const { batchId } = controller.initBatch();
-    const result = await controller.completeBatch(batchId, { traceFormat: 'ALTRO' as any }, { user: { username: 'op' } } as any);
-    expect(result.blocked).toBe(true);
+  it('completeBatch: lotto di un altro operatore → 404, lotto intatto', async () => {
+    const { batchId } = controller.initBatch(OP);
+    await expect(controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, OTHER_OP)).rejects.toBeInstanceOf(NotFoundException);
+    expect(svc.enqueueBatchMerge).not.toHaveBeenCalled();
+    expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, batchId, '.batch.json'))).toBe(true);
+    cleanupUploadBatch(batchId);
   });
 
-  it('completeBatch: nessun file caricato nel batch → blocked', async () => {
-    const { batchId } = controller.initBatch();
-    const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
+  it('completeBatch: lotto inesistente → 404', async () => {
+    await expect(controller.completeBatch('11111111-2222-4333-8444-555555555555', { traceFormat: TraceFormat.MAGGIOLI }, OP)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('completeBatch: traceFormat non valido → blocked, lotto rimosso', async () => {
+    const { batchId } = controller.initBatch(OP);
+    const result = await controller.completeBatch(batchId, { traceFormat: 'ALTRO' as any }, OP);
+    expect(result.blocked).toBe(true);
+    expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, batchId))).toBe(false);
+  });
+
+  it('completeBatch: nessun file caricato nel batch → blocked, lotto rimosso', async () => {
+    const { batchId } = controller.initBatch(OP);
+    const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, OP);
     expect(result.blocked).toBe(true);
     expect(svc.enqueueBatchMerge).not.toHaveBeenCalled();
+    expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, batchId))).toBe(false);
+  });
+
+  it('completeBatch: errore di accodamento → blocked, lotto rimosso', async () => {
+    svc.enqueueBatchMerge = jest.fn(async () => {
+      throw new Error('coda non disponibile');
+    });
+    const { batchId } = controller.initBatch(OP);
+    const tmp = fs.mkdtempSync(join(os.tmpdir(), 'ctrl-batch-'));
+    const zipPath = join(tmp, 'a.zip');
+    fs.writeFileSync(zipPath, 'zip');
+    addToUploadBatch(batchId, zipPath, 'a.zip');
+    const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, OP);
+    expect(result).toEqual({ blocked: true, message: 'coda non disponibile' });
+    expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, batchId))).toBe(false);
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 
   it('completeBatch: input validi → enqueueBatchMerge chiamato, ritorna jobId subito (nessun merge sincrono)', async () => {
-    const { batchId } = controller.initBatch();
+    const { batchId } = controller.initBatch(OP);
     // Simula un file già assemblato nel batch (bypassando l'upload chunked reale).
-    const { addToUploadBatch } = await import('./enrichment-batch-upload.util.js');
-    const fs = await import('fs');
-    const os = await import('os');
-    const path = await import('path');
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctrl-batch-'));
-    const zipPath = path.join(tmp, 'a.zip');
+    const tmp = fs.mkdtempSync(join(os.tmpdir(), 'ctrl-batch-'));
+    const zipPath = join(tmp, 'a.zip');
     fs.writeFileSync(zipPath, 'fake-zip-content');
     addToUploadBatch(batchId, zipPath, 'a.zip');
 
-    const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
+    const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, OP);
 
     expect(result).toEqual({ jobId: 'j1' });
     expect(svc.enqueueBatchMerge).toHaveBeenCalledWith(
       expect.objectContaining({ batchId, zipFilenames: ['a.zip'], traceFormat: TraceFormat.MAGGIOLI }),
     );
+    // I pezzi servono ancora al job di merge: il lotto resta, lo pulisce il processor.
+    expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, batchId, '0000_a.zip'))).toBe(true);
+    // Un secondo complete sullo stesso lotto → 404, nessun secondo job.
+    await expect(controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, OP)).rejects.toBeInstanceOf(NotFoundException);
+    expect(svc.enqueueBatchMerge).toHaveBeenCalledTimes(1);
+    cleanupUploadBatch(batchId);
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 

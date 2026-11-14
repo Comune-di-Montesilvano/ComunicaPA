@@ -60,7 +60,10 @@ allegati, arricchimento, verifica domicili, allegati firmati, external-api.
 - `ChunkedUploadSweeperService` (cron orario, `campaigns/`) rimuove le
   sessioni con mtime della cartella oltre 24 h (`CHUNK_SESSION_MAX_AGE_MS`):
   solo cartelle figlie con nome UUID, symlink ignorati, log col solo
-  conteggio.
+  conteggio. Lo stesso cron pulisce anche i lotti multi-ZIP
+  dell'arricchimento (`sweepStaleUploadBatches`, regole in
+  `docs/claude/enrichment.md`): un solo sweeper per tutti gli upload
+  temporanei, nuove radici si aggiungono lì.
 
 ## Lavoro pesante sincrono in un handler HTTP — non solo timeout proxy, affama TUTTO
 

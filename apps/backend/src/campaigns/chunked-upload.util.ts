@@ -228,12 +228,15 @@ export function operatorChunkUploadOptions(): { storage: StorageEngine; limits: 
  * rifiutate prima del complete, residui di crash): solo cartelle figlie
  * dirette con nome UUID, mtime più vecchio di `maxAgeMs`. Symlink e file
  * ignorati (`Dirent.isDirectory()` è false per un symlink): non si esce mai
- * da `root`. Ritorna il numero di sessioni rimosse.
+ * da `root`. `keep(dir)` true = cartella da non rimuovere anche se vecchia
+ * (lotti di arricchimento già consegnati al job di merge). Ritorna il numero
+ * di sessioni rimosse.
  */
 export function sweepStaleChunkedUploads(
   root: string = CHUNK_ROOT,
   maxAgeMs: number = CHUNK_SESSION_MAX_AGE_MS,
   now: number = Date.now(),
+  keep: (dir: string) => boolean = () => false,
 ): number {
   if (!fs.existsSync(root)) return 0;
   let removed = 0;
@@ -245,7 +248,7 @@ export function sweepStaleChunkedUploads(
     // si riprova al giro successivo.
     try {
       const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
-      if (!stat?.isDirectory() || now - stat.mtimeMs <= maxAgeMs) continue;
+      if (!stat?.isDirectory() || now - stat.mtimeMs <= maxAgeMs || keep(dir)) continue;
       fs.rmSync(dir, { recursive: true, force: true });
       removed++;
     } catch {
