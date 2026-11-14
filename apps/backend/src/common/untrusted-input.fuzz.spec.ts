@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import fc from 'fast-check';
 import { readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
@@ -140,11 +141,21 @@ describe('fuzz: path da input non fidato', () => {
   it('initChunkedUpload: il filename salvato resta un file dentro la cartella della sessione', () => {
     fc.assert(
       fc.property(tricky, (filename) => {
-        const uploadId = initChunkedUpload(filename, 1);
+        // O il nome viene rifiutato (nessuna base utilizzabile: '', '.', '..')...
+        let uploadId: string;
+        try {
+          uploadId = initChunkedUpload(filename, 1);
+        } catch (err) {
+          expect(err).toBeInstanceOf(BadRequestException);
+          return;
+        }
+        // ...o il nome salvato resta un file dentro la cartella, anche usato da
+        // solo a valle (es. ExternalAttachmentTokensService: join(dir, filename)).
         try {
           const dir = safeChunkUploadDir(uploadId)!;
           const meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8')) as { filename: string };
           expect(dirname(resolve(join(dir, `assembled-${meta.filename}`)))).toBe(dir);
+          expect(dirname(resolve(join(dir, meta.filename)))).toBe(dir);
         } finally {
           cleanupChunkedUpload(uploadId);
         }

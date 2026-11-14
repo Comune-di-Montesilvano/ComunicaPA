@@ -137,7 +137,10 @@ paths:
                 chunk: { type: string, format: binary }
       responses:
         '200':
-          description: sempre 200
+          description: >
+            sempre 200 — `VALIDATION_ERROR` per uploadId/index non validi,
+            `NOT_FOUND` se la sessione esiste ma è stata aperta da un altro
+            client (nessuna enumerazione)
           content:
             application/json:
               schema:
@@ -162,7 +165,11 @@ paths:
         '200':
           description: >
             `attachmentToken` opaco, valido 24h e consumato dalla prima
-            notifica che lo usa (non riusabile).
+            notifica che lo usa (non riusabile). Errori (sempre 200):
+            `VALIDATION_ERROR` per uploadId non valido o chunk mancanti,
+            `NOT_FOUND` per sessione inesistente, scaduta (24h) o aperta da
+            un altro client (nessuna enumerazione). Una sessione valida viene
+            rimossa dopo il complete, anche se l'assemblaggio fallisce.
           content:
             application/json:
               schema:

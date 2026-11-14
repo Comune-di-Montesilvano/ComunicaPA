@@ -1,7 +1,9 @@
 import * as fs from 'fs';
+import { BadRequestException } from '@nestjs/common';
 import { basename, join } from 'path';
 import {
   assembleChunkedUpload,
+  CHUNK_ROOT,
   chunkPartPath,
   chunkUploadDir,
   cleanupChunkedUpload,
@@ -184,5 +186,24 @@ describe('isValidChunkIndex', () => {
     expect(isValidChunkIndex(undefined)).toBe(false);
     expect(isValidChunkIndex('')).toBe(false);
     expect(isValidChunkIndex(0)).toBe(false);
+  });
+});
+
+describe('initChunkedUpload — nome file', () => {
+  it.each(['', '.', '..', '../', 'cartella/..'])('nome file senza base utilizzabile (%j) → 400, nessuna sessione creata', (name) => {
+    const before = fs.existsSync(CHUNK_ROOT) ? fs.readdirSync(CHUNK_ROOT).length : 0;
+    expect(() => initChunkedUpload(name, 1)).toThrow(BadRequestException);
+    const after = fs.existsSync(CHUNK_ROOT) ? fs.readdirSync(CHUNK_ROOT).length : 0;
+    expect(after).toBe(before);
+  });
+
+  it('percorso con directory → solo il nome base in meta', () => {
+    const id = initChunkedUpload('../../x/elenco.csv', 1);
+    try {
+      const meta = JSON.parse(fs.readFileSync(join(chunkUploadDir(id), 'meta.json'), 'utf8')) as { filename: string };
+      expect(meta.filename).toBe('elenco.csv');
+    } finally {
+      cleanupChunkedUpload(id);
+    }
   });
 });

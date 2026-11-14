@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 import { randomUUID } from 'crypto';
-import { assembleChunkedUpload, cleanupChunkedUpload } from '../campaigns/chunked-upload.util.js';
+import { apiClientUploadOwner, assembleChunkedUpload, assertChunkedUploadAccess, cleanupChunkedUpload } from '../campaigns/chunked-upload.util.js';
 import { getAttachmentsRoot } from '../attachments/attachment-paths.js';
 
 interface TokenMeta {
@@ -20,15 +20,26 @@ export class ExternalAttachmentTokensService {
   }
 
   async completeUpload(clientId: string, uploadId: string): Promise<{ token: string }> {
-    const { path, filename } = await assembleChunkedUpload(uploadId);
-    const token = randomUUID();
-    const dir = this.tokenDir(clientId, token);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.copyFileSync(path, join(dir, filename));
-    const meta: TokenMeta = { filename, createdAt: new Date().toISOString(), consumed: false };
-    fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
-    cleanupChunkedUpload(uploadId);
-    return { token };
+    // 400/404 (VALIDATION_ERROR/NOT_FOUND) prima del try: sessione di un
+    // altro client mai assemblata né rimossa.
+    assertChunkedUploadAccess(uploadId, apiClientUploadOwner(clientId));
+    try {
+      const { path, filename } = await assembleChunkedUpload(uploadId);
+      const token = randomUUID();
+      const dir = this.tokenDir(clientId, token);
+      fs.mkdirSync(dir, { recursive: true });
+      // filename è già un basename (initChunkedUpload): la destinazione resta in dir.
+      const target = resolve(dir, filename);
+      if (!target.startsWith(resolve(dir) + sep)) {
+        throw new Error('Nome file allegato non valido');
+      }
+      fs.copyFileSync(path, target);
+      const meta: TokenMeta = { filename, createdAt: new Date().toISOString(), consumed: false };
+      fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
+      return { token };
+    } finally {
+      cleanupChunkedUpload(uploadId);
+    }
   }
 
   resolve(clientId: string, token: string): { path: string; filename: string } | null {

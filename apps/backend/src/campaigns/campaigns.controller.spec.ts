@@ -1,5 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
+import { join } from 'path';
+import { Readable } from 'stream';
+import { chunkUploadDir, cleanupChunkedUpload, initChunkedUpload, operatorChunkUploadOptions, operatorUploadOwner } from './chunked-upload.util.js';
 import { CampaignsController } from './campaigns.controller.js';
 import { CampaignsService } from './campaigns.service.js';
 
@@ -365,6 +368,56 @@ describe('CampaignsController', () => {
       const result = await controller.getRecipientIdsByChannelOutcome('camp-1', 'both');
       expect(mockService.getRecipientIdsByChannelOutcome).toHaveBeenCalledWith('camp-1', 'both');
       expect(result).toEqual({ recipientIds: ['r1', 'r2'] });
+    });
+  });
+
+  describe('upload a chunk: sessione legata all’operatore, pulizia dopo complete', () => {
+    const OP = { user: { sub: 'op-a', username: 'op-a', role: 'user', type: 'operator' } } as any;
+    const OTHER = { user: { sub: 'op-b', username: 'op-b', role: 'admin', type: 'operator' } } as any;
+    const opened: string[] = [];
+    // Il chunk passa dallo storage multer della route reale: nessuna scrittura diretta nella root.
+    const open = async (filename: string): Promise<string> => {
+      const id = initChunkedUpload(filename, 1, operatorUploadOwner(OP.user));
+      opened.push(id);
+      const storage = operatorChunkUploadOptions().storage;
+      const req = { params: { uploadId: id, index: '0' }, user: OP.user } as any;
+      const file = { fieldname: 'chunk', originalname: 'blob', mimetype: 'application/octet-stream', stream: Readable.from([Buffer.from('cf\nRSSMRA80A01H501U\n')]) } as any;
+      await new Promise<void>((resolve, reject) => storage._handleFile(req, file, (err) => (err ? reject(err) : resolve())));
+      return id;
+    };
+    afterAll(() => opened.forEach((id) => cleanupChunkedUpload(id)));
+
+    it.each(['initRecipientsChunkedUpload', 'initAttachmentsChunkedUpload'] as const)('%s: owner salvato nella sessione', (route) => {
+      const { uploadId } = controller[route]({ filename: 'elenco.csv', totalChunks: 1 }, OP);
+      opened.push(uploadId);
+      const meta = JSON.parse(fs.readFileSync(join(chunkUploadDir(uploadId), 'meta.json'), 'utf8'));
+      expect(meta.owner).toBe('operator:op-a');
+    });
+
+    it.each(['completeRecipientsChunkedUpload', 'completeAttachmentsChunkedUpload'] as const)('%s: uploadId malformato → 400', async (route) => {
+      await expect(controller[route]('uuid-1', '../../etc', OP)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it.each(['completeRecipientsChunkedUpload', 'completeAttachmentsChunkedUpload'] as const)('%s: sessione di un altro operatore → 404, sessione intatta', async (route) => {
+      const uploadId = await open('elenco.csv');
+      await expect(controller[route]('uuid-1', uploadId, OTHER)).rejects.toBeInstanceOf(NotFoundException);
+      expect(fs.readdirSync(chunkUploadDir(uploadId)).sort()).toEqual(['0.part', 'meta.json']);
+    });
+
+    it('CSV destinatari: elaborazione fallita → blocked, sessione rimossa', async () => {
+      const uploadId = await open('elenco.csv');
+      (mockService as any).uploadCsv = jest.fn().mockRejectedValue(new Error('CSV non valido'));
+      const result = await controller.completeRecipientsChunkedUpload('uuid-1', uploadId, OP);
+      expect(result.blocked).toBe(true);
+      expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
+    });
+
+    it('allegati: campagna non in bozza → blocked, sessione rimossa', async () => {
+      const uploadId = await open('allegati.zip');
+      mockService.assertDraftForAttachments.mockRejectedValueOnce(new BadRequestException('Campagna non in bozza'));
+      const result = await controller.completeAttachmentsChunkedUpload('uuid-1', uploadId, OP);
+      expect(result.blocked).toBe(true);
+      expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
     });
   });
 });

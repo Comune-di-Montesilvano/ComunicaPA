@@ -16,7 +16,6 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
 import * as fs from 'fs';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import { Roles } from '../auth/decorators/roles.decorator.js';
@@ -24,13 +23,13 @@ import { TraceFormat } from '../entities/enrichment-job.entity.js';
 import { EnrichmentService } from './enrichment.service.js';
 import { EnrichmentEventsService } from './enrichment-events.service.js';
 import {
-  MAX_CHUNK_SIZE_BYTES,
   assembleChunkedUpload,
+  assertChunkedUploadAccess,
   cleanupChunkedUpload,
   initChunkedUpload,
-  isValidChunkIndex,
   isValidUploadId,
-  safeChunkUploadDir,
+  operatorChunkUploadOptions,
+  operatorUploadOwner,
 } from '../campaigns/chunked-upload.util.js';
 import { getEnrichmentResultCsv } from './enrichment-paths.js';
 import {
@@ -51,43 +50,22 @@ export class EnrichmentController {
 
   @Post('upload/init')
   @Roles('user', 'admin')
-  initUpload(@Body() body: { filename?: string; totalChunks?: number }): { uploadId: string } {
+  initUpload(
+    @Body() body: { filename?: string; totalChunks?: number },
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): { uploadId: string } {
     const filename = body.filename?.trim();
     const totalChunks = Number(body.totalChunks);
     if (!filename || !Number.isInteger(totalChunks) || totalChunks < 1) {
       throw new BadRequestException('filename e totalChunks (intero >= 1) richiesti');
     }
-    return { uploadId: initChunkedUpload(filename, totalChunks) };
+    return { uploadId: initChunkedUpload(filename, totalChunks, operatorUploadOwner(req.user)) };
   }
 
   @Post('upload/chunk/:uploadId/:index')
   @Roles('user', 'admin')
   @UseInterceptors(
-    FileInterceptor('chunk', {
-      storage: diskStorage({
-        destination: (req, _file, cb) => {
-          // safeChunkUploadDir() mai un throw: dentro un callback diskStorage
-          // sincrono un throw grezzo sfugge come uncaughtException e abbatte
-          // l'intero processo Node (nessun handler globale in questo repo —
-          // bug reale, review fix path-traversal external-api chunk()/complete()).
-          const dir = safeChunkUploadDir(req.params['uploadId']);
-          if (!dir || !fs.existsSync(dir)) {
-            cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
-            return;
-          }
-          cb(null, dir);
-        },
-        filename: (req, _file, cb) => {
-          const index = req.params['index'];
-          if (!isValidChunkIndex(index)) {
-            cb(new BadRequestException('index non valido'), '');
-            return;
-          }
-          cb(null, `${index}.part`);
-        },
-      }),
-      limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
-    }),
+    FileInterceptor('chunk', operatorChunkUploadOptions()),
   )
   uploadChunk(): { ok: true } {
     return { ok: true };
@@ -112,7 +90,10 @@ export class EnrichmentController {
   async completeUpload(
     @Param('uploadId') uploadId: string,
     @Body() body: { batchId?: string },
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ ok?: true; blocked?: boolean; message?: string }> {
+    // 400/404 prima del try: una sessione altrui non va mai rimossa.
+    assertChunkedUploadAccess(uploadId, operatorUploadOwner(req.user));
     try {
       if (!body.batchId || !isValidUploadId(body.batchId)) {
         return { blocked: true, message: 'batchId mancante o non valido' };
