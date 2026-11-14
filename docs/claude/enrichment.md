@@ -71,10 +71,18 @@ Lotti senza `.batch.json` o senza owner (pre-deploy) accettati.
   proprio `finally`, a merge concluso (successo o fallimento).
 - `ChunkedUploadSweeperService` (stesso cron orario delle sessioni chunk)
   rimuove i lotti con mtime oltre 24 h (aggiornato a ogni pezzo aggiunto)
-  SOLO se non hanno `.completed`: un lotto completato è del job in coda e
-  non viene mai toccato dallo sweeper, anche se la coda è lenta. Residuo
-  accettato: un lotto completato il cui job sparisse da Redis senza girare
-  resta su disco.
+  se non hanno `.completed`. Un lotto completato è del job in coda: lo
+  sweeper lo lascia finché `.completed` ha meno di 7 giorni
+  (`UPLOAD_BATCH_COMPLETED_MAX_AGE_MS`), oltre lo considera orfano di un job
+  mai eseguito (es. sparito da Redis) e lo rimuove.
+- `batchDir` è l'unico punto che traduce un batchId in path: pattern UUID
+  più barriera esplicita `resolve` + `startsWith(UPLOAD_BATCH_ROOT + sep)`,
+  come `chunkUploadDir`. Pezzo aggiunto a un lotto sparito/completato nel
+  frattempo: `NotFoundException`, rilanciata dal controller come 404.
+- Test: mai creare a mano file/cartelle sotto `UPLOAD_BATCH_ROOT`/`CHUNK_ROOT`
+  (radici `/tmp` letterali): lotti via `initUploadBatch`, chunk via
+  `operatorChunkUploadOptions().storage._handleFile`, sweeper su una radice
+  `mkdtemp`.
 
 **Retention**: `enrichment.retentionDays` (default 30, chiave in
 `settings.registry.ts`) — job e file (ZIP sorgente, CSV/ZIP risultato)

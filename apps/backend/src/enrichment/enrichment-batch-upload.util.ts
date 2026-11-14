@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { basename, join } from 'path';
+import { basename, join, resolve, sep } from 'path';
 import { randomUUID } from 'crypto';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CHUNK_SESSION_MAX_AGE_MS, isValidUploadId, sweepStaleChunkedUploads } from '../campaigns/chunked-upload.util.js';
@@ -26,14 +26,21 @@ import { CHUNK_SESSION_MAX_AGE_MS, isValidUploadId, sweepStaleChunkedUploads } f
  *   fallito): il controller lo rimuove subito;
  * - mai completato: `sweepStaleUploadBatches` (cron orario di
  *   `ChunkedUploadSweeperService`) lo rimuove dopo 24 h di inattività. I lotti
- *   con `.completed` non vengono mai toccati dallo sweeper: i loro pezzi sono
- *   referenziati per path assoluto dal job di merge in coda.
+ *   con `.completed` restano per 7 giorni (pezzi referenziati per path
+ *   assoluto dal job di merge in coda), poi sono orfani e vengono rimossi.
  */
 
 export const UPLOAD_BATCH_ROOT = '/tmp/comunicapa-uploads/enrichment-batch';
 
 /** Età massima di un lotto mai completato (mtime della cartella, aggiornato a ogni pezzo aggiunto). */
 export const UPLOAD_BATCH_MAX_AGE_MS = CHUNK_SESSION_MAX_AGE_MS;
+
+/**
+ * Età massima di un lotto completato (mtime di `.completed`): oltre, il suo
+ * job di merge non è mai girato (es. sparito da Redis) e lo sweeper lo
+ * rimuove. Ampio margine su qualunque attesa in coda.
+ */
+export const UPLOAD_BATCH_COMPLETED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** File di servizio del lotto: iniziano con "." e non sono mai pezzi (`NNNN_<nome>`). */
 const BATCH_META_FILE = '.batch.json';
@@ -48,9 +55,16 @@ interface UploadBatchMeta {
   owner?: string;
 }
 
-function batchDir(batchId: string): string | null {
+/**
+ * Unico punto che traduce un batchId (input non fidato) in una directory:
+ * forma UUID e, come seconda barriera esplicita (stesso schema di
+ * `chunkUploadDir`), directory risolta sotto `UPLOAD_BATCH_ROOT`.
+ */
+function batchDir(batchId: unknown): string | null {
   if (!isValidUploadId(batchId)) return null;
-  return join(UPLOAD_BATCH_ROOT, batchId);
+  const dir = resolve(UPLOAD_BATCH_ROOT, batchId);
+  if (!dir.startsWith(UPLOAD_BATCH_ROOT + sep)) return null;
+  return dir;
 }
 
 function isPieceEntry(entry: string): boolean {
@@ -77,8 +91,8 @@ export function initUploadBatch(owner?: string): string {
  * senza `.batch.json` o senza owner (creati prima del campo) sono accettati.
  */
 export function uploadBatchAccess(batchId: unknown, owner: string | undefined): 'ok' | 'invalid' | 'not-found' {
-  if (!isValidUploadId(batchId)) return 'invalid';
-  const dir = join(UPLOAD_BATCH_ROOT, batchId);
+  const dir = batchDir(batchId);
+  if (!dir) return 'invalid';
   const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
   if (!stat?.isDirectory() || isCompletedDir(dir)) return 'not-found';
   let meta: UploadBatchMeta;
@@ -114,11 +128,15 @@ export function claimUploadBatch(batchId: string): boolean {
   }
 }
 
-/** Sposta il file assemblato nel batch, prefissato con l'indice di arrivo (ordine preservato). */
+/**
+ * Sposta il file assemblato nel batch, prefissato con l'indice di arrivo
+ * (ordine preservato). Lotto sparito o completato nel frattempo (complete
+ * concorrente, sweeper) → 404, stessa risposta di `assertUploadBatchAccess`.
+ */
 export function addToUploadBatch(batchId: string, assembledPath: string, filename: string): void {
   const dir = batchDir(batchId);
   if (!dir || !fs.existsSync(dir) || isCompletedDir(dir)) {
-    throw new Error(`Batch di upload "${batchId}" non trovato o scaduto`);
+    throw new NotFoundException(UPLOAD_BATCH_NOT_FOUND_MESSAGE);
   }
   const index = fs.readdirSync(dir).filter(isPieceEntry).length;
   const safeFilename = basename(filename);
@@ -149,13 +167,18 @@ export function cleanupUploadBatch(batchId: string): void {
 /**
  * Rimuove i lotti mai completati più vecchi di `maxAgeMs`, con le stesse
  * garanzie di `sweepStaleChunkedUploads` (solo cartelle figlie con nome UUID,
- * niente symlink, errori per voce ignorati). I lotti completati restano: li
- * rimuove il job di merge quando ha consumato i pezzi.
+ * niente symlink, errori per voce ignorati). I lotti completati restano finché
+ * `.completed` ha meno di `completedMaxAgeMs` (li rimuove il job di merge
+ * quando ha consumato i pezzi); oltre, sono orfani di un job mai eseguito.
  */
 export function sweepStaleUploadBatches(
   root: string = UPLOAD_BATCH_ROOT,
   maxAgeMs: number = UPLOAD_BATCH_MAX_AGE_MS,
   now: number = Date.now(),
+  completedMaxAgeMs: number = UPLOAD_BATCH_COMPLETED_MAX_AGE_MS,
 ): number {
-  return sweepStaleChunkedUploads(root, maxAgeMs, now, isCompletedDir);
+  return sweepStaleChunkedUploads(root, maxAgeMs, now, (dir) => {
+    const marker = fs.lstatSync(join(dir, BATCH_COMPLETED_FILE), { throwIfNoEntry: false });
+    return marker !== undefined && now - marker.mtimeMs <= completedMaxAgeMs;
+  });
 }

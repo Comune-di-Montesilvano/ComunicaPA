@@ -109,6 +109,9 @@ export class EnrichmentController {
         addToUploadBatch(batchId, path, filename);
         return { ok: true };
       } catch (err: any) {
+        // Lotto sparito o completato tra l'assert e l'aggiunta: stesso 404
+        // dell'assert. Gli altri errori (chunk mancante, I/O) restano blocked.
+        if (err instanceof NotFoundException) throw err;
         return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dello ZIP' };
       }
     } finally {

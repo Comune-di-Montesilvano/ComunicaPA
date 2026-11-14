@@ -13,6 +13,7 @@ import {
   initUploadBatch,
   listUploadBatchFiles,
   sweepStaleUploadBatches,
+  UPLOAD_BATCH_COMPLETED_MAX_AGE_MS,
   UPLOAD_BATCH_MAX_AGE_MS,
   UPLOAD_BATCH_ROOT,
   uploadBatchAccess,
@@ -68,9 +69,9 @@ describe('lotto di upload legato a chi lo apre', () => {
   });
 
   it('lotto creato prima della modifica (cartella senza file di metadati) accettato', () => {
-    const id = randomUUID();
-    fs.mkdirSync(join(UPLOAD_BATCH_ROOT, id), { recursive: true });
-    created.push(id);
+    // Creato dall'API, poi tolto il file di metadati: nessuna scrittura a mano nella radice.
+    const id = init(undefined);
+    fs.rmSync(join(UPLOAD_BATCH_ROOT, id, '.batch.json'));
     expect(uploadBatchAccess(id, OWNER_A)).toBe('ok');
   });
 
@@ -97,7 +98,8 @@ describe('lotto di upload legato a chi lo apre', () => {
     expect(claimUploadBatch(id)).toBe(true);
     expect(claimUploadBatch(id)).toBe(false);
     expect(uploadBatchAccess(id, OWNER_A)).toBe('not-found');
-    expect(() => addToUploadBatch(id, assembled('c.zip'), 'c.zip')).toThrow();
+    // Pezzo arrivato dopo il complete (race): 404 come un lotto inesistente.
+    expect(() => addToUploadBatch(id, assembled('c.zip'), 'c.zip')).toThrow(NotFoundException);
     // I file restano per il job di merge, che li consuma e poi pulisce.
     expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, id))).toBe(true);
   });
@@ -115,11 +117,15 @@ describe('sweepStaleUploadBatches', () => {
   const OLD = new Date(NOW - UPLOAD_BATCH_MAX_AGE_MS - 60_000);
   const RECENT = new Date(NOW - 60_000);
 
-  function batch(mtime: Date, completed = false): string {
+  // Radice di test in mkdtemp (mai UPLOAD_BATCH_ROOT): `completedAt` = mtime di `.completed`.
+  function batch(mtime: Date, completed = false, completedAt: Date = RECENT): string {
     const dir = join(root, randomUUID());
     fs.mkdirSync(dir);
     fs.writeFileSync(join(dir, '0000_a.zip'), 'zip');
-    if (completed) fs.writeFileSync(join(dir, '.completed'), '');
+    if (completed) {
+      fs.writeFileSync(join(dir, '.completed'), '');
+      fs.utimesSync(join(dir, '.completed'), completedAt, completedAt);
+    }
     fs.utimesSync(dir, mtime, mtime);
     return dir;
   }
@@ -146,10 +152,21 @@ describe('sweepStaleUploadBatches', () => {
     expect(fs.existsSync(join(fresh, '0000_a.zip'))).toBe(true);
   });
 
-  it('un lotto completato (file in attesa del job di merge) non viene mai rimosso, anche se vecchio', () => {
+  it('un lotto completato (file in attesa del job di merge) resta, anche se più vecchio di 24 h', () => {
     const completed = batch(OLD, true);
     expect(sweepStaleUploadBatches(root, UPLOAD_BATCH_MAX_AGE_MS, NOW)).toBe(0);
     expect(fs.existsSync(join(completed, '0000_a.zip'))).toBe(true);
+  });
+
+  it('lotto completato orfano (job mai eseguito, .completed oltre 7 giorni) → rimosso', () => {
+    expect(UPLOAD_BATCH_COMPLETED_MAX_AGE_MS).toBe(7 * 24 * 60 * 60 * 1000);
+    const orphanTime = new Date(NOW - UPLOAD_BATCH_COMPLETED_MAX_AGE_MS - 60_000);
+    const withinTime = new Date(NOW - UPLOAD_BATCH_COMPLETED_MAX_AGE_MS + 60 * 60_000);
+    const orphan = batch(orphanTime, true, orphanTime);
+    const waiting = batch(withinTime, true, withinTime);
+    expect(sweepStaleUploadBatches(root, UPLOAD_BATCH_MAX_AGE_MS, NOW)).toBe(1);
+    expect(fs.existsSync(orphan)).toBe(false);
+    expect(fs.existsSync(join(waiting, '0000_a.zip'))).toBe(true);
   });
 
   it('nomi non UUID, file e symlink ignorati: mai fuori dalla radice', () => {

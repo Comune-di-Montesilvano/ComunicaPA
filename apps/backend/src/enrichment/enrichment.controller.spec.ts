@@ -5,8 +5,21 @@ import * as os from 'os';
 import { join } from 'path';
 import { TraceFormat } from '../entities/enrichment-job.entity.js';
 import { EnrichmentController } from './enrichment.controller.js';
-import { chunkUploadDir, cleanupChunkedUpload, initChunkedUpload, operatorUploadOwner } from '../campaigns/chunked-upload.util.js';
-import { addToUploadBatch, cleanupUploadBatch, UPLOAD_BATCH_ROOT } from './enrichment-batch-upload.util.js';
+import { Readable } from 'stream';
+import {
+  chunkUploadDir,
+  cleanupChunkedUpload,
+  initChunkedUpload,
+  operatorChunkUploadOptions,
+  operatorUploadOwner,
+} from '../campaigns/chunked-upload.util.js';
+import {
+  addToUploadBatch,
+  claimUploadBatch,
+  cleanupUploadBatch,
+  listUploadBatchFiles,
+  UPLOAD_BATCH_ROOT,
+} from './enrichment-batch-upload.util.js';
 
 const OP = { user: { sub: 'op', username: 'op' } } as any;
 const OTHER_OP = { user: { sub: 'altro', username: 'altro' } } as any;
@@ -65,13 +78,35 @@ describe('EnrichmentController', () => {
     cleanupUploadBatch(batchId);
   });
 
+  // Il chunk passa dallo storage multer della route reale: nessuna scrittura diretta nella radice.
+  async function openWithChunk(filename: string): Promise<string> {
+    const uploadId = initChunkedUpload(filename, 1, operatorUploadOwner(OP.user));
+    const storage = operatorChunkUploadOptions().storage;
+    const req = { params: { uploadId, index: '0' }, user: OP.user } as any;
+    const file = { fieldname: 'chunk', originalname: 'blob', mimetype: 'application/octet-stream', stream: Readable.from([Buffer.from('zip')]) } as any;
+    await new Promise<void>((resolve, reject) => storage._handleFile(req, file, (err) => (err ? reject(err) : resolve())));
+    return uploadId;
+  }
+
   it('complete: pezzo aggiunto al proprio lotto', async () => {
     const { batchId } = controller.initBatch(OP);
-    const uploadId = initChunkedUpload('pezzo.zip', 1, operatorUploadOwner(OP.user));
-    fs.writeFileSync(join(chunkUploadDir(uploadId), '0.part'), 'zip');
+    const uploadId = await openWithChunk('pezzo.zip');
     await expect(controller.completeUpload(uploadId, { batchId }, OP)).resolves.toEqual({ ok: true });
     expect(fs.existsSync(join(UPLOAD_BATCH_ROOT, batchId, '0000_pezzo.zip'))).toBe(true);
     expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
+    cleanupUploadBatch(batchId);
+  });
+
+  it('complete: lotto completato mentre il pezzo si assembla → 404 (mai blocked con il batchId), sessione rimossa', async () => {
+    const { batchId } = controller.initBatch(OP);
+    const uploadId = await openWithChunk('pezzo.zip');
+    // L'assert sul lotto gira in modo sincrono prima del primo await: il claim
+    // qui sotto arriva tra l'assert e l'aggiunta del pezzo.
+    const pending = controller.completeUpload(uploadId, { batchId }, OP);
+    expect(claimUploadBatch(batchId)).toBe(true);
+    await expect(pending).rejects.toBeInstanceOf(NotFoundException);
+    expect(fs.existsSync(chunkUploadDir(uploadId))).toBe(false);
+    expect(listUploadBatchFiles(batchId)).toEqual([]);
     cleanupUploadBatch(batchId);
   });
 
