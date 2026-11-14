@@ -162,6 +162,20 @@ docker compose exec backend node_modules/.bin/tsc -p tsconfig.spec.json --noEmit
 docker compose exec frontend-admin node_modules/.bin/tsc -p tsconfig.app.json --noEmit
 docker compose exec frontend-citizen node_modules/.bin/tsc -p tsconfig.app.json --noEmit
 
+# Type-check dei test frontend-admin (tests/ + src/, CI: step dedicato in tests.yml)
+docker compose exec frontend-admin node_modules/.bin/tsc -p tsconfig.test.json --noEmit
+docker compose exec frontend-citizen node_modules/.bin/tsc -p tsconfig.test.json --noEmit
+
+# Unit test frontend-admin (Vitest, logica pura di src/, ambiente node). tests/ e vitest.config.ts
+# NON sono bind-mountati nel servizio dev (solo src/ e public/): `docker compose exec` non li vede
+# finché non si ricostruisce l'immagine, quindi `docker run` sull'immagine dev con i file montati.
+# Con TZ=UTC e TZ=Europe/Rome; in CI gira `pnpm test` (vitest + scripts/check-guida.mjs).
+A=apps/frontend-admin; MSYS_NO_PATHCONV=1 docker run --rm -e TZ=UTC   -v "$(pwd)/$A/src:/app/$A/src" -v "$(pwd)/$A/tests:/app/$A/tests"   -v "$(pwd)/$A/vitest.config.ts:/app/$A/vitest.config.ts"   -v comunicapa_admin_node_modules:/app/node_modules   -w /app/$A comunicapa/frontend-admin:dev node_modules/.bin/vitest run
+
+# Unit test frontend-citizen (Vitest, src/lib, ambiente node): stesso schema di frontend-admin
+# (tests/ e vitest.config.ts non sono bind-mountati, `docker run` sull'immagine dev). Sempre con TZ=UTC e TZ=Europe/Rome.
+A=apps/frontend-citizen; MSYS_NO_PATHCONV=1 docker run --rm -e TZ=UTC   -v "$(pwd)/$A/src:/app/$A/src" -v "$(pwd)/$A/tests:/app/$A/tests"   -v "$(pwd)/$A/vitest.config.ts:/app/$A/vitest.config.ts"   -v comunicapa_citizen_node_modules:/app/node_modules   -w /app/$A comunicapa/frontend-citizen:dev node_modules/.bin/vitest run
+
 # Token operatore admin per testare le API senza login LDAP (solo dev)
 docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/node_modules/jsonwebtoken');console.log(jwt.sign({sub:'debug',username:'debug',role:'admin',type:'operator'},process.env.JWT_SECRET,{expiresIn:'10m'}))"
 ```

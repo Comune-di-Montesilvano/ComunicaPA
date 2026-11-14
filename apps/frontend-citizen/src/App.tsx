@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Footer } from './components/Footer';
+import { renderAppIoMarkdown } from './lib/html';
+import { decodeJwtClaims } from './lib/jwt-claims';
+import { findPhysicalAddress, getSendStatusMeta, getTextSnippet, statusBadge } from './lib/notification';
 
 declare global {
   interface Window {
@@ -10,171 +13,6 @@ declare global {
 /** Portale cittadini SEND: destinazione di ripiego del link alla notifica. */
 const SEND_CITIZEN_PORTAL_URL = 'https://cittadini.notifichedigitali.it/';
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/**
- * Converte il markdown minimale generato da processTemplate() (App IO: **bold**,
- * *italic*, [testo](url), liste "- item", paragrafi separati da riga vuota) in
- * HTML sicuro da passare a dangerouslySetInnerHTML. Escape del testo grezzo PRIMA
- * di applicare le trasformazioni, cosi eventuali "<script>" nei dati del CSV non
- * vengono mai interpretati come markup; solo URL http(s)/mailto sono ammesse nei
- * link, per non introdurre schemi javascript: cliccabili.
- */
-function renderAppIoMarkdown(markdown: string): string {
-  const escaped = escapeHtml(markdown);
-  const withLinks = escaped.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener">$1</a>',
-  );
-  const withBold = withLinks.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  const withItalic = withBold.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-  const paragraphs = withItalic.split(/\n{2,}/).map((block) => {
-    const lines = block.split('\n');
-    if (lines.every((l) => /^\s*-\s+/.test(l) && l.trim() !== '')) {
-      const items = lines.map((l) => `<li>${l.replace(/^\s*-\s+/, '')}</li>`).join('');
-      return `<ul>${items}</ul>`;
-    }
-    return `<p>${lines.join('<br />')}</p>`;
-  });
-
-  return paragraphs.join('');
-}
-
-function decodeJwtClaims(token: string): { cf: string; name: string; provider?: string } {
-  try {
-    const parts = token.split('.');
-    if (parts.length < 2) return { cf: '', name: '' };
-    const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = (4 - (base64.length % 4)) % 4;
-    const padded = base64 + '='.repeat(pad);
-    
-    // Decodifica UTF-8 sicura per atob
-    const binStr = atob(padded);
-    const bytes = new Uint8Array(binStr.length);
-    for (let i = 0; i < binStr.length; i++) {
-      bytes[i] = binStr.charCodeAt(i);
-    }
-    const jsonStr = new TextDecoder().decode(bytes);
-    const payload = JSON.parse(jsonStr) as Record<string, unknown>;
-    
-    const rawCf = String(
-      payload['fiscal_number'] ??
-        payload['https://attributes.eid.gov.it/fiscal_number'] ??
-        payload['https://attributes.spid.gov.it/fiscalNumber'] ??
-        payload['codice_fiscale'] ??
-        payload['cf'] ??
-        payload['codiceFiscale'] ??
-        payload['fiscalNumber'] ??
-        payload['fiscalCode'] ??
-        '',
-    ).toUpperCase();
-    const cf = rawCf.replace(/^TIN[A-Z]{2}-/, '');
-    
-    const given = String(
-      payload['given_name'] ??
-        payload['first_name'] ??
-        payload['givenName'] ??
-        '',
-    );
-    const family = String(
-      payload['family_name'] ??
-        payload['last_name'] ??
-        payload['sn'] ??
-        payload['surname'] ??
-        payload['familyName'] ??
-        '',
-    );
-    const name =
-      (given && family)
-        ? `${given} ${family}`
-        : (String(payload['name'] ?? '') || [given, family].filter(Boolean).join(' '));
-    
-    // Rileva provider (SPID, CIE, eIDAS, IT-Wallet, ecc.)
-    const amr = payload['amr'];
-    let provider = 'Identità Digitale';
-    if (payload['provider_name']) {
-      provider = String(payload['provider_name']);
-    } else if (amr) {
-      const amrVal = Array.isArray(amr) ? amr[0] : amr;
-      if (typeof amrVal === 'string') {
-        const amrLower = amrVal.toLowerCase();
-        if (amrLower.includes('cie') || amrLower.includes('interno.gov.it')) {
-          provider = 'CIE';
-        } else if (amrLower.includes('spid')) {
-          provider = 'SPID';
-        } else if (amrLower.includes('eidas')) {
-          provider = 'eIDAS';
-        } else if (amrLower.includes('wallet') || amrLower.includes('itwallet')) {
-          provider = 'IT-Wallet';
-        } else {
-          provider = amrVal.toUpperCase();
-        }
-      }
-    }
-    
-    return { cf, name, provider };
-  } catch (e) {
-    console.error('decodeJwtClaims error:', e);
-    return { cf: '', name: '', provider: 'Identità Digitale' };
-  }
-}
-
-function getTextSnippet(content: string): string {
-  if (!content) return '';
-  // Rimuovi tag HTML semplici
-  let plain = content.replace(/<[^>]*>/g, ' ');
-  // Rimuovi link markdown [testo](url) -> testo
-  plain = plain.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
-  // Rimuovi stili grassetto/corsivo markdown
-  plain = plain.replace(/\*\*([^*]+)\*\*/g, '$1');
-  plain = plain.replace(/\*([^*]+)\*/g, '$1');
-  // Rimuovi liste e caratteri speciali
-  plain = plain.replace(/^\s*-\s+/gm, '');
-  // Normalizza gli spazi bianchi e a capo
-  plain = plain.replace(/\s+/g, ' ').trim();
-  
-  if (plain.length > 85) {
-    return plain.slice(0, 82) + '...';
-  }
-  return plain;
-}
-
-function findPhysicalAddress(extraData: Record<string, any> | undefined): string | null {
-  if (!extraData) return null;
-  const keys = Object.keys(extraData);
-  const addressKey = keys.find(k => /^(indirizzo|address|via|piazza|strada|viale|corso)$/i.test(k));
-  const cityKey = keys.find(k => /^(citta|comune|municipality|localita)$/i.test(k));
-  const capKey = keys.find(k => /^(cap|zip|codice_postale|zip_code)$/i.test(k));
-  const provKey = keys.find(k => /^(provincia|prov|sigla)$/i.test(k));
-  const civicoKey = keys.find(k => /^(civico|numero_civico|n_civico|n)$/i.test(k));
-
-  if (addressKey && extraData[addressKey]) {
-    let addr = String(extraData[addressKey]);
-    if (civicoKey && extraData[civicoKey]) {
-      addr += `, ${extraData[civicoKey]}`;
-    }
-    const city = cityKey && extraData[cityKey] ? String(extraData[cityKey]) : '';
-    const cap = capKey && extraData[capKey] ? String(extraData[capKey]) : '';
-    const prov = provKey && extraData[provKey] ? String(extraData[provKey]) : '';
-
-    let location = '';
-    if (cap) location += cap + ' ';
-    if (city) location += city;
-    if (prov) location += ` (${prov.toUpperCase()})`;
-
-    return location ? `${addr} - ${location}` : addr;
-  }
-  return null;
-}
 
 interface Notification {
   id: string;
@@ -200,39 +38,6 @@ interface Notification {
   sendDocumentsAvailableUntil?: string | null;
   /** SEND: 120 giorni scaduti, `attachments` contiene la copia di cortesia. */
   sendCopyAvailable?: boolean;
-}
-
-function statusBadge(status: Notification['status']): { cls: string; label: string } {
-  if (status === 'sent') return { cls: 'status-notif-received', label: 'Ricevuta' };
-  if (status === 'failed' || status === 'skipped') return { cls: 'status-notif-failed', label: 'Non recapitata' };
-  return { cls: 'status-notif-pending', label: 'In corso' };
-}
-
-function getSendStatusMeta(status: string): { label: string; cls: string; desc: string } {
-  switch (status) {
-    case 'VALIDATING':
-      return { label: 'In validazione', cls: 'status-validating', desc: 'La piattaforma SEND verifica la conformità dei documenti caricati.' };
-    case 'ACCEPTED':
-      return { label: 'Depositata', cls: 'status-accepted', desc: 'L\'ente ha depositato la notifica in piattaforma.' };
-    case 'DELIVERING':
-      return { label: 'Invio in corso', cls: 'status-delivering', desc: 'L\'invio della notifica è in corso.' };
-    case 'DELIVERED':
-      return { label: 'Consegnata', cls: 'status-delivered', desc: 'L\'invio della notifica è terminato in quanto almeno un recapito digitale è valido.' };
-    case 'VIEWED':
-      return { label: 'Avvenuto accesso', cls: 'status-viewed', desc: 'Il destinatario ha letto la notifica.' };
-    case 'EFFECTIVE_DATE':
-      return { label: 'Perfezionata per decorrenza termini', cls: 'status-effective-date', desc: 'Notifica legalmente perfezionata per decorrenza dei termini di legge.' };
-    case 'UNREACHABLE':
-      return { label: 'Irreperibile', cls: 'status-unreachable', desc: 'Tutti i tentativi di consegna digitali e analogici sono falliti.' };
-    case 'CANCELLED':
-      return { label: 'Annullata', cls: 'status-cancelled', desc: 'La notifica è stata annullata dall\'ente emittente.' };
-    case 'RETURNED_TO_SENDER':
-      return { label: 'Restituita al mittente', cls: 'status-returned-to-sender', desc: 'Gli atti sono stati restituiti al mittente per compiuta giacenza cartacea.' };
-    case 'REFUSED':
-      return { label: 'Rifiutata', cls: 'status-refused', desc: 'La notifica è stata rifiutata in fase di accettazione da parte della piattaforma.' };
-    default:
-      return { label: status, cls: 'status-unknown', desc: 'Stato non codificato.' };
-  }
 }
 
 const EMBEDDED_LOGOS = {
