@@ -14,8 +14,10 @@ export default defineConfig({
   // tiene bassa la RAM e rende leggibile l'ordine dei log.
   workers: 1,
   fullyParallel: false,
-  // Nessun retry: un test che passa solo al secondo tentativo e' un test instabile da correggere.
-  retries: 0,
+  // Un retry solo in CI (un guasto transitorio di rete/avvio non deve congelare `latest`):
+  // Playwright segnala comunque il test come "flaky" nell'elenco. Trace resta
+  // `retain-on-failure`: conservata per ogni tentativo fallito, mai per i riusciti.
+  retries: process.env['CI'] ? 1 : 0,
   forbidOnly: !!process.env['CI'],
   timeout: 180_000,
   expect: { timeout: 15_000 },
