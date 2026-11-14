@@ -99,6 +99,10 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
       Logger.debug(`OidcCitizenStrategy.validate payload: ${JSON.stringify(payload)}`, OidcCitizenStrategy.name);
     }
+    // I token operatore (AuthService, type 'operator') non sono mai sessioni cittadino.
+    if (payload['type'] === 'operator') {
+      throw new UnauthorizedException();
+    }
     // Trailing slash normalizzato: il claim `iss` reale del provider non ce l'ha
     // mai (convenzione OIDC standard), ma l'operatore può averlo digitato in UI
     // (es. "https://sso.ente.it/") — bug reale: un confronto stringa esatta

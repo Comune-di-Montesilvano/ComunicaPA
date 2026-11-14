@@ -4,6 +4,7 @@ import { LoginDto } from './dto/login.dto.js';
 import type { AuthResponseDto } from './dto/auth-response.dto.js';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import { Public } from './decorators/public.decorator.js';
+import { Roles } from './decorators/roles.decorator.js';
 
 @Controller('admin/auth')
 export class AuthController {
@@ -17,6 +18,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @Roles('user', 'admin')
   me(@Request() req: { user: JwtOperatorPayload }): JwtOperatorPayload {
     return req.user;
   }

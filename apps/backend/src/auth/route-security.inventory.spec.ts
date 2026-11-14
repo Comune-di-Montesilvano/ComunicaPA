@@ -41,12 +41,8 @@ const SELF_GUARDED: Record<string, string> = {
 
 // Route admin non pubbliche SENZA @Roles: gap noti, non correzioni di questo
 // test (nessun cambio di comportamento).
-const KNOWN_GAPS = [
-  // RolesGuard passa con ruoli vuoti e JwtAuthGuard accetta qualunque JWT
-  // firmato: in dev il token del simulatore cittadino (mock) raggiunge
-  // questo handler. Vedi spec strategia test, "Osservazioni".
-  'GET /admin/auth/me',
-];
+// Route autenticate senza @Roles ammesse in modo esplicito (oggi nessuna).
+const KNOWN_GAPS: string[] = [];
 
 const isAllowlisted = (k: string) => PUBLIC_ALLOWLIST.some((a) => (typeof a === 'string' ? a === k : a.test(k)));
 
@@ -106,7 +102,7 @@ describe('Inventario sicurezza route', () => {
       GET / | public | roles=- | guards=-
       GET /admin/audit-logs | auth | roles=user,admin | guards=-
       POST /admin/auth/login | public | roles=- | guards=-
-      GET /admin/auth/me | auth | roles=- | guards=-
+      GET /admin/auth/me | auth | roles=user,admin | guards=-
       GET /admin/campaigns | auth | roles=user,admin | guards=-
       POST /admin/campaigns | auth | roles=user,admin | guards=-
       DELETE /admin/campaigns/:id | auth | roles=user,admin | guards=-
