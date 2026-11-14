@@ -89,6 +89,19 @@ jobs:
         if: github.event_name != 'pull_request'
         run: pnpm build
 
+      # `pnpm -r` salta i pacchetti senza lo script: ogni `test` deve avere il suo `test:coverage`.
+      - name: Ogni pacchetto con test ha test:coverage
+        if: github.event_name != 'pull_request'
+        run: |
+          node -e "
+          const fs = require('fs');
+          const dirs = ['apps', 'packages'].flatMap((d) => fs.readdirSync(d).map((n) => d + '/' + n));
+          const bad = dirs.filter((d) => fs.existsSync(d + '/package.json'))
+            .filter((d) => { const s = JSON.parse(fs.readFileSync(d + '/package.json')).scripts || {}; return s.test && !s['test:coverage']; });
+          bad.forEach((d) => console.log('::error file=' + d + '/package.json::manca test:coverage (il pacchetto sparirebbe dal run con copertura)'));
+          process.exit(bad.length ? 1 : 0);
+          "
+
       # Stessa suite di `pnpm test` con --coverage (v8, report HTML): informativa, senza soglie.
       - name: Run integrated tests (con copertura)
         if: github.event_name != 'pull_request'
@@ -103,6 +116,7 @@ jobs:
             apps/backend/coverage/
             apps/frontend-admin/coverage/
             apps/frontend-citizen/coverage/
+            packages/shared-types/coverage/
           retention-days: 7
           if-no-files-found: warn
 
