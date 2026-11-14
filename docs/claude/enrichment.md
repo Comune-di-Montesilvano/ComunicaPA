@@ -55,6 +55,42 @@ proxy esterno ~1MB descritto sopra: `POST
 /admin/enrichment/upload/{init,chunk,complete}`, chunk client-side,
 riassemblati lato server prima di processare lo ZIP.
 
+**Lotti multi-ZIP (`UPLOAD_BATCH_ROOT/<batchId>`,
+`enrichment-batch-upload.util.ts`).** `upload/batch/init` crea la cartella
+con `.batch.json` = owner (`operatorUploadOwner`, come le sessioni chunk),
+in modo atomico: scrittura in una cartella `mkdtemp` (`.staging-XXXXXX`
+sotto la radice) e `rename` sul nome definitivo — mai `writeFileSync` su un
+path prevedibile sotto una radice `/tmp` letterale (CodeQL
+`js/insecure-temporary-file`, bloccante in merge);
+`upload/complete/:uploadId` (body `batchId`) e `upload/batch/:batchId/complete`
+chiamano `assertUploadBatchAccess`: batchId malformato o mancante 400, lotto
+inesistente/già completato/di un altro operatore 404 (stessa risposta).
+Lotti senza `.batch.json` o senza owner (pre-deploy) accettati.
+- Il complete del lotto crea la DIRECTORY `.completed` con `mkdirSync` non
+  ricorsivo (`claimUploadBatch`, atomico): una sola volta, il secondo
+  complete riceve EEXIST → 404 e non accoda un secondo merge.
+- Rifiuto dopo il claim (formato, lotto vuoto, accodamento fallito): lotto
+  rimosso nel `finally` del controller. Accodato: NON rimosso lì, il job
+  `merge-batch` riceve i `zipPaths` assoluti dentro il lotto e li legge
+  dopo che la richiesta è tornata — lo rimuove `processMergeBatch` nel
+  proprio `finally`, a merge concluso (successo o fallimento).
+- `ChunkedUploadSweeperService` (stesso cron orario delle sessioni chunk)
+  rimuove i lotti con mtime oltre 24 h (aggiornato a ogni pezzo aggiunto)
+  se non hanno `.completed`. Un lotto completato è del job in coda: lo
+  sweeper lo lascia finché `.completed` ha meno di 7 giorni
+  (`UPLOAD_BATCH_COMPLETED_MAX_AGE_MS`), oltre lo considera orfano di un job
+  mai eseguito (es. sparito da Redis) e lo rimuove. Stesse regole (nome
+  esatto `.staging-` + 6 alfanumerici, directory reale, niente symlink,
+  24 h) per gli staging lasciati da un init interrotto.
+- `batchDir` è l'unico punto che traduce un batchId in path: pattern UUID
+  più barriera esplicita `resolve` + `startsWith(UPLOAD_BATCH_ROOT + sep)`,
+  come `chunkUploadDir`. Pezzo aggiunto a un lotto sparito/completato nel
+  frattempo: `NotFoundException`, rilanciata dal controller come 404.
+- Test: mai creare a mano file/cartelle sotto `UPLOAD_BATCH_ROOT`/`CHUNK_ROOT`
+  (radici `/tmp` letterali): lotti via `initUploadBatch`, chunk via
+  `operatorChunkUploadOptions().storage._handleFile`, sweeper su una radice
+  `mkdtemp`.
+
 **Retention**: `enrichment.retentionDays` (default 30, chiave in
 `settings.registry.ts`) — job e file (ZIP sorgente, CSV/ZIP risultato)
 più vecchi vengono ripuliti da `EnrichmentRetentionService`, stesso
