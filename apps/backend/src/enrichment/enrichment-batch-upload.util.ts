@@ -42,9 +42,17 @@ export const UPLOAD_BATCH_MAX_AGE_MS = CHUNK_SESSION_MAX_AGE_MS;
  */
 export const UPLOAD_BATCH_COMPLETED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** File di servizio del lotto: iniziano con "." e non sono mai pezzi (`NNNN_<nome>`). */
+/** Voci di servizio del lotto: iniziano con "." e non sono mai pezzi (`NNNN_<nome>`). */
 const BATCH_META_FILE = '.batch.json';
-const BATCH_COMPLETED_FILE = '.completed';
+/** Marcatore di completamento: una DIRECTORY (mkdir non ricorsivo = atomico, EEXIST al secondo). */
+const BATCH_COMPLETED_MARKER = '.completed';
+
+/**
+ * Prefisso delle cartelle di staging di `initUploadBatch` (mkdtemp aggiunge
+ * 6 caratteri alfanumerici). Mai a forma di UUID: invisibili alle API.
+ */
+const STAGING_PREFIX = '.staging-';
+const STAGING_NAME_PATTERN = /^\.staging-[A-Za-z0-9]{6}$/;
 
 /** Messaggio unico per lotto inesistente, scaduto, già completato o aperto da altri. */
 export const UPLOAD_BATCH_NOT_FOUND_MESSAGE = 'Lotto di upload non trovato o scaduto';
@@ -71,16 +79,40 @@ function isPieceEntry(entry: string): boolean {
   return !entry.startsWith('.');
 }
 
-function isCompletedDir(dir: string): boolean {
-  return fs.existsSync(join(dir, BATCH_COMPLETED_FILE));
+/**
+ * Marcatore di completamento (`lstat`, niente symlink). Un `.completed` FILE
+ * non è mai esistito in produzione (la versione a file non è mai stata
+ * rilasciata): non è gestito.
+ */
+function completedMarker(dir: string): fs.Stats | undefined {
+  const stat = fs.lstatSync(join(dir, BATCH_COMPLETED_MARKER), { throwIfNoEntry: false });
+  return stat?.isDirectory() ? stat : undefined;
 }
 
+function isCompletedDir(dir: string): boolean {
+  return completedMarker(dir) !== undefined;
+}
+
+/**
+ * Il lotto nasce completo in un colpo solo: metadati scritti in una cartella
+ * `mkdtemp` sotto la radice, poi `rename` atomico sul nome definitivo. Nessun
+ * lotto visibile senza owner, nessuna scrittura su un path prevedibile.
+ * Uno staging rimasto da un crash a metà lo rimuove lo sweeper dopo 24 h.
+ */
 export function initUploadBatch(owner?: string): string {
   const batchId = randomUUID();
-  const dir = join(UPLOAD_BATCH_ROOT, batchId);
-  fs.mkdirSync(dir, { recursive: true });
-  const meta: UploadBatchMeta = owner ? { owner } : {};
-  fs.writeFileSync(join(dir, BATCH_META_FILE), JSON.stringify(meta));
+  const dir = batchDir(batchId);
+  if (!dir) throw new Error('batchId generato non valido');
+  fs.mkdirSync(UPLOAD_BATCH_ROOT, { recursive: true });
+  const staging = fs.mkdtempSync(join(UPLOAD_BATCH_ROOT, STAGING_PREFIX));
+  try {
+    const meta: UploadBatchMeta = owner ? { owner } : {};
+    fs.writeFileSync(join(staging, BATCH_META_FILE), JSON.stringify(meta));
+    fs.renameSync(staging, dir);
+  } catch (err) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    throw err;
+  }
   return batchId;
 }
 
@@ -114,14 +146,15 @@ export function assertUploadBatchAccess(batchId: unknown, owner: string | undefi
 }
 
 /**
- * Segna il lotto come completato, una sola volta (`wx`: due complete
- * concorrenti, uno solo vince). `false` se già completato o inesistente.
+ * Segna il lotto come completato, una sola volta: `mkdir` non ricorsivo della
+ * directory `.completed` è atomico, a due complete concorrenti il secondo
+ * riceve EEXIST. `false` se già completato o inesistente (ENOENT).
  */
 export function claimUploadBatch(batchId: string): boolean {
   const dir = batchDir(batchId);
   if (!dir) return false;
   try {
-    fs.writeFileSync(join(dir, BATCH_COMPLETED_FILE), '', { flag: 'wx' });
+    fs.mkdirSync(join(dir, BATCH_COMPLETED_MARKER));
     return true;
   } catch {
     return false;
@@ -170,6 +203,8 @@ export function cleanupUploadBatch(batchId: string): void {
  * niente symlink, errori per voce ignorati). I lotti completati restano finché
  * `.completed` ha meno di `completedMaxAgeMs` (li rimuove il job di merge
  * quando ha consumato i pezzi); oltre, sono orfani di un job mai eseguito.
+ * Stesse regole (nome esatto, directory reale, 24 h) per le cartelle di
+ * staging `.staging-XXXXXX` lasciate da un `initUploadBatch` interrotto.
  */
 export function sweepStaleUploadBatches(
   root: string = UPLOAD_BATCH_ROOT,
@@ -177,8 +212,14 @@ export function sweepStaleUploadBatches(
   now: number = Date.now(),
   completedMaxAgeMs: number = UPLOAD_BATCH_COMPLETED_MAX_AGE_MS,
 ): number {
-  return sweepStaleChunkedUploads(root, maxAgeMs, now, (dir) => {
-    const marker = fs.lstatSync(join(dir, BATCH_COMPLETED_FILE), { throwIfNoEntry: false });
-    return marker !== undefined && now - marker.mtimeMs <= completedMaxAgeMs;
-  });
+  return sweepStaleChunkedUploads(
+    root,
+    maxAgeMs,
+    now,
+    (dir) => {
+      const marker = completedMarker(dir);
+      return marker !== undefined && now - marker.mtimeMs <= completedMaxAgeMs;
+    },
+    (name) => isValidUploadId(name) || STAGING_NAME_PATTERN.test(name),
+  );
 }

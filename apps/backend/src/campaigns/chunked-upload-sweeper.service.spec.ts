@@ -53,7 +53,14 @@ describe('ChunkedUploadSweeperService', () => {
 
   it('stesso cron: rimuove anche i lotti di arricchimento scaduti non completati, logga solo il numero', () => {
     const stale = oldDir(roots.batchRoot, UPLOAD_BATCH_MAX_AGE_MS, '0000_ROSSI_MARIO.zip', 'zip');
-    const completed = oldDir(roots.batchRoot, UPLOAD_BATCH_MAX_AGE_MS, '.completed', '');
+    const completed = oldDir(roots.batchRoot, UPLOAD_BATCH_MAX_AGE_MS, '0000_a.zip', 'zip');
+    // Marcatore di completamento = directory `.completed` (recente: job ancora in coda).
+    const marker = join(roots.batchRoot, completed, '.completed');
+    fs.mkdirSync(marker);
+    const recent = new Date(NOW - 60_000);
+    fs.utimesSync(marker, recent, recent);
+    const old = new Date(NOW - UPLOAD_BATCH_MAX_AGE_MS - 1000);
+    fs.utimesSync(join(roots.batchRoot, completed), old, old);
     const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
 
     expect(new ChunkedUploadSweeperService().run(NOW, roots)).toEqual({ chunkSessions: 0, uploadBatches: 1 });
