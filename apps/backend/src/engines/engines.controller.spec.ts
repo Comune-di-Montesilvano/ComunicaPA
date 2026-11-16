@@ -91,11 +91,13 @@ describe('EnginesController', () => {
     const before = Date.now();
     mockQueuesService.getFailedCountSince.mockImplementation(async (name: string) => (name === 'PROTOCOLLAZIONE' ? 3 : 0));
     const res = await controller.list();
+    const after = Date.now();
     const proto = res.engines.find((e: any) => e.channel === 'PROTOCOLLAZIONE');
     expect(proto!.failedRecent).toBe(3);
+    // La soglia è "adesso - 30 giorni", con "adesso" letto durante list().
     const since = mockQueuesService.getFailedCountSince.mock.calls[0][1] as number;
-    expect(before - since).toBeGreaterThanOrEqual(30 * 86_400_000);
-    expect(before - since).toBeLessThan(30 * 86_400_000 + 60_000);
+    expect(since).toBeGreaterThanOrEqual(before - 30 * 86_400_000);
+    expect(since).toBeLessThanOrEqual(after - 30 * 86_400_000);
     mockQueuesService.getFailedCountSince.mockResolvedValue(0);
   });
 
