@@ -153,7 +153,7 @@ jobs:
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         if: steps.mode.outputs.check == 'true'
         with:
-          version: v0.76.1
+          version: v0.76.2
           cache: true
 
       # Cause a (commit su main), b (patch di sistema), c (CVE HIGH/CRITICAL con fix) per
@@ -297,7 +297,7 @@ jobs:
           trivyignores: .trivyignore.yaml
           # Versione fissa come l'Action: un rilascio Trivy compromesso non entra in
           # automatico. trivy-version-check.yml apre una issue quando ne esce una nuova.
-          version: v0.76.1
+          version: v0.76.2
 
       # Stesso binario e stesso DB dello step SARIF per l'immagine nuova e la latest attuale.
       - name: Trivy non regressione rispetto a latest (rebuild)
@@ -366,7 +366,7 @@ jobs:
           format: cyclonedx
           output: sbom.cdx.json
           skip-setup-trivy: true
-          version: v0.76.1
+          version: v0.76.2
 
       # Attestazioni firmate (Sigstore) e registrate su GitHub, legate al digest:
       # provenance SLSA (repo, commit, workflow e run che hanno prodotto l'immagine) e SBOM.

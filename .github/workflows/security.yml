@@ -147,7 +147,7 @@ jobs:
       - name: Trivy filesystem (vuln + secret + misconfig)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           scan-type: fs
           scan-ref: .
           skip-dirs: .base
@@ -270,7 +270,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.76.1
+          version: v0.76.2
           image-ref: scan/${{ matrix.app }}:pr
           format: sarif
           output: trivy-image.sarif
