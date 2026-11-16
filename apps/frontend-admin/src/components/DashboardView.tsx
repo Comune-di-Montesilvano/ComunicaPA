@@ -25,7 +25,7 @@ interface CampaignLite {
   failedCount: number;
 }
 
-interface RecentCampaign {
+export interface RecentCampaign {
   id: string;
   name: string;
   channelType: string;

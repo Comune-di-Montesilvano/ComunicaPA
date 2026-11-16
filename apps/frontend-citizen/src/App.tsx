@@ -3,6 +3,7 @@ import { Footer } from './components/Footer';
 import { renderAppIoMarkdown } from './lib/html';
 import { decodeJwtClaims } from './lib/jwt-claims';
 import { findPhysicalAddress, getSendStatusMeta, getTextSnippet, statusBadge } from './lib/notification';
+import { errorMessage } from './error-message';
 
 declare global {
   interface Window {
@@ -269,8 +270,8 @@ export function App(): React.JSX.Element {
       if (!res.ok) throw new Error('Impossibile caricare le comunicazioni');
       const data = await res.json();
       setNotifications(data);
-    } catch (err: any) {
-      setErrorNotifications(err.message);
+    } catch (err) {
+      setErrorNotifications(errorMessage(err));
     } finally {
       setLoadingNotifications(false);
     }
@@ -471,8 +472,8 @@ export function App(): React.JSX.Element {
       setName(targetName);
       setProvider(provider.toUpperCase());
       setSelectedNotif(null);
-    } catch (err: any) {
-      setLoginError(err.message || 'Errore durante la simulazione SPID/CIE');
+    } catch (err) {
+      setLoginError(errorMessage(err, 'Errore durante la simulazione SPID/CIE'));
     } finally {
       setLoginLoading(false);
     }
@@ -515,8 +516,8 @@ export function App(): React.JSX.Element {
           setSelectedNotif(updatedData);
         }
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(errorMessage(err));
     }
   };
 

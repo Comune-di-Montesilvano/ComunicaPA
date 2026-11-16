@@ -8,7 +8,7 @@ import { sendDocumentLabel, type SendDocumentItem } from './components/notificat
 import type { SendTimelineEvent } from './components/notification-detail/send-timeline';
 import { SearchableSelect } from './components/SearchableSelect';
 import { StatisticsView } from './components/StatisticsView';
-import { DashboardView } from './components/DashboardView';
+import { DashboardView, type RecentCampaign } from './components/DashboardView';
 import { uploadFileInChunks } from './chunked-upload';
 import { SignaturePanel, ATTACHMENT_RESTRICTED_MESSAGE } from './components/signature/SignaturePanel';
 import { RemoteSignModal } from './components/signature/RemoteSignModal';
@@ -45,6 +45,7 @@ const CAMPAIGN_NOT_ACCESSIBLE_MESSAGE = 'Campagna non trovata o non accessibile'
 import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from './data/channels';
 import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, GUIDA_DATE_TERMINI, guidaSections } from './guida';
 import { pickWizardMailConfigId, coDeliveryModeWithServices } from './wizard-defaults';
+import { errorMessage } from './error-message';
 
 // ---------------------------------------------------------------------------
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
@@ -187,6 +188,96 @@ type PhysicalAddressConfigColumns = {
   provinceColumn?: string;
   countryColumn?: string;
 };
+
+/** Riga del Registro Attività (GET admin/audit-logs). */
+interface AuditLogRow {
+  id: string;
+  campaignId: string | null;
+  campaignName: string | null;
+  operator: string;
+  action: string;
+  details: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+/** Stato di un motore di invio per canale (GET admin/engines). */
+interface EngineStatus {
+  channel: string;
+  queueName: string;
+  pausable: boolean;
+  paused: boolean;
+  counts: Record<string, number>;
+}
+
+/** Comune ANPR: alcune risposte usano nomi diversi per la sigla provincia. */
+type ComuneProvinciaAlt = { siglaProvincia?: string; provincia?: string };
+
+/** Mappatura colonne CSV → campi del destinatario (passo 3 del wizard). */
+type WizMapping = {
+  codice_fiscale: string;
+  full_name: string;
+  full_name_2: string;
+  email: string;
+  pec: string;
+  subject: string;
+  externalId: string;
+};
+
+type AppIoCoDeliveryMode = 'none' | 'parallel' | 'exclusive';
+
+/**
+ * `channelConfig` della campagna come lo legge il frontend: i campi noti sono tipizzati,
+ * gli altri (scritti dal backend o da versioni precedenti) restano `unknown`.
+ */
+interface CampaignChannelConfig {
+  [key: string]: unknown;
+  wizSingleMode?: boolean;
+  wizStep?: number;
+  wizCsvFilename?: string;
+  wizCsvHasHeaders?: boolean;
+  subject?: string;
+  body?: string;
+  postalServiceType?: string;
+  protocolla?: boolean;
+  taxonomyCode?: string;
+  physicalCommunicationType?: 'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890';
+  postalReturnReceipt?: boolean;
+  postalColorPrint?: boolean;
+  postalDuplex?: boolean;
+  postalAgolTipoNotificante?: 'NonUtilizzato' | 'UfficialeGiudiziario' | 'Procuratore' | 'ParteIstante';
+  postalAgolSecondoTentativo?: 'NonRichiedere' | 'Concordato' | 'Automatico';
+  postalAgolNomeNotificante?: string;
+  postalAgolNumeroCronologico?: string;
+  postalIdCoverPage?: string;
+  postalCodiceContratto?: string;
+  userDataColumn?: string;
+  mailConfigId?: string;
+  pecReserveMailConfigId?: string;
+  physicalAddressConfig?: PhysicalAddressConfigColumns & { enabled?: boolean };
+  paymentConfig?: {
+    enabled?: boolean;
+    amountColumn?: string;
+    amountType?: 'cents' | 'euro';
+    noticeNumberColumn?: string;
+    dueDateColumn?: string;
+    payeeFiscalCodeType?: 'static' | 'column';
+    payeeFiscalCodeStatic?: string;
+    payeeFiscalCodeColumn?: string;
+  };
+  secondaryChannels?: Array<{
+    channel?: string;
+    ioServiceId?: string;
+    mode?: AppIoCoDeliveryMode;
+    subjectOverride?: string;
+    bodyOverride?: string;
+  }>;
+  appIo?: { ioServiceId?: string; mode?: AppIoCoDeliveryMode };
+  serviceId?: string;
+  ioServiceId?: string;
+  csvMapping?: WizMapping;
+  attachments?: Array<{ key: string; label: string; labelColumn?: string }>;
+  contentHistory?: Array<{ changedAt: string; changedBy: string; subject?: string | null; body?: string | null }>;
+}
 
 function ChannelStatusBar({ breakdown, meta, pendingLabel, colorMap }: { breakdown: Array<{ status: string | null; count: number }>; meta: Record<string, StatusMeta>; pendingLabel: string; colorMap?: Record<string, string> }): React.JSX.Element {
   const total = breakdown.reduce((sum, b) => sum + b.count, 0);
@@ -838,7 +929,7 @@ function isChannelAlwaysLegalValue(channelType: string, postalServiceType?: stri
 // || 'Raccomandata'`) — una campagna "invio semplice" senza Servizio esplicito
 // in channelConfig non deve mostrare un badge vuoto, ma lo stesso tipo che è
 // stato davvero usato per l'invio.
-function postalBadgeExtra(channelConfig: Record<string, any> | undefined, fallbackEnabledServiceTypes?: string[]): string | undefined {
+function postalBadgeExtra(channelConfig: CampaignChannelConfig | undefined, fallbackEnabledServiceTypes?: string[]): string | undefined {
   const servizio = (channelConfig?.['postalServiceType'] as string) || fallbackEnabledServiceTypes?.[0] || 'Raccomandata';
   if (servizio.startsWith('Agol')) return 'Atto giudiziario';
   if (servizio.startsWith('Raccomandata')) return channelConfig?.['postalReturnReceipt'] ? 'Raccomandata AR' : 'Raccomandata';
@@ -943,7 +1034,7 @@ function renderDonutCard(
             <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '0.65rem', fill: '#6b7280', fontWeight: 600 }}>
               {topItem?.label ? shortCenterLabel(topItem.label) : ''}
             </text>
-            <Tooltip formatter={(val: any, name: any) => [`${val} (${total > 0 ? Math.round((Number(val) / total) * 100) : 0}%)`, name || 'Quantità']} />
+            <Tooltip formatter={(val, name) => [`${val} (${total > 0 ? Math.round((Number(val) / total) * 100) : 0}%)`, name || 'Quantità']} />
           </PieChart>
         </ResponsiveContainer>
       </div>
@@ -1265,7 +1356,7 @@ interface Campaign {
   description: string | null;
   status: 'draft' | 'queued' | 'checking_inad' | 'running' | 'completed' | 'failed' | 'cancelled';
   channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
-  channelConfig: Record<string, any>;
+  channelConfig: CampaignChannelConfig;
   createdBy: string;
   createdByDisplayName?: string;
   // Calcolati dal backend (dettaglio campagna): chi può aprire gli allegati
@@ -1304,12 +1395,12 @@ interface Recipient {
   pec: string | null;
   status: 'pending' | 'queued' | 'sent' | 'failed' | 'skipped';
   createdAt: string;
-  extraData?: Record<string, any>;
+  extraData?: Record<string, unknown>;
   attempts?: Array<{
     id: string;
     channelType: string;
     status: string;
-    responsePayload?: any;
+    responsePayload?: Record<string, unknown> | null;
     errorMessage?: string | null;
     attemptNumber: number;
     iun?: string | null;
@@ -1578,7 +1669,7 @@ export function App(): React.JSX.Element {
   const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<{ username: string; displayName: string }[]>([]);
-  const [recentActivityCampaigns, setRecentActivityCampaigns] = useState<any[]>([]);
+  const [recentActivityCampaigns, setRecentActivityCampaigns] = useState<RecentCampaign[]>([]);
   const [recentActivityLoading, setRecentActivityLoading] = useState(false);
   const [recentActivityError, setRecentActivityError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -1586,7 +1677,7 @@ export function App(): React.JSX.Element {
   const [brandName, setBrandName] = useState<string>('ComunicaPA');
   const [brandSubtitle, setBrandSubtitle] = useState<string>('Amministrazione & Gestione Invii');
 
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditPage, setAuditPage] = useState(1);
   const [auditPageSize] = useState(25);
@@ -2414,7 +2505,7 @@ export function App(): React.JSX.Element {
   const [wizCsvRows, setWizCsvRows] = useState<Record<string, string>[]>([]);
   const [wizCsvHasHeaders, setWizCsvHasHeaders] = useState(true);
   const [wizPdfFiles, setWizPdfFiles] = useState<File[]>([]);
-  const [wizMapping, setWizMapping] = useState({
+  const [wizMapping, setWizMapping] = useState<WizMapping>({
     codice_fiscale: '',
     full_name: '',
     full_name_2: '',
@@ -2504,7 +2595,7 @@ export function App(): React.JSX.Element {
   const [wizUploadedAttachmentFiles, setWizUploadedAttachmentFiles] = useState<string[] | null>(null);
   const [wizMailConfigId, setWizMailConfigId] = useState('');
   const [wizPecReserveMailConfigId, setWizPecReserveMailConfigId] = useState('');
-  const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
+  const [wizAppIoMode, setWizAppIoMode] = useState<AppIoCoDeliveryMode>('parallel');
   const [wizAppIoDifferentiate, setWizAppIoDifferentiate] = useState(false);
   const [wizAppIoSubjectOverride, setWizAppIoSubjectOverride] = useState('');
   const [wizAppIoBodyOverride, setWizAppIoBodyOverride] = useState('');
@@ -2871,7 +2962,7 @@ export function App(): React.JSX.Element {
 
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('personalizzazione');
-  const [engines, setEngines] = useState<any[]>([]);
+  const [engines, setEngines] = useState<EngineStatus[]>([]);
   const [sendStageCounts, setSendStageCounts] = useState<{ protocollato: number; inviato: number; fallito: number } | null>(null);
   const [posteQueueHealth, setPosteQueueHealth] = useState<{ enabled: boolean; processing: boolean; blockedUntil: string | null; pending: number; dueNow: number; delivered: number; returned: number; gaveUp: number; intervalSeconds: number; activeCampaignRuns: number; lastTickAt: string | null; lastTickChecks: number } | null>(null);
   const [postalQueueHealth, setPostalQueueHealth] = useState<{ candidatesCount: number; oldestCandidateAgeMinutes: number | null; verifiedCount: number; errorCount: number } | null>(null);
@@ -3010,7 +3101,7 @@ export function App(): React.JSX.Element {
   // solo lo stato/badge si aggiornava da solo, i grafici e i conteggi per
   // canale restavano fermi allo snapshot del primo caricamento.
   useEffect(() => {
-    let timer: any;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     if (view === 'campaign-detail' && selectedCampaignId && campaign) {
       // SEND/POSTAL: il completamento campagna e' deciso a livello di
       // submission (tutti gli attempt hanno un esito terminale), ma lo
@@ -3191,7 +3282,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const checkVersion = async () => {
       try {
-        const rawBase = (window as any).__COMUNICAPA_CONFIG__?.apiBase || API_BASE || '';
+        const rawBase = (window as Window & { __COMUNICAPA_CONFIG__?: { apiBase?: string } }).__COMUNICAPA_CONFIG__?.apiBase || API_BASE || '';
         const rootBase = rawBase.replace(/\/admin\/?$/, '').replace(/\/api\/?$/, '');
         const targetUrl = rootBase ? `${rootBase}/version` : '/version';
         const res = await fetch(targetUrl);
@@ -3219,7 +3310,7 @@ export function App(): React.JSX.Element {
   useEffect(() => { if (token) fetchTemplates(); }, [token]);
 
   useEffect(() => {
-    let handle: any;
+    let handle: ReturnType<typeof setTimeout> | undefined;
     if (view === 'audit-logs' && token) {
       handle = setTimeout(() => {
         fetchAuditLogs(auditPage, auditSearch);
@@ -3357,11 +3448,11 @@ export function App(): React.JSX.Element {
       setRole(data.role);
       setCanUsePostal(!!data.canUsePostal);
       setView('dashboard');
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof TypeError) {
         setLoginError('Impossibile contattare il server. Verificare che il backend sia avviato.');
       } else {
-        setLoginError(err.message || 'Errore durante il login');
+        setLoginError(errorMessage(err, 'Errore durante il login'));
       }
     } finally {
       setLoginLoading(false);
@@ -3429,9 +3520,9 @@ export function App(): React.JSX.Element {
       }
       const data = await res.json();
       downloadTextFile(`pdnd-${env}-public.pem`, data.publicKey);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message);
+      alert(errorMessage(err));
     }
   };
 
@@ -3445,9 +3536,9 @@ export function App(): React.JSX.Element {
       }
       const data = await res.json();
       downloadTextFile(`pdnd-${env}-private.pem`, data.privateKey);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message);
+      alert(errorMessage(err));
     }
   };
 
@@ -3473,9 +3564,9 @@ export function App(): React.JSX.Element {
       setSettPdndGeneratedPubKey({ env, pem: data.publicKey });
       if (env === 'test') setSettPdndTestPrivateKey('••••••••');
       else setSettPdndProdPrivateKey('••••••••');
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message);
+      alert(errorMessage(err));
     } finally {
       setSettPdndGeneratingKey(null);
     }
@@ -3544,7 +3635,7 @@ export function App(): React.JSX.Element {
     setDomicileVerifSubmitting(true);
     setDomicileVerifSubmitError(null);
     try {
-      const data = await uploadFileInChunks(
+      const data = await uploadFileInChunks<{ jobId: string }>(
         `${ADMIN_API_BASE}/domicile-verification/verify/upload`,
         token!,
         domicileVerifFile,
@@ -3570,8 +3661,8 @@ export function App(): React.JSX.Element {
         errorMessage: null,
       });
       fetchDomicileVerifJobs();
-    } catch (err: any) {
-      setDomicileVerifSubmitError(err.message || 'Errore di connessione');
+    } catch (err) {
+      setDomicileVerifSubmitError(errorMessage(err, 'Errore di connessione'));
     } finally {
       setDomicileVerifSubmitting(false);
     }
@@ -3600,8 +3691,8 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/domicile-verification/jobs/${jobId}`);
       const data = await res.json();
       setDomicileVerifStatus(data);
-    } catch (err: any) {
-      setDomicileVerifSubmitError(err.message || 'Errore nel recupero dello stato del job');
+    } catch (err) {
+      setDomicileVerifSubmitError(errorMessage(err, 'Errore nel recupero dello stato del job'));
     }
   };
 
@@ -3686,9 +3777,9 @@ export function App(): React.JSX.Element {
       });
       const data = await res.json();
       setDomicilioResult(data);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      const message = err.message || 'Errore di connessione durante la ricerca';
+      const message = errorMessage(err, 'Errore di connessione durante la ricerca');
       setDomicilioResult({
         codiceFiscale: cf,
         inad: { success: false, found: false, message },
@@ -3729,9 +3820,9 @@ export function App(): React.JSX.Element {
       });
       const data = await res.json();
       setDomicilioAnagraficaResult(data);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      setDomicilioAnagraficaError(err.message || 'Errore di connessione durante la ricerca');
+      setDomicilioAnagraficaError(errorMessage(err, 'Errore di connessione durante la ricerca'));
     } finally {
       setDomicilioAnagraficaLoading(false);
     }
@@ -3758,9 +3849,9 @@ export function App(): React.JSX.Element {
       });
       const data = await res.json();
       setDomicilioImpresaResult(data);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      setDomicilioImpresaError(err.message || 'Errore di connessione durante la ricerca');
+      setDomicilioImpresaError(errorMessage(err, 'Errore di connessione durante la ricerca'));
     } finally {
       setDomicilioImpresaLoading(false);
     }
@@ -3800,7 +3891,7 @@ export function App(): React.JSX.Element {
         for (const part of parts) {
           const line = part.trim();
           if (!line.startsWith('data:')) continue;
-          let json: any;
+          let json: unknown;
           try {
             json = JSON.parse(line.slice('data:'.length).trim());
           } catch {
@@ -3809,14 +3900,17 @@ export function App(): React.JSX.Element {
             // stream su un singolo evento non parsabile.
             continue;
           }
-          if (json.type === 'done' || json.type === 'error') {
+          const eventType = (json as { type?: string } | null)?.type;
+          if (eventType === 'done' || eventType === 'error') {
             setEnrichStreamingJobId(null);
             await fetchEnrichJobs();
             return;
           }
+          // Evento di log/fase dello stream SSE dell'arricchimento (JSON del backend).
+          const entry = json as EnrichLiveEntry;
           setEnrichLiveLogs((prev) => ({
             ...prev,
-            [jobId]: [...(prev[jobId] || []), json as EnrichLiveEntry],
+            [jobId]: [...(prev[jobId] || []), entry],
           }));
         }
       }
@@ -3920,8 +4014,8 @@ export function App(): React.JSX.Element {
         await fetchEnrichJobs();
         if (result.jobId) streamEnrichJobLog(result.jobId);
       }
-    } catch (err: any) {
-      setEnrichError(err.message || 'Errore durante il caricamento');
+    } catch (err) {
+      setEnrichError(errorMessage(err, 'Errore durante il caricamento'));
     } finally {
       setEnrichUploading(false);
     }
@@ -4267,8 +4361,8 @@ export function App(): React.JSX.Element {
       setEnrichAwaitingConversionJobId(enrichCreateCampaignJobId);
       setEnrichCreateCampaignJobId(null);
       await fetchEnrichJobs();
-    } catch (err: any) {
-      setEnrichCampaignError(err.message || 'Errore durante la creazione della campagna');
+    } catch (err) {
+      setEnrichCampaignError(errorMessage(err, 'Errore durante la creazione della campagna'));
     } finally {
       setEnrichCampaignSubmitting(false);
     }
@@ -4289,8 +4383,8 @@ export function App(): React.JSX.Element {
       if (!res.ok) throw new Error('Impossibile caricare le campagne.');
       const data = await res.json();
       setCampaigns(data);
-    } catch (err: any) {
-      setDashboardError(err.message);
+    } catch (err) {
+      setDashboardError(errorMessage(err));
     } finally {
       setLoadingCampaigns(false);
     }
@@ -4341,9 +4435,9 @@ export function App(): React.JSX.Element {
       if (data.status === 'checking_inad') {
         fetchInadStatus(id);
       }
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError || !isCurrentCampaign(id)) return;
-      setDetailError(err.message);
+      setDetailError(errorMessage(err));
     } finally {
       if (isCurrentCampaign(id)) setLoadingCampaignDetail(false);
     }
@@ -4466,9 +4560,9 @@ export function App(): React.JSX.Element {
       const { jobId, totalCount } = await res.json();
       setRetryBulkJobId(jobId);
       setRetryBulkStatus({ status: 'queued', totalCount, processedCount: 0, requeuedCount: 0, failed: [], errorMessage: null });
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message);
+      alert(errorMessage(err));
       setRetryingGroup(null);
     }
   };
@@ -4531,9 +4625,9 @@ export function App(): React.JSX.Element {
       setNewSvcIsDefault(false);
       setShowNewSvcForm(false);
       alert('Servizio creato con successo!');
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message || 'Errore durante la creazione del servizio App IO.');
+      alert(errorMessage(err, 'Errore durante la creazione del servizio App IO.'));
     }
   };
 
@@ -4564,9 +4658,9 @@ export function App(): React.JSX.Element {
       await fetchIoServices();
       setEditingIoService(null);
       alert('Servizio modificato con successo!');
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message || 'Errore durante la modifica del servizio App IO.');
+      alert(errorMessage(err, 'Errore durante la modifica del servizio App IO.'));
     }
   };
 
@@ -4626,8 +4720,8 @@ export function App(): React.JSX.Element {
       }
       if (!res.ok || isError) throw new Error(isError ? errMsg : errMsg);
       setIoTestMsg({ id, text: successMsg, error: false });
-    } catch (err: any) {
-      setIoTestMsg({ id, text: err.message, error: true });
+    } catch (err) {
+      setIoTestMsg({ id, text: errorMessage(err), error: true });
     } finally {
       setIoTestBusyId(null);
     }
@@ -4771,9 +4865,9 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(endpoint, { method: 'POST' });
       const data = await res.json() as { success: boolean; message: string };
       setResult({ env, ok: data.success, message: data.message });
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      setResult({ env, ok: false, message: err.message || 'Errore di rete durante il test.' });
+      setResult({ env, ok: false, message: errorMessage(err, 'Errore di rete durante il test.') });
     } finally {
       setTesting(null);
     }
@@ -4804,9 +4898,9 @@ export function App(): React.JSX.Element {
       const data = await res.json() as { groups: Array<{ id: string; name: string; description: string }>; error?: string };
       setSettSendGroups(prev => ({ ...prev, [env]: data.groups }));
       if (data.error) setSettSendGroupsError(prev => ({ ...prev, [env]: data.error! }));
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      setSettSendGroupsError(prev => ({ ...prev, [env]: err.message || 'Errore di rete durante il caricamento dei gruppi.' }));
+      setSettSendGroupsError(prev => ({ ...prev, [env]: errorMessage(err, 'Errore di rete durante il caricamento dei gruppi.') }));
     } finally {
       setSettSendGroupsLoading(null);
     }
@@ -4832,9 +4926,9 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/settings/anpr/${key}/test-connection`, { method: 'POST' });
       const data = (await res.json()) as { success: boolean; message: string };
       setSettAnprTestResult({ key, ok: data.success, message: data.message });
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      setSettAnprTestResult({ key, ok: false, message: err.message || 'Errore di rete durante il test.' });
+      setSettAnprTestResult({ key, ok: false, message: errorMessage(err, 'Errore di rete durante il test.') });
     } finally {
       setSettAnprTesting(null);
     }
@@ -4852,9 +4946,9 @@ export function App(): React.JSX.Element {
       });
       const data = await res.json();
       setSettInadExtractResult(data);
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof ApiAuthError) return;
-      setSettInadExtractResult({ success: false, message: error.message || 'Errore di rete' });
+      setSettInadExtractResult({ success: false, message: errorMessage(error, 'Errore di rete') });
     } finally {
       setSettInadExtracting(false);
     }
@@ -4876,9 +4970,9 @@ export function App(): React.JSX.Element {
       });
       const data = await res.json();
       setSettRegistroImpreseDettaglioResult(data);
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof ApiAuthError) return;
-      setSettRegistroImpreseDettaglioResult({ success: false, message: error.message || 'Errore di rete' });
+      setSettRegistroImpreseDettaglioResult({ success: false, message: errorMessage(error, 'Errore di rete') });
     } finally {
       setSettRegistroImpreseDettaglioLoading(false);
     }
@@ -4899,8 +4993,8 @@ export function App(): React.JSX.Element {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (stageRes.ok) setSendStageCounts(await stageRes.json());
-    } catch (err: any) {
-      setEnginesError(`Errore nel caricamento dei motori: ${err.message}`);
+    } catch (err) {
+      setEnginesError(`Errore nel caricamento dei motori: ${errorMessage(err)}`);
     } finally {
       setLoadingEngines(false);
     }
@@ -4944,8 +5038,8 @@ export function App(): React.JSX.Element {
         throw new Error(data.message || `Errore ${action}`);
       }
       await fetchEngines();
-    } catch (err: any) {
-      setEnginesError(`Errore: ${err.message}`);
+    } catch (err) {
+      setEnginesError(`Errore: ${errorMessage(err)}`);
       setLoadingEngines(false);
     }
   };
@@ -4969,8 +5063,8 @@ export function App(): React.JSX.Element {
           ? `Controllati ${data.checked} attempt in coda: riparati ${data.repaired} job orfani (job BullMQ mancante, es. perso su riavvio Redis). Il motore riprenderà a processarli.`
           : `Controllati ${data.checked} attempt in coda: nessun job orfano trovato.`,
       );
-    } catch (err: any) {
-      setEnginesError(`Errore: ${err.message}`);
+    } catch (err) {
+      setEnginesError(`Errore: ${errorMessage(err)}`);
     } finally {
       setLoadingEngines(false);
     }
@@ -5149,8 +5243,8 @@ export function App(): React.JSX.Element {
 
       setEditingTemplate(null);
       fetchTemplates();
-    } catch (err: any) {
-      alert(err.message || 'Errore durante il salvataggio');
+    } catch (err) {
+      alert(errorMessage(err, 'Errore durante il salvataggio'));
     }
   };
 
@@ -5269,8 +5363,8 @@ export function App(): React.JSX.Element {
       }
 
       fetchTemplates();
-    } catch (err: any) {
-      alert(err.message || 'Errore durante la duplicazione del template');
+    } catch (err) {
+      alert(errorMessage(err, 'Errore durante la duplicazione del template'));
     }
   };
 
@@ -5340,8 +5434,8 @@ export function App(): React.JSX.Element {
       setMailConfigMsg({ text: 'Configurazione salvata con successo!', error: false });
       setEditingMailConfig(null);
       fetchMailConfigs();
-    } catch (err: any) {
-      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setMailConfigMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setMailConfigBusyId(null);
     }
@@ -5366,8 +5460,8 @@ export function App(): React.JSX.Element {
 
       setMailConfigMsg({ text: 'Configurazione eliminata.', error: false });
       fetchMailConfigs();
-    } catch (err: any) {
-      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setMailConfigMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setMailConfigBusyId(null);
     }
@@ -5391,8 +5485,8 @@ export function App(): React.JSX.Element {
 
       setMailConfigMsg({ text: !currentActive ? 'Configurazione attivata.' : 'Configurazione disattivata.', error: false });
       fetchMailConfigs();
-    } catch (err: any) {
-      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setMailConfigMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setMailConfigBusyId(null);
     }
@@ -5413,8 +5507,8 @@ export function App(): React.JSX.Element {
       }
       setMailConfigMsg({ text: 'Configurazione impostata come predefinita.', error: false });
       fetchMailConfigs();
-    } catch (err: any) {
-      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setMailConfigMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setMailConfigBusyId(null);
     }
@@ -5451,8 +5545,8 @@ export function App(): React.JSX.Element {
 
       setMailConfigMsg({ text: 'Messaggio di test inviato con successo!', error: false });
       fetchMailConfigs();
-    } catch (err: any) {
-      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setMailConfigMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setMailConfigBusyId(null);
     }
@@ -5505,8 +5599,8 @@ export function App(): React.JSX.Element {
       setPostalAuthorizedUserMsg({ text: 'Utente abilitato.', error: false });
       setNewPostalAuthorizedUsername('');
       fetchPostalAuthorizedUsers();
-    } catch (err: any) {
-      setPostalAuthorizedUserMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setPostalAuthorizedUserMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setPostalAuthorizedUserBusy(false);
     }
@@ -5527,8 +5621,8 @@ export function App(): React.JSX.Element {
       }
       setPostalAuthorizedUserMsg({ text: 'Utente rimosso.', error: false });
       fetchPostalAuthorizedUsers();
-    } catch (err: any) {
-      setPostalAuthorizedUserMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setPostalAuthorizedUserMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setPostalAuthorizedUserBusy(false);
     }
@@ -5570,8 +5664,8 @@ export function App(): React.JSX.Element {
       setPostalProviderMsg({ text: 'Provider salvato con successo!', error: false });
       setEditingPostalProvider(null);
       fetchPostalProviders();
-    } catch (err: any) {
-      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setPostalProviderMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setPostalProviderBusyId(null);
     }
@@ -5592,8 +5686,8 @@ export function App(): React.JSX.Element {
       }
       setPostalProviderMsg({ text: 'Provider eliminato.', error: false });
       fetchPostalProviders();
-    } catch (err: any) {
-      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setPostalProviderMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setPostalProviderBusyId(null);
     }
@@ -5615,8 +5709,8 @@ export function App(): React.JSX.Element {
       }
       setPostalProviderMsg({ text: !currentActive ? 'Provider attivato.' : 'Provider disattivato.', error: false });
       fetchPostalProviders();
-    } catch (err: any) {
-      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setPostalProviderMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setPostalProviderBusyId(null);
     }
@@ -5637,8 +5731,8 @@ export function App(): React.JSX.Element {
       }
       setPostalProviderMsg({ text: data.message || 'Test riuscito.', error: false });
       fetchPostalProviders();
-    } catch (err: any) {
-      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setPostalProviderMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setPostalProviderBusyId(null);
     }
@@ -6144,8 +6238,8 @@ export function App(): React.JSX.Element {
       setNewExternalClientName('');
       setExternalClientMsg({ text: 'Client creato con successo.', error: false });
       fetchExternalClients();
-    } catch (err: any) {
-      setExternalClientMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setExternalClientMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setExternalClientBusyId(null);
     }
@@ -6167,8 +6261,8 @@ export function App(): React.JSX.Element {
       const { apiKeyPlain } = await res.json();
       setRevealedApiKey({ clientId: id, key: apiKeyPlain });
       fetchExternalClients();
-    } catch (err: any) {
-      setExternalClientMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setExternalClientMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setExternalClientBusyId(null);
     }
@@ -6190,8 +6284,8 @@ export function App(): React.JSX.Element {
       if (revealedApiKey?.clientId === id) setRevealedApiKey(null);
       setExternalClientMsg({ text: 'Client revocato.', error: false });
       fetchExternalClients();
-    } catch (err: any) {
-      setExternalClientMsg({ text: err.message || 'Errore di rete', error: true });
+    } catch (err) {
+      setExternalClientMsg({ text: errorMessage(err, 'Errore di rete'), error: true });
     } finally {
       setExternalClientBusyId(null);
     }
@@ -7075,9 +7169,9 @@ export function App(): React.JSX.Element {
       // parte già in modalità parallela (combinato) — l'operatore può comunque
       // passare a esclusiva o disabilitarla dal select. Se non attivo, azzera.
       setWizAppIoMode(appIoActiveNow ? 'parallel' : 'none');
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message || 'Errore di connessione durante la verifica ANPR.');
+      alert(errorMessage(err, 'Errore di connessione durante la verifica ANPR.'));
     } finally {
       setSingleAnprLoading(false);
     }
@@ -7309,8 +7403,8 @@ export function App(): React.JSX.Element {
 
     try {
       if (!(await ensureWizSingleAttachmentsUploaded(campaignId, uploadFiles))) return false;
-    } catch (err: any) {
-      alert(err.message || 'Errore durante il caricamento degli allegati.');
+    } catch (err) {
+      alert(errorMessage(err, 'Errore durante il caricamento degli allegati.'));
       return false;
     }
 
@@ -7783,7 +7877,7 @@ export function App(): React.JSX.Element {
     name: string;
     description: string | null;
     channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
-    channelConfig: Record<string, any>;
+    channelConfig: CampaignChannelConfig;
     isLegalValue?: boolean;
   }, opts: { isDuplicate: boolean; campaignId?: string }) => {
     setWizCampaignId(opts.isDuplicate ? null : (opts.campaignId || null));
@@ -7833,7 +7927,7 @@ export function App(): React.JSX.Element {
     setWizPaymentPayeeStatic(paymentConfig?.payeeFiscalCodeStatic || '');
     setWizPaymentPayeeCol(paymentConfig?.payeeFiscalCodeColumn || '');
     const secondaryAppIo = (source.channelConfig?.secondaryChannels || []).find(
-      (sc: any) => sc?.channel === 'APP_IO'
+      (sc) => sc?.channel === 'APP_IO'
     );
     setWizAppIoServiceId(
       secondaryAppIo?.ioServiceId ||
@@ -8025,7 +8119,7 @@ export function App(): React.JSX.Element {
     setWizCampaignId(campaignId);
   };
 
-  const campaignIsLegalValue = (c: { channelType: string; channelConfig?: Record<string, any>; isLegalValue?: boolean }): boolean => {
+  const campaignIsLegalValue = (c: { channelType: string; channelConfig?: CampaignChannelConfig; isLegalValue?: boolean }): boolean => {
     if (c.isLegalValue) return true;
     return isChannelAlwaysLegalValue(c.channelType, c.channelConfig?.postalServiceType);
   };
@@ -8065,9 +8159,9 @@ export function App(): React.JSX.Element {
     // senza questo parametro, il channelType salvato in DB per un lancio
     // di gruppo risultava quello del bucket precedente, non quello reale).
     channelOverride?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL',
-  ): Record<string, any> => {
+  ): Record<string, unknown> => {
     const effectiveWizChannel = channelOverride ?? wizChannel;
-    const cfg: Record<string, any> = {
+    const cfg: Record<string, unknown> = {
       subject: wizSubject,
       body: wizBody,
       mailConfigId: wizMailConfigId,
@@ -8311,9 +8405,9 @@ export function App(): React.JSX.Element {
       setWizMaxReachedStep(m => Math.max(m, targetStep));
       fetchCampaigns();
       return activeCampaignId ?? null;
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return null;
-      alert(err.message);
+      alert(errorMessage(err));
       return null;
     } finally {
       setWizDraftSaving(false);
@@ -8362,7 +8456,7 @@ export function App(): React.JSX.Element {
     for (const file of files) {
       const base = cumulativeBefore;
       const isZip = file.name.toLowerCase().endsWith('.zip');
-      lastAttachData = await uploadFileInChunks(
+      lastAttachData = await uploadFileInChunks<{ uploaded: number; discarded?: number; attachmentsExpected?: number; attachmentsPresent?: number; filenames?: string[] }>(
         `${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/upload`,
         token!,
         file,
@@ -8558,8 +8652,8 @@ export function App(): React.JSX.Element {
           await triggerAndAlertSignatureVerification(campaignId);
         }
       }
-    } catch (err: any) {
-      alert(err.message || 'Errore durante il caricamento degli allegati.');
+    } catch (err) {
+      alert(errorMessage(err, 'Errore durante il caricamento degli allegati.'));
     } finally {
       setWizSending(false);
       setWizUploadProgress(null);
@@ -8582,7 +8676,7 @@ export function App(): React.JSX.Element {
     setWizSending(true);
 
     try {
-      let channelConfig: Record<string, any> = {};
+      let channelConfig: Record<string, unknown> = {};
       if (wizChannel === 'APP_IO') {
         const svc = ioServices.find(s => s.id === wizAppIoServiceId) || ioServices[0];
         channelConfig = {
@@ -8817,8 +8911,8 @@ export function App(): React.JSX.Element {
             : 'Campagna creata e avviata con successo! I messaggi sono in coda.'
         );
       }
-    } catch (err: any) {
-      alert(err.message || 'Errore durante l\'invio della campagna.');
+    } catch (err) {
+      alert(errorMessage(err, 'Errore durante l\'invio della campagna.'));
     } finally {
       setWizSending(false);
       setWizUploadProgress(null);
@@ -9334,8 +9428,8 @@ export function App(): React.JSX.Element {
       alert('Campagna lanciata con successo!');
       await fetchCampaignDetail(campaign.id);
       await fetchCampaigns();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(errorMessage(err));
     } finally {
       setLaunching(false);
     }
@@ -9356,9 +9450,9 @@ export function App(): React.JSX.Element {
           .join(', ');
         alert(`Verifica riprovata. INAD (AgID) sta ancora elaborando la richiesta (${states}). La campagna procederà automaticamente non appena INAD renderà disponibili i dati.`);
       }
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message);
+      alert(errorMessage(err));
     }
   };
 
@@ -9372,9 +9466,9 @@ export function App(): React.JSX.Element {
       }
       await fetchCampaignDetail(campaignId);
       await fetchCampaigns();
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message);
+      alert(errorMessage(err));
     }
   };
 
@@ -9397,14 +9491,14 @@ export function App(): React.JSX.Element {
       alert(`Campagna annullata. Destinatari rimossi dalla coda: ${data.cancelled}.`);
       await fetchCampaignDetail(campaign.id);
       await fetchCampaigns();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(errorMessage(err));
     } finally {
       setCancelling(false);
     }
   };
 
-  const openContentCorrection = (campaign: { channelConfig?: Record<string, any> }) => {
+  const openContentCorrection = (campaign: { channelConfig?: CampaignChannelConfig }) => {
     setContentCorrectionSubject((campaign.channelConfig?.subject as string) || '');
     setContentCorrectionBody((campaign.channelConfig?.body as string) || '');
     setContentCorrectionError(null);
@@ -9467,8 +9561,8 @@ export function App(): React.JSX.Element {
         recipientIds = body.recipientIds || [];
       } else {
         recipientIds = (recipientsPage?.items || [])
-          .filter((r: any) => r.inadCheck?.diverted)
-          .map((r: any) => r.id);
+          .filter((r) => r.inadCheck?.diverted)
+          .map((r) => r.id);
       }
       if (recipientIds.length === 0) {
         alert('Nessun destinatario trovato per questa categoria.');
@@ -9489,10 +9583,10 @@ export function App(): React.JSX.Element {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ recipientIds: chunk }),
         });
-        const results = await res.json();
-        resent += results.filter((r: any) => r.result === 'resent').length;
-        skipped += results.filter((r: any) => r.result === 'skipped').length;
-        errored += results.filter((r: any) => r.result === 'error').length;
+        const results: Array<{ result: 'resent' | 'skipped' | 'error' }> = await res.json();
+        resent += results.filter((r) => r.result === 'resent').length;
+        skipped += results.filter((r) => r.result === 'skipped').length;
+        errored += results.filter((r) => r.result === 'error').length;
       }
       alert(`Rimandati: ${resent}. Saltati: ${skipped}. Errori: ${errored}.`);
     } catch {
@@ -10538,8 +10632,8 @@ export function App(): React.JSX.Element {
                           <select
                             className="form-select"
                             value={wizChannel}
-                            onChange={(e: any) => {
-                              const newChan = e.target.value as any;
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                              const newChan = e.target.value as Campaign['channelType'];
                               setWizChannel(newChan);
                               setWizMailConfigId(prev => {
                                 if (prev) return prev;
@@ -10685,7 +10779,7 @@ export function App(): React.JSX.Element {
                               <select
                                 className="form-select"
                                 value={wizPhysicalCommunicationType}
-                                onChange={e => setWizPhysicalCommunicationType(e.target.value as any)}
+                                onChange={e => setWizPhysicalCommunicationType(e.target.value as 'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890')}
                               >
                                 <option value="AR_REGISTERED_LETTER">Raccomandata A/R</option>
                                 <option value="REGISTERED_LETTER_890">Notifica ex L.890/1982</option>
@@ -10894,7 +10988,7 @@ export function App(): React.JSX.Element {
                                     (Italia), mostrando "Italia" mentre lo stato React contiene
                                     ancora il valore estero: un destinatario estero apparirebbe/si
                                     comporterebbe come domestico. Operatore deve verificare a mano. */}
-                                {singleCountry !== 'Italia' && !COUNTRIES.includes(singleCountry as any) && (
+                                {singleCountry !== 'Italia' && !(COUNTRIES as readonly string[]).includes(singleCountry) && (
                                   <option value={singleCountry}>{singleCountry} (non riconosciuto — verificare)</option>
                                 )}
                                 {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -11245,8 +11339,8 @@ export function App(): React.JSX.Element {
                     <select
                       className="form-select form-select-sm"
                       value={wizChannel}
-                      onChange={(e: any) => {
-                        const newChan = e.target.value as any;
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                        const newChan = e.target.value as Campaign['channelType'];
                         setWizChannel(newChan);
                         setWizMailConfigId(prev => {
                           if (prev) return prev;
@@ -11348,7 +11442,7 @@ export function App(): React.JSX.Element {
                         <select
                           className="form-select form-select-sm"
                           value={wizPhysicalCommunicationType}
-                          onChange={e => setWizPhysicalCommunicationType(e.target.value as any)}
+                          onChange={e => setWizPhysicalCommunicationType(e.target.value as 'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890')}
                         >
                           <option value="AR_REGISTERED_LETTER">Raccomandata A/R</option>
                           <option value="REGISTERED_LETTER_890">Notifica ex L.890/1982</option>
@@ -11544,7 +11638,7 @@ export function App(): React.JSX.Element {
                           <select
                             className="form-select form-select-sm"
                             value={wizAppIoMode}
-                            onChange={e => setWizAppIoMode(e.target.value as any)}
+                            onChange={e => setWizAppIoMode(e.target.value as AppIoCoDeliveryMode)}
                           >
                             <option value="none">Disabilitata (Invia solo via {channelLabel(wizChannel)})</option>
                             <option value="parallel" disabled={ioServicesLoaded && ioServices.length === 0}>Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
@@ -11960,7 +12054,7 @@ export function App(): React.JSX.Element {
                               <select
                                 className="form-select form-select-sm"
                                 value={wizPaymentAmountType}
-                                onChange={e => setWizPaymentAmountType(e.target.value as any)}
+                                onChange={e => setWizPaymentAmountType(e.target.value as 'cents' | 'euro')}
                                 required
                               >
                                 <option value="euro">Euro (es: 120.50)</option>
@@ -11996,7 +12090,7 @@ export function App(): React.JSX.Element {
                               <select
                                 className="form-select form-select-sm"
                                 value={wizPaymentPayeeType}
-                                onChange={e => setWizPaymentPayeeType(e.target.value as any)}
+                                onChange={e => setWizPaymentPayeeType(e.target.value as 'static' | 'column')}
                                 required
                               >
                                 <option value="static">Codice Fiscale Fisso</option>
@@ -13383,7 +13477,7 @@ export function App(): React.JSX.Element {
                         <h5 className="nd-who">{notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale}</h5>
                         <p className="nd-who-meta">
                           <span className="nd-cf">{notifDetail.recipient.codiceFiscale}</span>
-                          <ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} />
+                          <ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType ?? undefined, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} />
                           <a
                             href="#"
                             className="text-decoration-none"
@@ -13692,7 +13786,7 @@ export function App(): React.JSX.Element {
                                   <div className="col-md-6">
                                     <label className="form-label small mb-1">Paese</label>
                                     <select className="form-select form-select-sm" value={addressEditForm.country} onChange={(e) => setAddressEditForm(f => ({ ...f, country: e.target.value }))}>
-                                      {addressEditForm.country !== 'Italia' && !COUNTRIES.includes(addressEditForm.country as any) && (
+                                      {addressEditForm.country !== 'Italia' && !(COUNTRIES as readonly string[]).includes(addressEditForm.country) && (
                                         <option value={addressEditForm.country}>{addressEditForm.country} (verifica manuale)</option>
                                       )}
                                       {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -14783,7 +14877,7 @@ export function App(): React.JSX.Element {
                 const vitaInfo = anpr.infoSoggettoEnte?.find(i => (i.chiave ?? '').toLowerCase().includes('vita'));
                 const altreInfo = (anpr.infoSoggettoEnte ?? []).filter(i => i !== vitaInfo);
                 const comuneNascita = g?.luogoNascita?.comune?.nomeComune;
-                const provNascita = g?.luogoNascita?.comune?.siglaProvinciaIstat ?? (g?.luogoNascita?.comune as any)?.siglaProvincia ?? (g?.luogoNascita?.comune as any)?.provincia;
+                const provNascita = g?.luogoNascita?.comune?.siglaProvinciaIstat ?? (g?.luogoNascita?.comune as ComuneProvinciaAlt | undefined)?.siglaProvincia ?? (g?.luogoNascita?.comune as ComuneProvinciaAlt | undefined)?.provincia;
                 const luogoNascitaStr = comuneNascita
                   ? `${comuneNascita}${provNascita ? ` (${provNascita})` : ''}`
                   : (g?.luogoNascita?.localita?.descrizioneLocalita ?? g?.luogoNascita?.localita?.descrizioneStato);
@@ -14897,7 +14991,7 @@ export function App(): React.JSX.Element {
                             {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
                             {anpr.success && anpr.found && anpr.residenza?.[0]?.indirizzo && (() => {
                               const resComune = anpr.residenza[0].indirizzo?.comune;
-                              const resProv = resComune?.siglaProvinciaIstat ?? (resComune as any)?.siglaProvincia ?? (resComune as any)?.provincia;
+                              const resProv = resComune?.siglaProvinciaIstat ?? (resComune as ComuneProvinciaAlt | undefined)?.siglaProvincia ?? (resComune as ComuneProvinciaAlt | undefined)?.provincia;
                               return (
                                 <div className="small">
                                   <div className="fw-bold text-dark mb-1">
@@ -15444,7 +15538,7 @@ export function App(): React.JSX.Element {
                           <select
                             className="form-select form-select-sm"
                             value={enrichCampaignChannel}
-                            onChange={(e: any) => setEnrichCampaignChannel(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEnrichCampaignChannel(e.target.value as Campaign['channelType'])}
                           >
                             {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const)
                               .filter(k => k !== 'POSTAL' || canSelectPostal)
@@ -17701,7 +17795,7 @@ export function App(): React.JSX.Element {
                             } else if (log.action === 'LEGAL_ATTENTION_ACK' || log.action === 'LEGAL_ATTENTION_SNOOZE') {
                               const count = log.details?.count || 0;
                               const what = count === 1 ? '1 notifica senza esito legale' : `${count} notifiche senza esito legale`;
-                              const until = log.details?.snoozedUntil ? ` fino al ${new Date(log.details.snoozedUntil).toLocaleDateString('it-IT')}` : '';
+                              const until = log.details?.snoozedUntil ? ` fino al ${new Date(String(log.details.snoozedUntil)).toLocaleDateString('it-IT')}` : '';
                               const note = log.details?.note ? ` — nota: ${log.details.note}` : '';
                               detailText = log.action === 'LEGAL_ATTENTION_ACK'
                                 ? `Presa visione di ${what}${note}`
@@ -18587,7 +18681,7 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
-                                         {(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && (
+                                         {((campaign.channelConfig?.attachments?.length ?? 0) > 0) && (
                                            <th className="text-center" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('download')}>
                                              <div className="d-inline-flex align-items-center justify-content-center gap-1">
                                                <span>Download</span>
@@ -18654,7 +18748,7 @@ export function App(): React.JSX.Element {
                                 </thead>
                                 <tbody>
                                   {recipientsPage.items.map((r) => {
-                                    const downloadCell = (((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) ? (
+                                    const downloadCell = ((campaign.channelConfig?.attachments?.length ?? 0) > 0) ? (
                                       <td className="text-center fw-bold">
                                         {r.downloadCount ? (
                                           <span className="text-success">
@@ -19287,7 +19381,7 @@ export function App(): React.JSX.Element {
                               <details className="mt-2 small">
                                 <summary className="text-muted" style={{ cursor: 'pointer' }}>Storico contenuto ({campaign.channelConfig.contentHistory.length} versioni precedenti)</summary>
                                 <ul className="list-unstyled mt-2">
-                                  {campaign.channelConfig.contentHistory.map((h: any, i: number) => (
+                                  {campaign.channelConfig.contentHistory.map((h, i) => (
                                     <li key={i} className="border-bottom pb-1 mb-1">
                                       <div className="text-muted">{new Date(h.changedAt).toLocaleString('it-IT')} — {h.changedBy}</div>
                                       <div><strong>Oggetto:</strong> {h.subject || <em>vuoto</em>}</div>

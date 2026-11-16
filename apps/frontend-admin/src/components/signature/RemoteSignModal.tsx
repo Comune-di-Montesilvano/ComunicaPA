@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Loader2, PenLine } from 'lucide-react';
 import { ARUBA_USER_STORAGE_KEY } from './types';
 import type { ApiFetch, RemoteSignStatus } from './types';
+import { errorMessage } from '../../error-message';
 
 type Mode = { kind: 'campaign'; campaignId: string } | { kind: 'test' };
 
@@ -142,8 +143,8 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
       setPassword('');
       setOtp('');
       setProgress({ status: 'queued', totalFiles: 0, signedCount: 0, failedCount: 0, errorKind: null, errorMessage: null, signerCn: null });
-    } catch (err: any) {
-      setError(err?.message ?? 'Errore di rete');
+    } catch (err) {
+      setError(errorMessage(err, 'Errore di rete'));
     } finally {
       setBusy(false);
     }

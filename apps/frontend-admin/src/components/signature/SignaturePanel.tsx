@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Download, Loader2, PenLine, Upload, UserCh
 import { uploadFileInChunks } from '../../chunked-upload';
 import { RemoteSignModal } from './RemoteSignModal';
 import type { ApiFetch, SignatureJobStatus } from './types';
+import { errorMessage } from '../../error-message';
 
 interface Props {
   apiFetch: ApiFetch;
@@ -67,8 +68,8 @@ export function SignaturePanel({
         return;
       }
       onSignerChanged();
-    } catch (err: any) {
-      setSignerError(err?.message ?? 'Impossibile salvare il firmatario');
+    } catch (err) {
+      setSignerError(errorMessage(err, 'Impossibile salvare il firmatario'));
     } finally {
       setSignerSaving(false);
     }
@@ -101,8 +102,8 @@ export function SignaturePanel({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (err: any) {
-      setMessage({ kind: 'danger', text: err?.message ?? 'Download non riuscito' });
+    } catch (err) {
+      setMessage({ kind: 'danger', text: errorMessage(err, 'Download non riuscito') });
     } finally {
       setBusy(null);
     }
@@ -112,7 +113,7 @@ export function SignaturePanel({
     setBusy('Caricamento firmati…');
     setMessage(null);
     try {
-      const body = await uploadFileInChunks(
+      const body = await uploadFileInChunks<{ error?: string; replaced: number; rejected: Array<{ file: string; reason: string }> }>(
         `${adminApiBase}/campaigns/${campaignId}/signed-attachments/upload`,
         token,
         file,
@@ -129,8 +130,8 @@ export function SignaturePanel({
           rejected: body.rejected,
         });
       }
-    } catch (err: any) {
-      setMessage({ kind: 'danger', text: err?.message ?? 'Caricamento non riuscito' });
+    } catch (err) {
+      setMessage({ kind: 'danger', text: errorMessage(err, 'Caricamento non riuscito') });
     } finally {
       setBusy(null);
       if (fileInput.current) fileInput.current.value = '';
