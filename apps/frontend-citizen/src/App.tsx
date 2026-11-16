@@ -23,7 +23,7 @@ interface Notification {
   pec: string | null;
   status: 'pending' | 'queued' | 'sent' | 'failed' | 'skipped';
   createdAt: string;
-  extraData?: Record<string, any>;
+  extraData?: Record<string, unknown>;
   channelType: string;
   subject: string;
   bodyHtml?: string;
@@ -391,28 +391,29 @@ export function App(): React.JSX.Element {
         return;
       }
     }
-    if (selectedNotif) {
-      const updated = notifications.find(n => n.id === selectedNotif.id);
-      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedNotif)) {
-        setSelectedNotif(updated);
-      }
-    }
+    setSelectedNotif(prev => {
+      if (!prev) return prev;
+      const updated = notifications.find(n => n.id === prev.id);
+      return updated && JSON.stringify(updated) !== JSON.stringify(prev) ? updated : prev;
+    });
   }, [notifications]);
 
   // Notifica SEND: link al portale SEND subito, poi quello diretto alla
   // notifica se il backend riesce a leggerlo dal QR dell'avviso PN.
+  const selectedNotifId = selectedNotif?.id;
+  const selectedNotifIsSend = selectedNotif?.channelType === 'SEND' && !!selectedNotif?.iun;
   useEffect(() => {
     setSendLink({ url: SEND_CITIZEN_PORTAL_URL, direct: false });
-    if (!selectedNotif || selectedNotif.channelType !== 'SEND' || !selectedNotif.iun || !token) return;
+    if (!selectedNotifId || !selectedNotifIsSend || !token) return;
     let cancelled = false;
-    fetch(`${API_BASE}/citizen/notifications/${selectedNotif.id}/send-link`, {
+    fetch(`${API_BASE}/citizen/notifications/${selectedNotifId}/send-link`, {
       headers: { 'Authorization': `Bearer ${token}` },
     })
       .then(r => r.ok ? r.json() : null)
       .then((data: { url: string; direct: boolean } | null) => { if (!cancelled && data?.url) setSendLink(data); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [selectedNotif?.id, selectedNotif?.channelType, selectedNotif?.iun]);
+  }, [selectedNotifId, selectedNotifIsSend, token]);
 
   // Reset pagina quando cambiano i filtri
   useEffect(() => { setCurrentPage(1); }, [searchText, filterStatus, filterChannel, filterDateFrom, filterDateTo]);
@@ -1396,8 +1397,8 @@ export function App(): React.JSX.Element {
                               <div className="status-item">
                                 <span className="lbl">Download:</span>
                                 <span>
-                                  Scaricato {selectedNotif.extraData['download_count']} volte (ultimo il{' '}
-                                  {new Date(selectedNotif.extraData['downloaded_at']).toLocaleString('it-IT')})
+                                  Scaricato {String(selectedNotif.extraData['download_count'])} volte (ultimo il{' '}
+                                  {new Date(String(selectedNotif.extraData['downloaded_at'])).toLocaleString('it-IT')})
                                 </span>
                               </div>
                             )}

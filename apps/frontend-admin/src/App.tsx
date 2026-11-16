@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { CampaignSummary, type OutcomeSegment, type OutcomeTone, type KeyFigure } from './components/campaign-detail/CampaignSummary';
@@ -2637,12 +2637,12 @@ export function App(): React.JSX.Element {
   const [wizPaymentPayeeStatic, setWizPaymentPayeeStatic] = useState('');
   const [wizPaymentPayeeCol, setWizPaymentPayeeCol] = useState('');
 
-  const getWizRowFullName = (row: Record<string, string>) => {
+  const getWizRowFullName = useCallback((row: Record<string, string>) => {
     if (!row) return '';
     const fn1 = row[wizMapping.full_name] || '';
     const fn2 = wizMapping.full_name_2 ? (row[wizMapping.full_name_2] || '') : '';
     return [fn1, fn2].filter(Boolean).join(' ');
-  };
+  }, [wizMapping.full_name, wizMapping.full_name_2]);
 
   // Con CSV senza header le colonne sono "Colonna N": senza un'anteprima del
   // valore reale l'operatore non ha modo di sapere quale colonna scegliere.
@@ -2729,7 +2729,7 @@ export function App(): React.JSX.Element {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token, wizPreviewChannelTab, wizAppIoDifferentiate, wizAppIoSubjectOverride, wizAppIoBodyOverride, wizProtocolla]);
+  }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token, wizPreviewChannelTab, wizAppIoDifferentiate, wizAppIoSubjectOverride, wizAppIoBodyOverride, wizProtocolla, getWizRowFullName, wizAppIoMode, wizCampaignId, wizPostalAddressColumn, wizPostalCountryColumn, wizPostalMunicipalityColumn, wizPostalProvinceColumn, wizPostalZipColumn]);
 
   // Step 7: precompila il form di test dal primo record CSV valido, usando
   // la stessa mappatura colonne del canale corrente (CF/email/pec/indirizzo
@@ -3141,6 +3141,7 @@ export function App(): React.JSX.Element {
       }
     }
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [view, selectedCampaignId, campaign]);
 
   // "Download per Canale": polling indipendente dallo status campagna, stesso
@@ -3155,6 +3156,7 @@ export function App(): React.JSX.Element {
     fetchDownloadCombinationStats(selectedCampaignId);
     const timer = setInterval(() => fetchDownloadCombinationStats(selectedCampaignId), 5000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [view, selectedCampaignId]);
 
   // Pannello PEC difformi: proprio polling indipendente dallo status
@@ -3168,6 +3170,7 @@ export function App(): React.JSX.Element {
     fetchPendingPecReview(selectedCampaignId);
     const timer = setInterval(() => fetchPendingPecReview(selectedCampaignId), 3000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [view, selectedCampaignId, campaign?.channelType]);
 
   // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
@@ -3181,6 +3184,7 @@ export function App(): React.JSX.Element {
       fetchCampaigns();
     }, 5000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [token, view]);
 
 
@@ -3192,6 +3196,7 @@ export function App(): React.JSX.Element {
       fetchRecentActivity();
     }, 5000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [token, view]);
 
   // Salute coda POSTAL: pannello visibile solo nella tab Motori — fetch/polling
@@ -3205,6 +3210,7 @@ export function App(): React.JSX.Element {
       fetchPostalQueueHealth();
     }, 5000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [token, view, activeSettingsTab]);
 
   // Stesso problema del dettaglio campagna: il modale "Dettaglio Notifica"
@@ -3213,9 +3219,10 @@ export function App(): React.JSX.Element {
   // avvenuta lato server, finché l'operatore non ricaricava tutto il sito.
   // Refresh silenzioso (niente reset a null/loading, per non far sfarfallare
   // il modale aperto).
+  const notifDetailRecipientId = notifDetail?.recipient.id;
   useEffect(() => {
-    if (!token || !notifDetail) return;
-    const recipientId = notifDetail.recipient.id;
+    if (!token || !notifDetailRecipientId) return;
+    const recipientId = notifDetailRecipientId;
     const timer = setInterval(async () => {
       try {
         const res = await fetch(`${ADMIN_API_BASE}/notifications-search/${recipientId}`, {
@@ -3227,7 +3234,7 @@ export function App(): React.JSX.Element {
       }
     }, 3000);
     return () => clearInterval(timer);
-  }, [token, notifDetail?.recipient.id]);
+  }, [token, notifDetailRecipientId]);
 
   // Ricarica la pagina destinatari su cambio pagina/ricerca/filtri/ordinamento
   // (debounce 300ms solo sul testo di ricerca per non appesantire la digitazione,
@@ -3263,6 +3270,7 @@ export function App(): React.JSX.Element {
     poll();
     const timer = setInterval(poll, 5000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsDownloadChannelFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
 
   useEffect(() => {
@@ -3277,6 +3285,7 @@ export function App(): React.JSX.Element {
       fetchPostalAuthorizedUsers();
       fetchIoServices();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [token]);
 
   useEffect(() => {
@@ -3307,6 +3316,7 @@ export function App(): React.JSX.Element {
     return () => clearInterval(timer);
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   useEffect(() => { if (token) fetchTemplates(); }, [token]);
 
   useEffect(() => {
@@ -3319,6 +3329,7 @@ export function App(): React.JSX.Element {
     return () => {
       if (handle) clearTimeout(handle);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [view, token, auditPage, auditSearch]);
 
   // Carica le impostazioni persistite dal backend — al login e a ogni
@@ -3412,6 +3423,7 @@ export function App(): React.JSX.Element {
       })
       .catch(() => { /* backend non raggiungibile: la pagina resta editabile */ });
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   useEffect(() => { fetchSettings(); }, [token]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -3682,6 +3694,7 @@ export function App(): React.JSX.Element {
       }
     }, 5000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [domicileVerifJobId, domicileVerifStatus?.status]);
 
   const handleDomicileVerifOpenJob = async (jobId: string) => {
@@ -4586,6 +4599,7 @@ export function App(): React.JSX.Element {
       }
     }, 2000);
     return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [retryBulkJobId, retryBulkStatus?.status, selectedCampaignId]);
 
   // App IO Service Management handlers — persistiti lato server (IoServiceConfig)
@@ -7655,7 +7669,7 @@ export function App(): React.JSX.Element {
     setWizValidationErrors(errors);
     setWizValidationWarnings(warnings);
     setWizValidRows(valid);
-  }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn, wizPostalZipColumn, wizPostalCountryColumn, postalProviders, wizPostalServiceType, wizPostalCodiceContratto]);
+  }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn, wizPostalZipColumn, wizPostalProvinceColumn, wizPostalCountryColumn, postalProviders, wizPostalServiceType, wizPostalCodiceContratto]);
 
   useEffect(() => {
     if (wizStep === 5 && wizCampaignId) {
@@ -7732,6 +7746,7 @@ export function App(): React.JSX.Element {
     poll();
     const interval = setInterval(poll, 3000);
     return () => { cancelled = true; clearInterval(interval); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch*/apiFetch non memoizzate: in deps rifarebbero la richiesta a ogni render; il trigger sono i valori elencati
   }, [wizChannel, wizSingleMode, wizCampaignId, wizStep]);
 
   const handleWizValidation = async () => {

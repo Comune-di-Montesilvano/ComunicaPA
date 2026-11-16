@@ -18,7 +18,7 @@ export function getTextSnippet(content: string): string {
   return plain;
 }
 
-export function findPhysicalAddress(extraData: Record<string, any> | undefined): string | null {
+export function findPhysicalAddress(extraData: Record<string, unknown> | undefined): string | null {
   if (!extraData) return null;
   const keys = Object.keys(extraData);
   const addressKey = keys.find(k => /^(indirizzo|address|via|piazza|strada|viale|corso)$/i.test(k));

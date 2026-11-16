@@ -7,7 +7,8 @@ import {
   PiggyBank, Trophy, LineChart as LineChartIcon, PieChart as PieChartIcon, Wallet, Globe, Info, Hourglass,
 } from 'lucide-react';
 import { getChannelMeta } from '../data/channels';
-import { CHART, channelColor, channelRank, formatMonth, fmt, pct, plural, iso, Kpi, BarRow, ChartTooltip } from './stats-ui';
+import { CHART, channelColor, channelRank, formatMonth, fmt, pct, plural, iso } from './stats-utils';
+import { Kpi, BarRow, ChartTooltip } from './stats-ui';
 import '../assets/css/statistics.css';
 
 // ─── Tipi (specchio dei DTO backend: global-stats.dto.ts / cost-analytics.util.ts) ───

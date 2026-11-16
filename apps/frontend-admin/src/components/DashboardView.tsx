@@ -5,7 +5,8 @@ import {
   Network, History, RefreshCw, Loader2, CalendarDays, PieChart as PieChartIcon,
 } from 'lucide-react';
 import { getChannelMeta, ENGINE_LABELS } from '../data/channels';
-import { CHART, channelColor, channelRank, fmt, pct, plural, iso, formatDay, Kpi, BarRow, ChartTooltip, Sparkline } from './stats-ui';
+import { CHART, channelColor, channelRank, fmt, pct, plural, iso, formatDay } from './stats-utils';
+import { Kpi, BarRow, ChartTooltip, Sparkline } from './stats-ui';
 import '../assets/css/statistics.css';
 import { LegalAttentionCard } from './legal-attention/LegalAttentionCard';
 
