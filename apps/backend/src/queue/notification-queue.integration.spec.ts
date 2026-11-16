@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import type { NotificationJobData } from '@comunicapa/shared-types';
-import { NotificationQueuesService } from './notification-queues.service.js';
+import { NotificationQueuesService, countFailedSince } from './notification-queues.service.js';
 import { OrphanReconciliationService } from './orphan-reconciliation.service.js';
 import {
   CHANNEL_QUEUES,
@@ -331,7 +331,29 @@ describe.skipIf(!process.env.REDIS_URL)('BullMQ su Redis reale', () => {
       expect(newJob?.id).toBe(newAttemptId);
       expect(newJob?.data).toEqual({ campaignId, recipientId, attemptId: newAttemptId, channel: 'EMAIL' });
       expect(await newJob!.getState()).toBe('waiting');
-      expect(await (await emailQueue.getJob(oldAttemptId))?.getState()).toBe('failed');
+      // Il fallimento precedente è superato dal retry: tolto dai job falliti.
+      expect(await emailQueue.getJob(oldAttemptId)).toBeUndefined();
+      expect(await emailQueue.getFailedCount()).toBe(0);
     });
+  });
+
+  it('countFailedSince conta i falliti per data di fallimento (ZSET failed reale)', async () => {
+    const q = makeQueue(`count-failed-${randomUUID()}`);
+    const worker = makeWorker(q.name, async () => {
+      throw new Error('boom');
+    });
+    const data = (attemptId: string): NotificationJobData => ({ campaignId: 'c', recipientId: 'r', attemptId, channel: 'EMAIL' });
+
+    await q.add(NOTIFICATION_JOB_SEND, data('a1'), { jobId: 'a1' });
+    const first = await waitForState(q, 'a1', 'failed');
+    const between = (first.finishedOn ?? 0) + 1;
+    await new Promise((r) => setTimeout(r, 20));
+    await q.add(NOTIFICATION_JOB_SEND, data('a2'), { jobId: 'a2' });
+    await waitForState(q, 'a2', 'failed');
+    await worker.close();
+
+    expect(await countFailedSince(q, 0)).toBe(2);
+    expect(await countFailedSince(q, between)).toBe(1);
+    expect(await countFailedSince(q, Date.now() + 60_000)).toBe(0);
   });
 });

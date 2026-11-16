@@ -265,3 +265,7 @@ con query dirette sul DB (un solo attempt, nessuna riga fantasma).
 Qualunque nuovo canale che scrive `responsePayload.messageId`/`.id` per
 tracking proprio deve essere consapevole che quella chiave è condivisa.
 
+
+## Job falliti "superati" da un retry — tolti dai contatori
+
+`retryRecipient()` crea un attempt (e un job) nuovo: il job del tentativo precedente resterebbe per sempre nello ZSET `failed`, gonfiando "job falliti" di Motori e dashboard (caso reale: 2195 falliti di protocollazione per un disservizio, poi reinviati con successo). Ora `retryRecipient()` lo toglie subito (`NotificationQueuesService.removeFailedJob`, solo se `failed`, best-effort) e `OrphanReconciliationService.pruneSupersededFailed` (all'avvio e nel cron delle 03:00) toglie quelli rimasti: job il cui destinatario ha un attempt con `attempt_number` maggiore. L'errore resta in `notification_attempts.error_message`. Dashboard ("Da attenzionare" e riquadro motori): `failedRecent` di `GET admin/engines` = falliti negli ultimi 30 giorni. **Lo ZSET `failed` di BullMQ ha come punteggio `finishedOn`** (verificato su BullMQ 6), ma il client astratto di BullMQ 6 (`queue.getBackend().client`) non ha ZCOUNT: `countFailedSince` legge con `zrevrange … WITHSCORES` a pagine e si ferma al primo più vecchio. `queue.client` non esiste più nei tipi di BullMQ 6.

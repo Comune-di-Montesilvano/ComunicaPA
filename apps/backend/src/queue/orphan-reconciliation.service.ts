@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
@@ -25,6 +25,10 @@ export interface OrphanReconciliationResult {
  * in coda (chunk bulk, latenza Redis) — soglia ampia per non ri-accodare un
  * invio che sta semplicemente per partire da solo. */
 const ORPHAN_THRESHOLD_MINUTES = 30;
+
+/** I jobId dei motori notifiche sono gli id degli attempt (uuid); altri id non vanno in query. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PRUNE_CHUNK = 1000;
 
 interface OrphanCandidate {
   attemptId: string;
@@ -52,7 +56,7 @@ interface OrphanCandidate {
  * esattamente come lo accoderebbe il lancio originale.
  */
 @Injectable()
-export class OrphanReconciliationService {
+export class OrphanReconciliationService implements OnApplicationBootstrap {
   private readonly logger = new Logger(OrphanReconciliationService.name);
 
   constructor(
@@ -217,8 +221,58 @@ export class OrphanReconciliationService {
     return { checked: candidates.length, repaired: missing.length, markedFailed: stalledTerminal.length };
   }
 
+  /**
+   * Toglie dai falliti di BullMQ i job "superati": il destinatario ha un attempt
+   * più recente (retry singolo/massivo, correzione contenuto), quindi quel
+   * fallimento non richiede più azioni. Senza, i contatori "job falliti" di
+   * Motori e dashboard restavano gonfiati per sempre (caso reale: 2195 job di
+   * protocollazione falliti per un disservizio del protocollo, poi reinviati
+   * con successo). L'errore resta nello storico: `notification_attempts.error_message`.
+   */
+  async pruneSupersededFailed(engine: EngineName): Promise<number> {
+    const ids = (await this.notificationQueues.getFailedJobIds(engine)).filter((id) => UUID_RE.test(id));
+    let removed = 0;
+    for (let i = 0; i < ids.length; i += PRUNE_CHUNK) {
+      const chunk = ids.slice(i, i + PRUNE_CHUNK);
+      const superseded: Array<{ id: string }> = await this.attemptRepo
+        .createQueryBuilder('a')
+        .select('a.id', 'id')
+        .where({ id: In(chunk) })
+        .andWhere(
+          'EXISTS (SELECT 1 FROM notification_attempts n WHERE n.recipient_id = a.recipient_id AND n.attempt_number > a.attempt_number)',
+        )
+        .getRawMany();
+      for (const { id } of superseded) {
+        removed += await this.notificationQueues.removeFailedJob(id, [engine]);
+      }
+    }
+    return removed;
+  }
+
+  async pruneAllSupersededFailed(): Promise<Partial<Record<EngineName, number>>> {
+    const result: Partial<Record<EngineName, number>> = {};
+    for (const engine of ENGINE_NAMES) {
+      const removed = await this.pruneSupersededFailed(engine);
+      if (removed > 0) result[engine] = removed;
+    }
+    if (Object.keys(result).length > 0) {
+      this.logger.log(`Job falliti superati da un retry rimossi: ${JSON.stringify(result)}`);
+    }
+    return result;
+  }
+
+  /** All'avvio, senza bloccarlo: smaltisce i falliti superati accumulati prima del deploy. */
+  onApplicationBootstrap(): void {
+    void this.pruneAllSupersededFailed().catch((err: unknown) => {
+      this.logger.warn(`Pulizia job falliti superati non riuscita: ${String(err)}`);
+    });
+  }
+
   @Cron('0 3 * * *')
   async handleCron(): Promise<void> {
+    await this.pruneAllSupersededFailed().catch((err: unknown) => {
+      this.logger.warn(`Pulizia job falliti superati non riuscita: ${String(err)}`);
+    });
     const result = await this.reconcileAll();
     const totalRepaired = Object.values(result).reduce((sum, r) => sum + r.repaired, 0);
     const totalMarkedFailed = Object.values(result).reduce((sum, r) => sum + r.markedFailed, 0);

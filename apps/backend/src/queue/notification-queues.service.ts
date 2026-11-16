@@ -1,8 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
-import type { Queue } from 'bullmq';
+import type { Queue, RedisQueueBackend } from 'bullmq';
 import type { NotificationJobData } from '@comunicapa/shared-types';
-import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE, type EngineName } from './notification-job.types.js';
+import { CHANNEL_QUEUES, ENGINE_NAMES, PROTOCOLLAZIONE_QUEUE, type EngineName } from './notification-job.types.js';
+
+const FAILED_PAGE = 500;
+
+/**
+ * Job falliti con `finishedOn >= sinceMs`. Lo ZSET `failed` di BullMQ ha come
+ * punteggio `finishedOn` (verificato su BullMQ 6): si legge dal più recente a
+ * pagine e ci si ferma al primo più vecchio, quindi il costo dipende dai falliti
+ * recenti, non dal totale. Il client astratto di BullMQ 6 non espone ZCOUNT.
+ */
+export async function countFailedSince(queue: Queue, sinceMs: number): Promise<number> {
+  const client = await (queue.getBackend() as RedisQueueBackend).client;
+  const key = queue.toKey('failed');
+  let count = 0;
+  for (let start = 0; ; start += FAILED_PAGE) {
+    // [id1, score1, id2, score2, …], dal punteggio più alto.
+    const page = await client.zrevrange(key, start, start + FAILED_PAGE - 1, { WITHSCORES: true });
+    for (let i = 1; i < page.length; i += 2) {
+      if (Number(page[i]) < sinceMs) return count;
+      count++;
+    }
+    if (page.length < FAILED_PAGE * 2) return count;
+  }
+}
 
 @Injectable()
 export class NotificationQueuesService {
@@ -43,6 +66,31 @@ export class NotificationQueuesService {
 
   getJobCounts(channel: EngineName): Promise<Record<string, number>> {
     return this.getQueue(channel).getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed') as Promise<Record<string, number>>;
+  }
+
+  getFailedCountSince(channel: EngineName, sinceMs: number): Promise<number> {
+    return countFailedSince(this.getQueue(channel), sinceMs);
+  }
+
+  /** Id di tutti i job falliti del motore (solo gli id, senza caricare i job). */
+  getFailedJobIds(channel: EngineName): Promise<string[]> {
+    return this.getQueue(channel).getRanges(['failed'], 0, -1);
+  }
+
+  /**
+   * Toglie il job `jobId` dai falliti di qualunque motore, se c'è ed è ancora
+   * `failed` (mai un job in corso/in attesa). Ritorna quanti ne ha rimossi.
+   */
+  async removeFailedJob(jobId: string, engines: readonly EngineName[] = ENGINE_NAMES): Promise<number> {
+    let removed = 0;
+    for (const engine of engines) {
+      const job = await this.getQueue(engine).getJob(jobId);
+      if (job && (await job.getState()) === 'failed') {
+        await job.remove();
+        removed++;
+      }
+    }
+    return removed;
   }
 
   async getLastFailedAt(channel: EngineName): Promise<string | null> {

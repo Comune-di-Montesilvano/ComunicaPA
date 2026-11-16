@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
-import { NotificationQueuesService } from './notification-queues.service.js';
+import { NotificationQueuesService, countFailedSince } from './notification-queues.service.js';
 import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE } from './notification-job.types.js';
 
 describe('NotificationQueuesService.getJobsDetail', () => {
@@ -142,5 +142,54 @@ describe('NotificationQueuesService.getJob', () => {
     const result = await service.getJob('EMAIL', 'gone-123');
 
     expect(result).toBeUndefined();
+  });
+
+  describe('countFailedSince', () => {
+    /** ZSET `failed` finto: [id, score] dal più recente, servito a pagine da zrevrange. */
+    function fakeQueue(scores: number[]) {
+      const flat = scores.flatMap((s, i) => [`job-${i}`, String(s)]);
+      const zrevrange = jest.fn(async (_key: string, start: number, end: number) => flat.slice(start * 2, (end + 1) * 2));
+      const queue: any = { toKey: (t: string) => `bull:q:${t}`, getBackend: () => ({ client: Promise.resolve({ zrevrange }) }) };
+      return { queue, zrevrange };
+    }
+
+    it('conta solo i falliti dopo la soglia e si ferma al primo più vecchio', async () => {
+      const { queue, zrevrange } = fakeQueue([900, 800, 700, 100, 50]);
+      expect(await countFailedSince(queue, 500)).toBe(3);
+      expect(zrevrange).toHaveBeenCalledTimes(1);
+      expect(zrevrange).toHaveBeenCalledWith('bull:q:failed', 0, 499, { WITHSCORES: true });
+    });
+
+    it('scorre più pagine se i falliti recenti sono più di una pagina', async () => {
+      const { queue, zrevrange } = fakeQueue([...Array(1200).fill(1000), 10]);
+      expect(await countFailedSince(queue, 500)).toBe(1200);
+      expect(zrevrange).toHaveBeenCalledTimes(3);
+    });
+
+    it('nessun fallito → 0', async () => {
+      const { queue } = fakeQueue([]);
+      expect(await countFailedSince(queue, 0)).toBe(0);
+    });
+  });
+
+  it('removeFailedJob toglie il job solo dove è failed, mai se in corso/in attesa', async () => {
+    const failedJob = { getState: jest.fn().mockResolvedValue('failed'), remove: jest.fn() };
+    const activeJob = { getState: jest.fn().mockResolvedValue('active'), remove: jest.fn() };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationQueuesService,
+        { provide: getQueueToken(CHANNEL_QUEUES.EMAIL), useValue: { getJob: jest.fn().mockResolvedValue(failedJob) } },
+        { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: { getJob: jest.fn().mockResolvedValue(activeJob) } },
+        { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: { getJob: jest.fn().mockResolvedValue(undefined) } },
+        { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: { getJob: jest.fn().mockResolvedValue(undefined) } },
+        { provide: getQueueToken(PROTOCOLLAZIONE_QUEUE), useValue: { getJob: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    const removed = await moduleRef.get(NotificationQueuesService).removeFailedJob('attempt-1');
+
+    expect(removed).toBe(1);
+    expect(failedJob.remove).toHaveBeenCalledTimes(1);
+    expect(activeJob.remove).not.toHaveBeenCalled();
   });
 });

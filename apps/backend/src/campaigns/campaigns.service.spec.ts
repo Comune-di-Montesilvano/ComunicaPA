@@ -3503,7 +3503,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     findOne: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
-  const queuesMock = { addBulk: jest.fn() };
+  const queuesMock = { addBulk: jest.fn(), removeFailedJob: jest.fn().mockResolvedValue(1) };
   const mockSettings = {
     get: jest.fn(async () => null),
   };
@@ -3633,7 +3633,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
   it('retryRecipient crea un nuovo attempt, riaccoda il job e decrementa failedCount', async () => {
     campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
     recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
-    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'attempt-1', attemptNumber: 1 });
     const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
     attemptRepoMock.createQueryBuilder.mockReturnValue({
       insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: insertExec }) }) }) }),
@@ -3650,7 +3650,25 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(queuesMock.addBulk).toHaveBeenCalledWith('EMAIL', [
       { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' }, opts: { jobId: 'attempt-2' } },
     ]);
+    // Il fallimento del tentativo precedente non richiede più azioni: fuori dai job falliti.
+    expect(queuesMock.removeFailedJob).toHaveBeenCalledWith('attempt-1');
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+  });
+
+  it('retryRecipient riesce anche se la rimozione del job fallito precedente non va', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'attempt-1', attemptNumber: 1 });
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] }) }) }) }) }),
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+    queuesMock.removeFailedJob.mockRejectedValueOnce(new Error('Redis giù'));
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.retryRecipient('c1', 'r1')).resolves.toEqual({ requeued: true, attemptId: 'attempt-2' });
   });
 
   it('retryRecipient su campagna COMPLETED la riporta a QUEUED (destinatario tornato realmente in coda)', async () => {
@@ -4436,7 +4454,7 @@ describe('CampaignsService.previewMessage', () => {
   const campaignRepoMock = { findOneBy: jest.fn() };
   const recipientRepoMock = { find: jest.fn().mockResolvedValue([]), findOne: jest.fn() };
   const attemptRepoMock = { createQueryBuilder: jest.fn() };
-  const queuesMock = { addBulk: jest.fn() };
+  const queuesMock = { addBulk: jest.fn(), removeFailedJob: jest.fn().mockResolvedValue(1) };
 
   const buildModule = () =>
     Test.createTestingModule({

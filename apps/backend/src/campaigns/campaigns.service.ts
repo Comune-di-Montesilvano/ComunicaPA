@@ -2523,6 +2523,16 @@ export class CampaignsService {
       ]);
     }
 
+    // Il job fallito del tentativo precedente non richiede più azioni: fuori dai
+    // contatori "job falliti" (best-effort, gli altri superati li toglie il cron).
+    if (lastAttempt?.id) {
+      try {
+        await this.notificationQueues.removeFailedJob(lastAttempt.id);
+      } catch (err) {
+        this.logger.warn(`Rimozione job fallito ${lastAttempt.id} non riuscita: ${String(err)}`);
+      }
+    }
+
     return { requeued: true, attemptId };
   }
 
