@@ -1,8 +1,10 @@
 name: Trivy version check
 # Trivy e' fissato a una versione nei workflow (`version:` di trivy-action) e Dependabot non
-# lo aggiorna: questo job apre una issue quando esce una release piu' nuova (dopo 3 giorni,
-# per non adottare subito una release potenzialmente compromessa). Pattern da
-# GovPay-Interaction-Layer.
+# lo aggiorna: questo job apre una PR di aggiornamento quando esce una release piu' nuova (dopo
+# 3 giorni, per non adottare subito una release potenzialmente compromessa). La PR NON ha
+# auto-merge: il cambio del binario dello scanner resta una decisione umana. Commit verificato
+# via GraphQL col token della GitHub App, cosi' la PR fa partire i check (con GITHUB_TOKEN
+# resterebbe senza check); nei check della PR `security.yml` gira gia' con la versione nuova.
 on:
   schedule:
     - cron: "0 6 * * 1"
@@ -21,7 +23,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      issues: write
     steps:
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
@@ -34,12 +35,13 @@ jobs:
           persist-credentials: false
 
       - name: Confronta versione fissata con ultima release
+        id: cmp
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COOLDOWN_DAYS: "3"
+          WORKFLOWS: .github/workflows/release.yml .github/workflows/security.yml .github/workflows/security-autofix.yml
         run: |
           set -euo pipefail
-          pinned=$(grep -hoE '^\s+version: v[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/release.yml .github/workflows/security.yml | awk '{print $2}' | sort -u)
+          pinned=$(grep -hoE '^\s+version: v[0-9]+\.[0-9]+\.[0-9]+' $WORKFLOWS | awk '{print $2}' | sort -u)
           if [ "$(printf '%s\n' "$pinned" | wc -l)" -ne 1 ] || [ -z "$pinned" ]; then
             echo "::error::Versioni Trivy fissate incoerenti o assenti: $(tr '\n' ' ' <<<"$pinned")"
             exit 1
@@ -52,6 +54,11 @@ jobs:
             | jq -r '[.tag_name, .published_at] | @tsv')
           latest=$(cut -f1 <<<"$release")
           published=$(cut -f2 <<<"$release")
+          # Dato esterno: finisce in sed e nei file dei workflow, solo forma vX.Y.Z.
+          if ! [[ "$latest" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag di release inatteso: $latest"
+            exit 1
+          fi
           age_days=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 86400 ))
           echo "Fissata: $pinned, ultima: $latest (pubblicata $published, $age_days giorni fa)"
 
@@ -61,18 +68,57 @@ jobs:
             exit 0
           fi
           [ "$age_days" -lt "$COOLDOWN_DAYS" ] && { echo "Release troppo recente, attendo."; exit 0; }
+          printf 'pinned=%s\nlatest=%s\npublished=%s\n' "$pinned" "$latest" "$published" >> "$GITHUB_OUTPUT"
 
-          existing=$(gh issue list --state open --search "in:title \"Aggiornare Trivy a $latest\"" --json number --jq '.[0].number // empty')
-          [ -n "$existing" ] && { echo "Issue gia' aperta: #$existing"; exit 0; }
-          gh issue create --title "Aggiornare Trivy a $latest (fissato $pinned)" --body "$(cat <<EOF
-          Disponibile Trivy **$latest** (pubblicata $published). Fissata nei workflow: **$pinned**.
+      - name: Token GitHub App
+        id: app
+        if: steps.cmp.outputs.latest != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          # Commit sul branch trivy-version/* (tocca file in .github/workflows) e apertura PR.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
 
-          Aggiornare l'input \`version:\` degli step \`aquasecurity/trivy-action\` in:
-          - \`.github/workflows/release.yml\`
-          - \`.github/workflows/security.yml\`
+      - name: PR di aggiornamento
+        if: steps.cmp.outputs.latest != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          PINNED: ${{ steps.cmp.outputs.pinned }}
+          LATEST: ${{ steps.cmp.outputs.latest }}
+          PUBLISHED: ${{ steps.cmp.outputs.published }}
+          WORKFLOWS: .github/workflows/release.yml .github/workflows/security.yml .github/workflows/security-autofix.yml
+        run: |
+          set -euo pipefail
+          branch="trivy-version/$LATEST"
+          existing=$(gh pr list -R "$REPO" --state open --head "$branch" --json number --jq '.[0].number // empty')
+          [ -n "$existing" ] && { echo "PR gia' aperta: #$existing"; exit 0; }
 
-          Release notes: https://github.com/aquasecurity/trivy/releases/tag/$latest
+          # Solo le righe `version:` (la versione fissata e' gia' verificata unica e coerente).
+          pinned_re=${PINNED//./\\.}
+          allow=()
+          for f in $WORKFLOWS; do
+            sed -i -E "s/^(\s+version: )$pinned_re\$/\1$LATEST/" "$f"
+            allow+=(--allow "$f")
+          done
+          if grep -qE "^\s+version: $pinned_re\$" $WORKFLOWS; then
+            echo "::error::Sostituzione incompleta"; exit 1
+          fi
+          git diff --stat
 
-          _Issue aperta da \`trivy-version-check.yml\`._
+          node scripts/security/gh-commit.mjs --repo "$REPO" --branch "$branch" --base "$(git rev-parse HEAD)" \
+            --message "ci: Trivy $LATEST" "${allow[@]}"
+          url=$(gh pr create -R "$REPO" --base main --head "$branch" --title "ci: Trivy $LATEST" --body "$(cat <<EOF
+          Aggiorna Trivy da **$PINNED** a **$LATEST** (pubblicata $PUBLISHED) nell'input \`version:\` degli step \`aquasecurity/trivy-action\` di \`release.yml\`, \`security.yml\` e \`security-autofix.yml\`.
+
+          Release notes: https://github.com/aquasecurity/trivy/releases/tag/$LATEST
+
+          Nessun auto-merge: leggere le release notes e mergiare a mano se i check sono verdi.
+
+          _PR aperta da \`trivy-version-check.yml\`._
           EOF
-          )"
+          )")
+          echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"

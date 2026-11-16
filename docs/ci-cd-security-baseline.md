@@ -127,8 +127,9 @@ gh api repos/<owner>/<repo>/rulesets/<id> -q '{bypass_actors, rules}'
   (release: un push interrotto lascia manifest incompleti; autofix, pulizia ghcr, auto-merge).
 - Niente `pull_request_target` con checkout del codice della PR.
 - Input non fidati (titoli PR, nomi branch) passati via `env:`, mai interpolati in `run:`.
-- Tool scaricati a versione fissa (es. Trivy `version: v0.76.2`), con un workflow che apre
-  una issue quando esce una nuova versione (pnpm e corepack: dopo 7 giorni, come il cooldown).
+- Tool scaricati a versione fissa (es. Trivy `version: vX.Y.Z`), con un workflow che segnala
+  le versioni nuove: pnpm e corepack con una issue dopo 7 giorni (come il cooldown), Trivy con
+  una PR senza auto-merge dopo 3 giorni.
 - Controlli differenziali: lo script del gate si prende dal checkout della base quando esiste
   (`GATE=.base/scripts/security/diff-gate.mjs`, fallback sulla copia della PR solo se la base
   non lo ha ancora), stesso binario e stesso DB di vulnerabilità per testa e base.
@@ -186,7 +187,8 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 | `release.yml` | tag `v*`, giornaliero, dispatch | build, firma, smoke, e2e Playwright (solo se il codice è cambiato), pubblicazione; il giornaliero ricostruisce `latest` solo su causa reale (`scripts/rebuild-check.sh`). Si collauda solo con dispatch su `main` dopo il merge |
 | `ghcr-cleanup.yml` | settimanale | rimuove i digest orfani (build non pubblicati) e le loro firme |
 | `dependabot-automerge.yml` | PR Dependabot | auto-merge minor/patch via token GitHub App (la PR passa comunque dalla merge queue); major e cambi di runtime (es. tag `python` 3.14 → 3.15, che Dependabot classifica minor) restano manuali |
-| `toolchain-version-check.yml`, `trivy-version-check.yml` | settimanale (lunedì) | issue quando escono nuove versioni dei tool fissati |
+| `toolchain-version-check.yml` | settimanale (lunedì) | issue quando escono nuove versioni di pnpm/corepack |
+| `trivy-version-check.yml` | settimanale (lunedì) | PR di aggiornamento di Trivy (token GitHub App, permesso `workflows`), mai auto-merge |
 | `publiccode-validate.yml` | PR, push | validazione `publiccode.yml` |
 
 ## 5. Dipendenze
