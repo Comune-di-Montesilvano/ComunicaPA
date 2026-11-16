@@ -34,7 +34,14 @@ function uploadChunkXhr(url: string, token: string, chunk: Blob, onProgress: (lo
  * per QUESTO file (il chiamante somma l'offset se sta caricando più file
  * con una barra di progresso aggregata).
  */
-export async function uploadFileInChunks(
+/** Risposta di `complete`: `blocked`/`message` comuni a tutti gli endpoint, il resto specifico. */
+export interface ChunkedUploadResult {
+  blocked?: boolean;
+  message?: string;
+  [key: string]: unknown;
+}
+
+export async function uploadFileInChunks<T extends object = Record<never, never>>(
   baseUrl: string,
   token: string,
   file: Blob,
@@ -42,7 +49,7 @@ export async function uploadFileInChunks(
   onProgress: (loadedBytes: number) => void,
   onCompleteStart?: () => void,
   completeBody?: Record<string, unknown>,
-): Promise<any> {
+): Promise<ChunkedUploadResult & T> {
   const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
 
   const initRes = await fetch(`${baseUrl}/init`, {
@@ -81,5 +88,5 @@ export async function uploadFileInChunks(
     const errBody = await completeRes.json().catch(() => null);
     throw new Error(errBody?.message || `Errore completamento upload (HTTP ${completeRes.status}).`);
   }
-  return completeRes.json();
+  return completeRes.json() as Promise<ChunkedUploadResult & T>;
 }

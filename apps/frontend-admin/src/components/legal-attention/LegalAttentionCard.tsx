@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
 import { getChannelMeta } from '../../data/channels';
-import { plural } from '../stats-ui';
+import { plural } from '../stats-utils';
 import { LegalAttentionPanel } from './LegalAttentionPanel';
 import type { ApiFetch, LegalAttentionSummaryItem } from './types';
 
