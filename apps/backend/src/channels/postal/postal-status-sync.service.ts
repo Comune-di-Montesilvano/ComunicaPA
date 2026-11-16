@@ -7,6 +7,7 @@ import { PostalProvidersService } from '../../postal-providers/postal-providers.
 import { GlobalComClient, type GbcCredentials } from './globalcom-client.service.js';
 import { captureException } from '../../common/sentry.util.js';
 import { LEGAL_DELIVERED_STATUSES } from '../../campaigns/postal-legal-outcome.util.js';
+import { errorMessage } from '../../common/error-message.js';
 
 export interface PostalQueueHealth {
   candidatesCount: number;
@@ -70,8 +71,8 @@ export class PostalStatusSyncService {
       for (const attempt of attempts) {
         try {
           await this.syncOne(attempt, creds);
-        } catch (err: any) {
-          this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
+        } catch (err) {
+          this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${errorMessage(err)}`);
           captureException(err instanceof Error ? err : new Error(String(err)), {
             attemptId: attempt.id,
             channel: 'POSTAL',
@@ -337,8 +338,8 @@ export class PostalStatusSyncService {
         }
       }
       attempt.postalRequeueCheckedAt = new Date();
-    } catch (err: any) {
-      this.logger.warn(`Errore controllo riaccodamento per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
+    } catch (err) {
+      this.logger.warn(`Errore controllo riaccodamento per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${errorMessage(err)}`);
       captureException(err instanceof Error ? err : new Error(String(err)), {
         attemptId: attempt.id,
         channel: 'POSTAL',

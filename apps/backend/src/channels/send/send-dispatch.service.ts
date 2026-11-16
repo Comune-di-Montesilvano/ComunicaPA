@@ -18,6 +18,7 @@ import { sendSubjectTooLong } from './send-limits.js';
 import { splitDenominazione, type DenominazioneAbbreviation } from '../postal/denominazione.util.js';
 import { captureException } from '../../common/sentry.util.js';
 import { isPartitaIva } from '../tax-id.util.js';
+import { errorMessage } from '../../common/error-message.js';
 
 const BATCH_SIZE = 200;
 
@@ -97,14 +98,14 @@ export class SendDispatchService {
     for (const attempt of attempts) {
       try {
         await this.dispatchOne(attempt);
-      } catch (err: any) {
-        this.logger.warn(`Invio SEND fallito per attempt ${attempt.id}: ${err.message}`);
+      } catch (err) {
+        this.logger.warn(`Invio SEND fallito per attempt ${attempt.id}: ${errorMessage(err)}`);
         captureException(err instanceof Error ? err : new Error(String(err)), {
           attemptId: attempt.id,
           channel: 'SEND',
           recipientId: attempt.recipient.id,
         });
-        await this.markFailed(attempt, err.message);
+        await this.markFailed(attempt, errorMessage(err));
       }
     }
   }

@@ -7,6 +7,7 @@ import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { DomicileVerificationService, DomicileVerificationCsvVariant } from './domicile-verification.service.js';
 import { VerifyDomicileBulkCompleteDto } from './dto/domicile-verification.dto.js';
 import { initChunkedUpload, assembleChunkedUpload, assertChunkedUploadAccess, cleanupChunkedUpload, operatorChunkUploadOptions, operatorUploadOwner } from '../../campaigns/chunked-upload.util.js';
+import { errorMessage } from '../../common/error-message.js';
 
 type OperatorRequest = Request & { user: JwtOperatorPayload };
 
@@ -61,8 +62,8 @@ export class DomicileVerificationController {
         ioServiceId: body.ioServiceId,
         createdBy: req.user.username,
       });
-    } catch (err: any) {
-      return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio del CSV' };
+    } catch (err) {
+      return { blocked: true, message: errorMessage(err, 'Errore durante il riassemblaggio del CSV') };
     } finally {
       cleanupChunkedUpload(uploadId);
     }

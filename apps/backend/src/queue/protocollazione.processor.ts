@@ -20,6 +20,8 @@ import { getEffectiveRetentionDays } from '../campaigns/retention.util.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import { captureException } from '../common/sentry.util.js';
 import type { ProtocollaAllegato } from '../protocollo/protocollo.service.js';
+import { errorMessage } from '../common/error-message.js';
+import type { RecipientInFlight } from '../channels/recipient-in-flight.js';
 
 /**
  * Sostituisce ProtocollazioneSyncService (cron poll): ogni attempt da
@@ -117,7 +119,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
         const tempRecipient = {
           ...recipient,
           protocolNumber: '[Numero Protocollo generato in trasmissione]',
-        } as any;
+        } as RecipientInFlight;
 
         const resolvedSubject = processSubjectTemplate(subjectTemplate, tempRecipient, 'html');
         const resolvedBodyText = processTemplate(bodyTemplate, tempRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', effectiveChannel);
@@ -198,7 +200,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
         this.logger.log(dispatchMsg);
         jobLog(dispatchMsg);
       }
-    } catch (err: any) {
+    } catch (err) {
       // TINN è instabile (fetch failed, -100 "trasferimento allegati al sito
       // FTP") e spesso riprende da solo dopo pochi minuti: finché BullMQ ha
       // retry disponibili (backoff di PROTOCOLLAZIONE_JOB_OPTIONS, ~10 min
@@ -208,13 +210,13 @@ export class ProtocollazioneProcessor extends WorkerHost {
       const maxAttempts = job.opts?.attempts ?? 1;
       const isLastAttempt = permanent || (job.attemptsMade ?? 0) + 1 >= maxAttempts;
       if (!isLastAttempt) {
-        const msg = `Protocollazione fallita per attempt ${attemptId} (tentativo ${(job.attemptsMade ?? 0) + 1}/${maxAttempts}), nuovo tentativo programmato: ${err.message}`;
+        const msg = `Protocollazione fallita per attempt ${attemptId} (tentativo ${(job.attemptsMade ?? 0) + 1}/${maxAttempts}), nuovo tentativo programmato: ${errorMessage(err)}`;
         this.logger.warn(msg);
         jobLog(msg);
         throw err;
       }
       captureException(err, { attemptId, recipientId });
-      const msg = `Protocollazione fallita per attempt ${attemptId}: ${err.message}`;
+      const msg = `Protocollazione fallita per attempt ${attemptId}: ${errorMessage(err)}`;
       this.logger.warn(msg);
       jobLog(msg);
       // Stesso trattamento di un fallimento SendDispatchService.markFailed:
@@ -224,7 +226,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
       // find() sopra e qui, non sovrascrivere.
       const result = await this.attemptRepo.update(
         { id: attemptId, status: AttemptStatus.QUEUED },
-        { status: AttemptStatus.FAILED, errorMessage: err.message },
+        { status: AttemptStatus.FAILED, errorMessage: errorMessage(err) },
       );
       if (result.affected) {
         await this.recipientRepo.update(recipientId, { status: RecipientStatus.FAILED });

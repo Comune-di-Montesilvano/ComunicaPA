@@ -12,6 +12,7 @@ import type {
   PostalProviderMaskedDto,
   UpdatePostalProviderDto,
 } from './dto/postal-provider.dto.js';
+import { errorMessage } from '../common/error-message.js';
 
 export interface ResolvedPostalProvider {
   id: string;
@@ -177,9 +178,9 @@ export class PostalProvidersService {
     let info;
     try {
       info = await this.globalCom.informazioniUtenza(this.toCreds(entity));
-    } catch (error: any) {
-      this.logger.error(`Test provider "${entity.name}" fallito: ${error.message}`);
-      return { success: false, message: `Errore connessione: ${error.message}` };
+    } catch (error) {
+      this.logger.error(`Test provider "${entity.name}" fallito: ${errorMessage(error)}`);
+      return { success: false, message: `Errore connessione: ${errorMessage(error)}` };
     }
 
     if (!info.operazioneRiuscita) {

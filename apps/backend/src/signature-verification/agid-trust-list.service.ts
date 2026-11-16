@@ -5,6 +5,7 @@ import { Cron } from '@nestjs/schedule';
 import { XMLParser } from 'fast-xml-parser';
 import forge from 'node-forge';
 import { AgidTrustListCache } from '../entities/agid-trust-list-cache.entity.js';
+import { errorMessage } from '../common/error-message.js';
 
 const TSL_URL = 'https://eidas.agid.gov.it/TL/TSL-IT.xml';
 
@@ -94,8 +95,8 @@ export class AgidTrustListService {
         .where('fetched_at < NOW() - INTERVAL \'7 days\'')
         .execute();
       this.logger.log(`TSL-IT aggiornata: ${certificatesPem.length} certificati CA.`);
-    } catch (err: any) {
-      this.logger.warn(`Refresh TSL-IT fallito, mantengo la cache esistente: ${err?.message ?? err}`);
+    } catch (err) {
+      this.logger.warn(`Refresh TSL-IT fallito, mantengo la cache esistente: ${errorMessage(err)}`);
     }
   }
 }

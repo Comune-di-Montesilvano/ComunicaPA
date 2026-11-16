@@ -52,6 +52,7 @@ import {
   operatorChunkUploadOptions,
   operatorUploadOwner,
 } from './chunked-upload.util.js';
+import { errorMessage } from '../common/error-message.js';
 
 type CampaignWithOwnerDisplay = Campaign & {
   createdByDisplayName?: string;
@@ -157,7 +158,7 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body('recipientIds') recipientIds: string[],
     @Req() req: Request & { user: JwtOperatorPayload },
-  ): Promise<any> {
+  ) {
     if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
       throw new BadRequestException('recipientIds deve essere un array non vuoto');
     }
@@ -316,8 +317,8 @@ export class CampaignsController {
         details: { imported: result.imported, filename: 'chunked_upload.csv' },
       });
       return result;
-    } catch (err: any) {
-      return { imported: 0, campaignId: id, blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dei chunk' };
+    } catch (err) {
+      return { imported: 0, campaignId: id, blocked: true, message: errorMessage(err, 'Errore durante il riassemblaggio dei chunk') };
     } finally {
       cleanupChunkedUpload(uploadId);
     }
@@ -441,8 +442,8 @@ export class CampaignsController {
         fs.mkdirSync(dir, { recursive: true });
         try {
           fs.renameSync(path, join(dir, filename));
-        } catch (renameErr: any) {
-          if (renameErr.code === 'EXDEV') {
+        } catch (renameErr) {
+          if ((renameErr as NodeJS.ErrnoException).code === 'EXDEV') {
             fs.copyFileSync(path, join(dir, filename));
             fs.unlinkSync(path);
           } else {
@@ -469,7 +470,7 @@ export class CampaignsController {
         message: result.message,
         campaignId: id,
       };
-    } catch (err: any) {
+    } catch (err) {
       return {
         uploaded: 0,
         discarded: 0,
@@ -478,7 +479,7 @@ export class CampaignsController {
         filenames: [],
         campaignId: id,
         blocked: true,
-        message: err?.message ?? 'Errore durante la finalizzazione degli allegati',
+        message: errorMessage(err, 'Errore durante la finalizzazione degli allegati'),
       };
     } finally {
       cleanupChunkedUpload(uploadId);

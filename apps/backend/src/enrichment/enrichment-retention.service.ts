@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { EnrichmentJob, EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import { getEnrichmentDir } from './enrichment-paths.js';
+import { errorMessage } from '../common/error-message.js';
 
 @Injectable()
 export class EnrichmentRetentionService {
@@ -41,8 +42,8 @@ export class EnrichmentRetentionService {
         fs.rmSync(getEnrichmentDir(job.id), { recursive: true, force: true });
         await this.jobRepo.delete(job.id);
         removed++;
-      } catch (err: any) {
-        this.logger.warn(`Job arricchimento ${job.id} non eliminabile: ${err.message}`);
+      } catch (err) {
+        this.logger.warn(`Job arricchimento ${job.id} non eliminabile: ${errorMessage(err)}`);
       }
     }
     if (removed > 0) this.logger.log(`Retention arricchimento: ${removed} job eliminati`);

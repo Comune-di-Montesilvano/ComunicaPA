@@ -3,6 +3,16 @@ import * as soap from 'soap';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import type { SettingKey } from '../settings/settings.registry.js';
 import { classifyArssError, RemoteSignError } from './arss-errors.js';
+import { errorMessage } from '../common/error-message.js';
+
+/** Risposta ARSS (opensession, pdfsignatureV2): campi letti in modo difensivo. */
+interface ArssResult {
+  return?: unknown;
+  status?: string;
+  return_code?: string | null;
+  description?: string | null;
+  binaryoutput?: string;
+}
 
 export interface ArssCredentials {
   user: string;
@@ -23,7 +33,7 @@ export class ArubaSignClient {
   private readonly logger = new Logger(ArubaSignClient.name);
 
   /** Client SOAP per URL WSDL: il WSDL si scarica una volta, non a ogni chiamata. */
-  private cache: { url: string; client: Promise<any> } | null = null;
+  private cache: { url: string; client: Promise<soap.Client> } | null = null;
 
   constructor(private readonly settings: AppSettingsService) {}
 
@@ -32,7 +42,7 @@ export class ArubaSignClient {
     return String((await this.settings.get<string>(key)) ?? '').trim() || fallback;
   }
 
-  private async client(): Promise<any> {
+  private async client(): Promise<soap.Client> {
     const wsdlUrl = await this.setting('remoteSign.wsdlUrl', DEFAULT_WSDL_URL);
     if (this.cache?.url !== wsdlUrl) {
       const client = soap.createClientAsync(wsdlUrl, { endpoint: wsdlUrl.replace(/\?wsdl$/i, '') });
@@ -43,8 +53,8 @@ export class ArubaSignClient {
     }
     try {
       return await this.cache!.client;
-    } catch (err: any) {
-      this.logger.warn(`WSDL ARSS non raggiungibile: ${err?.code ?? err?.message ?? err}`);
+    } catch (err) {
+      this.logger.warn(`WSDL ARSS non raggiungibile: ${(err as { code?: string } | null)?.code ?? errorMessage(err)}`);
       throw new RemoteSignError('network', 'Servizio di firma Aruba non raggiungibile');
     }
   }
@@ -61,9 +71,9 @@ export class ArubaSignClient {
   private async call<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof RemoteSignError) throw err;
-      this.logger.warn(`Chiamata ARSS fallita: ${err?.code ?? err?.message ?? 'errore sconosciuto'}`);
+      this.logger.warn(`Chiamata ARSS fallita: ${(err as { code?: string } | null)?.code ?? errorMessage(err)}`);
       throw new RemoteSignError('network', 'Servizio di firma Aruba non raggiungibile');
     }
   }
@@ -71,7 +81,7 @@ export class ArubaSignClient {
   async openSession(creds: ArssCredentials, otp: string, otpDomain?: string): Promise<string> {
     const client = await this.client();
     const identity = { ...(await this.identity(creds, otpDomain)), otpPwd: otp };
-    const [res] = await this.call<any[]>(() => client.opensessionAsync({ Identity: identity }));
+    const [res] = await this.call<[ArssResult | undefined]>(() => client.opensessionAsync({ Identity: identity }));
     const sessionId: unknown = res?.return;
     if (typeof sessionId !== 'string' || sessionId === '' || sessionId.startsWith('KO') || res?.status === 'KO') {
       this.logger.warn(`opensession ARSS rifiutata: codice=${res?.return_code ?? '?'} descrizione=${res?.description ?? '?'}`);
@@ -82,7 +92,7 @@ export class ArubaSignClient {
 
   async signPdf(sessionId: string, creds: ArssCredentials, pdf: Buffer): Promise<Buffer> {
     const client = await this.client();
-    const [res] = await this.call<any[]>(async () => client.pdfsignatureV2Async({
+    const [res] = await this.call<[ArssResult | undefined]>(async () => client.pdfsignatureV2Async({
       SignRequestV2: {
         binaryinput: pdf.toString('base64'),
         certID: await this.setting('remoteSign.certId', 'AS0'),
@@ -93,7 +103,7 @@ export class ArubaSignClient {
       },
       pdfprofile: 'PADESBES',
     }));
-    const ret = res?.return ?? res;
+    const ret = (res?.return ?? res) as ArssResult | undefined;
     if (ret?.status !== 'OK' || !ret?.binaryoutput) {
       this.logger.warn(`pdfsignatureV2 ARSS rifiutata: codice=${ret?.return_code ?? '?'} descrizione=${ret?.description ?? '?'}`);
       throw classifyArssError('sign', ret?.return_code ?? null, ret?.description ?? null);
@@ -105,8 +115,8 @@ export class ArubaSignClient {
     try {
       const client = await this.client();
       await client.closesessionAsync({ Identity: await this.identity(creds), sessionid: sessionId });
-    } catch (err: any) {
-      this.logger.warn(`closesession ARSS fallita: ${err?.code ?? err?.message ?? 'errore sconosciuto'}`);
+    } catch (err) {
+      this.logger.warn(`closesession ARSS fallita: ${(err as { code?: string } | null)?.code ?? errorMessage(err)}`);
     }
   }
 }

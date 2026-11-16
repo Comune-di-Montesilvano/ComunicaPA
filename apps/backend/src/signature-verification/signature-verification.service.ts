@@ -2,6 +2,7 @@ import { createPublicKey, verify as cryptoVerify, X509Certificate } from 'node:c
 import { Injectable, Logger } from '@nestjs/common';
 import forge from 'node-forge';
 import { AgidTrustListService } from './agid-trust-list.service.js';
+import { errorMessage } from '../common/error-message.js';
 
 export interface SignatureVerificationResult {
   valid: boolean;
@@ -121,6 +122,22 @@ function extractPdfSignature(buffer: Buffer): { signedBytes: Buffer; pkcs7Der: B
  * DER degli authenticatedAttributes (RFC 2315 §9.3) con la chiave pubblica
  * del certificato firmatario.
  */
+/**
+ * `rawCapture` della busta PKCS#7 letta da node-forge: campi ASN.1 catturati dal
+ * parser, presenti a runtime ma assenti dai tipi `@types/node-forge`.
+ */
+interface Pkcs7RawCapture {
+  digestAlgorithm: string;
+  content?: unknown;
+  authenticatedAttributes?: forge.asn1.Asn1[];
+  signature: string;
+  serial?: string;
+  issuer?: forge.asn1.Asn1;
+}
+
+const rawCaptureOf = (p7: forge.pkcs7.PkcsSignedData): Pkcs7RawCapture | undefined =>
+  (p7 as unknown as { rawCapture?: Pkcs7RawCapture }).rawCapture;
+
 @Injectable()
 export class SignatureVerificationService {
   private readonly logger = new Logger(SignatureVerificationService.name);
@@ -145,8 +162,8 @@ export class SignatureVerificationService {
       const der = forge.util.createBuffer(buffer.toString('binary'));
       const asn1 = forge.asn1.fromDer(der);
       p7 = forge.pkcs7.messageFromAsn1(asn1) as forge.pkcs7.PkcsSignedData;
-    } catch (err: any) {
-      this.logger.warn(`Impossibile decodificare ${filename} come PKCS7: ${err?.message ?? err}`);
+    } catch (err) {
+      this.logger.warn(`Impossibile decodificare ${filename} come PKCS7: ${errorMessage(err)}`);
       return { valid: false, reason: 'Firma non leggibile (file .p7m corrotto o non PKCS7)' };
     }
     // Contenuto embedded nel PKCS7 stesso (non detached) — nessun override.
@@ -175,8 +192,8 @@ export class SignatureVerificationService {
       // test empirico contro un PDF PAdES reale.
       const asn1 = forge.asn1.fromDer(der, { strict: true, parseAllBytes: false, decodeBitStrings: true } as unknown as boolean);
       p7 = forge.pkcs7.messageFromAsn1(asn1) as forge.pkcs7.PkcsSignedData;
-    } catch (err: any) {
-      this.logger.warn(`Impossibile decodificare la firma PAdES di ${filename}: ${err?.message ?? err}`);
+    } catch (err) {
+      this.logger.warn(`Impossibile decodificare la firma PAdES di ${filename}: ${errorMessage(err)}`);
       return { valid: false, reason: 'Firma non leggibile (busta PKCS7 PAdES corrotta)' };
     }
     // CAdES-detached: il contenuto firmato è il PDF stesso (byte range),
@@ -204,7 +221,7 @@ export class SignatureVerificationService {
     // `certificates[0]` sceglierebbe il certificato sbagliato se l'ordine
     // non è quello atteso. Si seleziona il certificato che corrisponde
     // esattamente a issuer+serialNumber dichiarati nel SignerInfo.
-    const signerCert = this.selectSignerCertificate(p7, (p7 as any).rawCapture);
+    const signerCert = this.selectSignerCertificate(p7, rawCaptureOf(p7));
     if (!signerCert) {
       return { valid: false, reason: 'Certificato firmatario non identificabile nella busta di firma' };
     }
@@ -217,11 +234,11 @@ export class SignatureVerificationService {
     let signatureValid: boolean;
     try {
       signatureValid = this.verifyCryptographically(p7, detachedContentBytes);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof UnsupportedDigestError) {
         return { valid: false, reason: 'Algoritmo di hash della firma non ammesso (MD5 o non supportato)', signerCn: this.commonName(signerCert) };
       }
-      this.logger.warn(`Verifica crittografica fallita per ${filename}: ${err?.message ?? err}`);
+      this.logger.warn(`Verifica crittografica fallita per ${filename}: ${errorMessage(err)}`);
       return { valid: false, reason: 'Integrità della firma non verificata (hash non corrispondente)' };
     }
     if (!signatureValid) {
@@ -261,7 +278,7 @@ export class SignatureVerificationService {
    * firma detached).
    */
   private verifyCryptographically(p7: forge.pkcs7.PkcsSignedData, detachedContentBytes?: string): boolean {
-    const rawCapture = (p7 as any).rawCapture;
+    const rawCapture = rawCaptureOf(p7);
     if (!rawCapture) throw new Error('rawCapture assente sul messaggio PKCS7');
 
     const digestOid = forge.asn1.derToOid(rawCapture.digestAlgorithm);
@@ -330,7 +347,7 @@ export class SignatureVerificationService {
    * posizione, l'ordine dei certificati in un file firmato reale non è
    * garantito.
    */
-  private selectSignerCertificate(p7: forge.pkcs7.PkcsSignedData, rawCapture: any): forge.pki.Certificate | undefined {
+  private selectSignerCertificate(p7: forge.pkcs7.PkcsSignedData, rawCapture: Pkcs7RawCapture | undefined): forge.pki.Certificate | undefined {
     const certs = p7.certificates;
     if (!rawCapture?.serial || !rawCapture?.issuer) return certs[0];
 

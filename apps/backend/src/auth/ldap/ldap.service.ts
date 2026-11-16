@@ -91,7 +91,7 @@ export class LdapService {
       timeout: 5000,
       connectTimeout: 5000,
       referrals: false,
-    } as any);
+    } as ldapjs.ClientOptions);
 
     try {
       await this.bind(client, opts.userDn, opts.password);
@@ -200,12 +200,18 @@ export class LdapService {
           filter: filter,
           attributes: ['cn', 'distinguishedName'],
           referrals: false,
-        } as any,
-        (err: any, res: any) => {
+        } as ldapjs.SearchOptions,
+        (err: ldapjs.Error | null, res: ldapjs.SearchCallbackResponse) => {
           if (err) return resolve(dns);
 
           res.on('searchEntry', (entry: ldapjs.SearchEntry) => {
-            const raw = entry as any;
+            // Forme diverse tra versioni di ldapjs: v3 `pojo.attributes`, v2 `object`
+            // (assenti/diversi nei tipi @types/ldapjs), più `dn` in entrambe.
+            const raw = entry as unknown as {
+              pojo?: { attributes?: { type: string; values: string[] }[] };
+              object?: Record<string, unknown>;
+              dn?: unknown;
+            };
             let cn = '';
             let dn = '';
             if (raw.pojo?.attributes) {
@@ -252,8 +258,8 @@ export class LdapService {
           filter: filter,
           attributes: ['sAMAccountName'],
           referrals: false,
-        } as any,
-        (err: any, res: any) => {
+        } as ldapjs.SearchOptions,
+        (err: ldapjs.Error | null, res: ldapjs.SearchCallbackResponse) => {
           if (err) return resolve(false);
           res.on('searchEntry', () => {
             matched = true;
@@ -297,8 +303,8 @@ export class LdapService {
           filter: filter,
           attributes: ['sAMAccountName', 'displayName', 'cn', 'givenName', 'sn', 'mail', 'memberOf'],
           referrals: false,
-        } as any,
-        (err: any, res: any) => {
+        } as ldapjs.SearchOptions,
+        (err: ldapjs.Error | null, res: ldapjs.SearchCallbackResponse) => {
           if (err) return reject(err);
 
           res.on('searchEntry', (entry: ldapjs.SearchEntry) => {
@@ -321,7 +327,7 @@ export class LdapService {
               resolve(found);
             }
           });
-          res.on('error', (searchErr: any) => {
+          res.on('error', (searchErr: Error) => {
             if (!resolved) {
               resolved = true;
               reject(searchErr);

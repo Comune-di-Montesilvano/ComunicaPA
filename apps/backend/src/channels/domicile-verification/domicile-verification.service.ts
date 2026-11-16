@@ -15,6 +15,7 @@ import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from '../../io-servi
 import { InadService } from '../inad/inad.service.js';
 import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
 import { isPartitaIva } from '../tax-id.util.js';
+import { errorMessage } from '../../common/error-message.js';
 
 const BATCH_SIZE = 1000;
 const CF_FISICO_LENGTH = 16;
@@ -140,7 +141,7 @@ export class DomicileVerificationService {
 
     let attempts = 0;
     let succeeded = 0;
-    let lastError: any = null;
+    let lastError: unknown = null;
     const partialFailures: string[] = [];
 
     if (cfFisici.length > 0) {
@@ -148,10 +149,10 @@ export class DomicileVerificationService {
       try {
         await this.appIoQueue.add('verify', { jobId: saved.id }, { jobId: saved.id });
         succeeded++;
-      } catch (err: any) {
+      } catch (err) {
         lastError = err;
-        partialFailures.push(`App IO non accodato: ${err.message}`);
-        this.logger.warn(`Job ${saved.id}: enqueue App IO fallito: ${err.message}`);
+        partialFailures.push(`App IO non accodato: ${errorMessage(err)}`);
+        this.logger.warn(`Job ${saved.id}: enqueue App IO fallito: ${errorMessage(err)}`);
       }
 
       const batches: DomicileInadBatch[] = [];
@@ -164,10 +165,10 @@ export class DomicileVerificationService {
           const { id } = await this.inadService.startBulkExtraction(chunk, `comunicapa-domicili-${saved.id}`);
           batches.push({ id, size: chunk.length, done: false });
           succeeded++;
-        } catch (err: any) {
+        } catch (err) {
           lastError = err;
-          partialFailures.push(`Batch INAD ${chunkIndex} fallito (${chunk.length} CF): ${err.message}`);
-          this.logger.warn(`Job ${saved.id}: startBulkExtraction fallito per un chunk (${chunk.length} CF): ${err.message}`);
+          partialFailures.push(`Batch INAD ${chunkIndex} fallito (${chunk.length} CF): ${errorMessage(err)}`);
+          this.logger.warn(`Job ${saved.id}: startBulkExtraction fallito per un chunk (${chunk.length} CF): ${errorMessage(err)}`);
         }
       }
       await this.jobRepo.update(saved.id, { inadBatches: batches });
@@ -180,10 +181,10 @@ export class DomicileVerificationService {
         await this.registroImpreseQueue.enqueueVerify(saved.id, piva);
         succeeded++;
         pivaSucceeded++;
-      } catch (err: any) {
+      } catch (err) {
         lastError = err;
-        partialFailures.push(`PIVA ${piva} non accodata: ${err.message}`);
-        this.logger.warn(`Job ${saved.id}: enqueueVerify fallito per PIVA ${piva}: ${err.message}`);
+        partialFailures.push(`PIVA ${piva} non accodata: ${errorMessage(err)}`);
+        this.logger.warn(`Job ${saved.id}: enqueueVerify fallito per PIVA ${piva}: ${errorMessage(err)}`);
       }
     }
 
@@ -202,17 +203,17 @@ export class DomicileVerificationService {
         await this.registroImpreseQueue.enqueueVerify(saved.id, cf);
         succeeded++;
         cfRegistroSucceeded++;
-      } catch (err: any) {
+      } catch (err) {
         lastError = err;
-        partialFailures.push(`CF ${cf} non accodato su Registro Imprese: ${err.message}`);
-        this.logger.warn(`Job ${saved.id}: enqueueVerify fallito per CF ${cf}: ${err.message}`);
+        partialFailures.push(`CF ${cf} non accodato su Registro Imprese: ${errorMessage(err)}`);
+        this.logger.warn(`Job ${saved.id}: enqueueVerify fallito per CF ${cf}: ${errorMessage(err)}`);
       }
     }
 
     if (attempts > 0 && succeeded === 0) {
       await this.jobRepo.update(saved.id, {
         status: DomicileVerificationJobStatus.FAILED,
-        errorMessage: partialFailures.join('; ') || (lastError?.message ?? 'Errore sconosciuto'),
+        errorMessage: partialFailures.join('; ') || (lastError != null ? errorMessage(lastError) : 'Errore sconosciuto'),
         completedAt: new Date(),
       });
     } else {

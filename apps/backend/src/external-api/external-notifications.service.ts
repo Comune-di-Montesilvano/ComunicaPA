@@ -12,6 +12,7 @@ import { ExternalIdempotencyStore, hashRequest } from './external-idempotency.st
 import { mapNotification } from './external-notification.mapper.js';
 import { validateCreateNotification, type CreateNotificationDto } from './dto/create-notification.dto.js';
 import { ExternalApiError } from './external-api.error.js';
+import type { UpdateCampaignDto } from '../campaigns/dto/update-campaign.dto.js';
 
 export const EXTERNAL_UPLOADS_DIR = Symbol('EXTERNAL_UPLOADS_DIR');
 const REQUESTER = { username: 'external-api', role: 'admin' as const };
@@ -125,7 +126,7 @@ export class ExternalNotificationsService {
         });
         consumable = dto.attachments;
         // updateDraft sostituisce channelConfig per intero: spread obbligatorio.
-        await this.campaigns.updateDraft(campaign.id, { channelConfig: { ...campaign.channelConfig, attachments: attachmentsConfig } } as any);
+        await this.campaigns.updateDraft(campaign.id, { channelConfig: { ...campaign.channelConfig, attachments: attachmentsConfig } } as UpdateCampaignDto);
       }
 
       const recipient = await this.campaigns.addSingleRecipient(campaign.id, { ...mapped.recipient, extraData });

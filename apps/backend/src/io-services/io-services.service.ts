@@ -7,6 +7,7 @@ import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/setti
 import { MASKED_VALUE } from '../settings/settings.registry.js';
 import type { AppConfiguration } from '../config/configuration.js';
 import type { CreateIoServiceDto, IoServiceMaskedDto, UpdateIoServiceDto } from './dto/io-service.dto.js';
+import { errorMessage } from '../common/error-message.js';
 
 // App IO accetta solo codici fiscali di persona fisica (16 caratteri alfanumerici,
 // omocodia compresa). Il CF finisce nel path della richiesta: validato prima.
@@ -147,8 +148,8 @@ export class IoServicesService {
       }
 
       return { success: true, active: true, message: 'Iscritto ad App IO e messaggi abilitati' };
-    } catch (err: any) {
-      return { success: false, active: false, message: `Errore di connessione a PagoPA: ${err.message}` };
+    } catch (err) {
+      return { success: false, active: false, message: `Errore di connessione a PagoPA: ${errorMessage(err)}` };
     }
   }
 

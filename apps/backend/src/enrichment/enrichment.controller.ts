@@ -41,6 +41,7 @@ import {
   listUploadBatchFiles,
   UPLOAD_BATCH_NOT_FOUND_MESSAGE,
 } from './enrichment-batch-upload.util.js';
+import { errorMessage } from '../common/error-message.js';
 
 @Controller('admin/enrichment')
 export class EnrichmentController {
@@ -108,11 +109,11 @@ export class EnrichmentController {
         const { path, filename } = await assembleChunkedUpload(uploadId);
         addToUploadBatch(batchId, path, filename);
         return { ok: true };
-      } catch (err: any) {
+      } catch (err) {
         // Lotto sparito o completato tra l'assert e l'aggiunta: stesso 404
         // dell'assert. Gli altri errori (chunk mancante, I/O) restano blocked.
         if (err instanceof NotFoundException) throw err;
-        return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dello ZIP' };
+        return { blocked: true, message: errorMessage(err, 'Errore durante il riassemblaggio dello ZIP') };
       }
     } finally {
       cleanupChunkedUpload(uploadId);
@@ -162,8 +163,8 @@ export class EnrichmentController {
       });
       handedOff = true;
       return result;
-    } catch (err: any) {
-      return { blocked: true, message: err?.message ?? 'Errore durante la creazione del job' };
+    } catch (err) {
+      return { blocked: true, message: errorMessage(err, 'Errore durante la creazione del job') };
     } finally {
       if (!handedOff) cleanupUploadBatch(batchId);
     }

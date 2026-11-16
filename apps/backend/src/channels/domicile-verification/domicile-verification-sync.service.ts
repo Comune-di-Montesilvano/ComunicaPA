@@ -130,7 +130,7 @@ export class DomicileVerificationSyncService {
     const complete = inadAllReady && inadFetched && appIoReady && registroImpreseReady;
 
     if (!complete) {
-      const ageHours = (Date.now() - new Date(job.createdAt as any).getTime()) / 3_600_000;
+      const ageHours = (Date.now() - new Date(job.createdAt).getTime()) / 3_600_000;
       if (!quotaBlocked && ageHours > STALE_AFTER_HOURS) {
         await this.jobRepo.update(job.id, {
           ...patch,

@@ -1,3 +1,10 @@
+/**
+ * Elemento di `notificationStatusHistory`/`timeline` di PN (JSON esterno, schema ampio e
+ * in evoluzione): letto solo con accessi difensivi (`?.`, controlli `typeof`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON PN non tipizzato, vedi sopra
+type PnJson = any;
+
 export interface SendStatusHistoryEntry {
   status: string;
   activeFrom: string;
@@ -17,7 +24,7 @@ export interface SendDigitalDomicile {
 export function extractSendStatusHistory(data: unknown): SendStatusHistoryEntry[] {
   const history = (data as { notificationStatusHistory?: unknown })?.notificationStatusHistory;
   if (!Array.isArray(history)) return [];
-  return history.map((h: any) => ({ status: h?.status, activeFrom: h?.activeFrom }));
+  return history.map((h: PnJson) => ({ status: h?.status, activeFrom: h?.activeFrom }));
 }
 
 /**
@@ -31,7 +38,7 @@ export function extractSendDigitalDomicile(data: unknown): SendDigitalDomicile |
   if (!Array.isArray(timeline)) return null;
 
   let result: SendDigitalDomicile | null = null;
-  for (const el of timeline as any[]) {
+  for (const el of timeline as PnJson[]) {
     if (el?.category === 'SEND_DIGITAL_DOMICILE' && el?.details?.digitalAddress) {
       result = {
         type: el.details.digitalAddress.type ?? null,
@@ -70,7 +77,7 @@ export function extractSendAnalogCost(data: unknown): SendAnalogCostInfo {
   if (!Array.isArray(timeline)) return { analogCostCents: 0, events: [] };
 
   const events: SendAnalogCostEvent[] = [];
-  for (const el of timeline as any[]) {
+  for (const el of timeline as PnJson[]) {
     if (ANALOG_CATEGORIES_WITH_COST.includes(el?.category) && typeof el?.details?.analogCost === 'number') {
       events.push({
         productType: el.details.productType ?? null,
@@ -157,7 +164,7 @@ export function extractSendTimeline(data: unknown): SendTimelineEvent[] {
   const timeline = (data as { timeline?: unknown })?.timeline;
   if (!Array.isArray(timeline)) return [];
   const out: SendTimelineEvent[] = [];
-  for (const el of timeline as any[]) {
+  for (const el of timeline as PnJson[]) {
     if (typeof el?.category !== 'string' || typeof el?.timestamp !== 'string') continue;
     const d = el.details ?? {};
     const ev: SendTimelineEvent = { category: el.category, at: el.timestamp, details: {} };
