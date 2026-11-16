@@ -127,7 +127,7 @@ gh api repos/<owner>/<repo>/rulesets/<id> -q '{bypass_actors, rules}'
   (release: un push interrotto lascia manifest incompleti; autofix, pulizia ghcr, auto-merge).
 - Niente `pull_request_target` con checkout del codice della PR.
 - Input non fidati (titoli PR, nomi branch) passati via `env:`, mai interpolati in `run:`.
-- Tool scaricati a versione fissa (es. Trivy `version: v0.76.1`), con un workflow che apre
+- Tool scaricati a versione fissa (es. Trivy `version: v0.76.2`), con un workflow che apre
   una issue quando esce una nuova versione (pnpm e corepack: dopo 7 giorni, come il cooldown).
 - Controlli differenziali: lo script del gate si prende dal checkout della base quando esiste
   (`GATE=.base/scripts/security/diff-gate.mjs`, fallback sulla copia della PR solo se la base
