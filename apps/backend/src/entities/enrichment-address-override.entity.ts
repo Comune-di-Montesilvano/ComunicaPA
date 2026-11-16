@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 
 @Entity('enrichment_address_overrides')
-@Index(['jobId', 'pdfFilename'], { unique: true })
+@Index('IDX_enrichment_address_overrides_job_pdf', ['jobId', 'pdfFilename'], { unique: true })
 export class EnrichmentAddressOverride {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -23,7 +23,7 @@ export class EnrichmentAddressOverride {
   // createCampaignFromJob() eliminavano il job e i suoi file ma mai queste
   // righe, orfane a vita (bug reale trovato in review finale whole-branch).
   @ManyToOne('EnrichmentJob', { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'job_id' })
+  @JoinColumn({ name: 'job_id', foreignKeyConstraintName: 'FK_enrichment_address_overrides_job_id' })
   job?: unknown;
 
   @Column({ name: 'pdf_filename', type: 'varchar', length: 512 })

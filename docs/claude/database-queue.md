@@ -89,12 +89,13 @@ temporaneo `migr_<random>` (helper `createTempDatabase` in
   DB dev li crea. Indice che TypeORM non sa rappresentare (colonna `DESC`,
   espressione): `@Index('<nome>', { synchronize: false })`, mai creato né
   droppato da synchronize — oggi `idx_notification_attempts_recipient_attempt`,
-  quindi assente in dev. Restano in `KNOWN_DRIFT` le FK con nome esplicito in
-  migration (l'entity vuole il nome hash), la FK self-reference
-  `campaigns.parent_campaign_id` (nessun `@ManyToOne`) e l'unique
-  `IDX_enrichment_address_overrides_job_pdf` (`@Index` senza nome
-  nell'entity): allinearle cambierebbe nomi di vincoli/indici, si fa solo
-  insieme a una migration;
+  quindi assente in dev. Stessa regola per le FK con nome esplicito in
+  migration: `@JoinColumn({ name, foreignKeyConstraintName: '<nome>' })`,
+  altrimenti TypeORM vuole il nome hash (DROP + ADD). Una FK senza relazione
+  nell'entity (es. self-reference `campaigns.parent_campaign_id`) si dichiara
+  con un `@ManyToOne` mai caricato accanto alla `@Column`. Dal 2026-11-16
+  `KNOWN_DRIFT` è vuota: in dev synchronize ha rinominato FK/indice con i nomi
+  delle migration (prod già così, nessuna migration);
 - **reversibilità dell'ultima migration**: `undoLastMigration()` +
   `runMigrations()`, scarto invariato. Saltato se l'ultima ha
   `static readonly irreversible = true` — da mettere su ogni migration con

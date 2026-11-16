@@ -31,7 +31,7 @@ export class PostalPosteTracking {
   attemptId!: string;
 
   @ManyToOne(() => NotificationAttempt, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'attempt_id' })
+  @JoinColumn({ name: 'attempt_id', foreignKeyConstraintName: 'FK_postal_poste_tracking_attempt' })
   attempt?: NotificationAttempt;
 
   @Column({ name: 'tracking_code', type: 'varchar', length: 50 })

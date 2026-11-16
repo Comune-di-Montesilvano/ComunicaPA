@@ -3,6 +3,8 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -79,6 +81,12 @@ export class Campaign {
 
   @Column({ type: 'uuid', name: 'parent_campaign_id', nullable: true })
   parentCampaignId!: string | null;
+
+  // Solo per dichiarare la FK della migration AddTestCampaignColumns (stesso nome,
+  // ON DELETE CASCADE): mai caricata, il codice usa parentCampaignId.
+  @ManyToOne(() => Campaign, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'parent_campaign_id', foreignKeyConstraintName: 'FK_campaigns_parent_campaign_id' })
+  parentCampaign?: Campaign | null;
 
   @Column({ type: 'uuid', name: 'external_client_id', nullable: true })
   externalClientId!: string | null;

@@ -150,6 +150,6 @@ export class NotificationAttempt {
   createdAt!: Date;
 
   @ManyToOne('Recipient', 'attempts', { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'recipient_id' })
+  @JoinColumn({ name: 'recipient_id', foreignKeyConstraintName: 'FK_recipient_attempt' })
   recipient!: Recipient;
 }
