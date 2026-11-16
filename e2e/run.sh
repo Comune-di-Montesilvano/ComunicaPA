@@ -77,9 +77,24 @@ tar -cf - --exclude=node_modules --exclude=test-results --exclude=playwright-rep
   --exclude=.env.e2e --exclude=.e2e-state \
   package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc pnpm.yaml tsconfig.base.json e2e \
   | MSYS_NO_PATHCONV=1 docker exec -i "$PW_CONTAINER" tar -C /work -xf -
-MSYS_NO_PATHCONV=1 docker exec -w /work "$PW_CONTAINER" bash -ec '
-  # Stessa versione di corepack della procedura lockfile (CLAUDE.md); --force: l immagine ha gia /usr/bin/yarn.
-  npm install -g --force corepack@0.36.0 >/dev/null 2>&1
+# corepack: stesso tarball e stesso sha256 dell'ADD in apps/backend/Dockerfile (unica fonte,
+# aggiornata con toolchain-version-check.yml), mai `npm install` senza hash.
+COREPACK_ADD=$(grep -A1 -m1 '^ADD --checksum=sha256:' "$ROOT/apps/backend/Dockerfile")
+COREPACK_SHA256=$(grep -oE 'sha256:[0-9a-f]{64}' <<<"$COREPACK_ADD" | cut -d: -f2)
+COREPACK_URL=$(grep -oE 'https://registry\.npmjs\.org/corepack/-/corepack-[0-9]+\.[0-9]+\.[0-9]+\.tgz' <<<"$COREPACK_ADD")
+if [ -z "$COREPACK_SHA256" ] || [ -z "$COREPACK_URL" ]; then
+  echo "corepack: URL o sha256 non trovati in apps/backend/Dockerfile" >&2
+  exit 1
+fi
+MSYS_NO_PATHCONV=1 docker exec -w /work -e COREPACK_URL="$COREPACK_URL" -e COREPACK_SHA256="$COREPACK_SHA256" \
+  "$PW_CONTAINER" bash -ec '
+  curl -fsSL --retry 3 "$COREPACK_URL" -o /tmp/corepack.tgz
+  echo "$COREPACK_SHA256  /tmp/corepack.tgz" | sha256sum -c --quiet -
+  mkdir -p /usr/lib/node_modules/corepack
+  tar -xzf /tmp/corepack.tgz --strip-components=1 -C /usr/lib/node_modules/corepack
+  rm /tmp/corepack.tgz
+  ln -sf /usr/lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack
+  # Solo lo shim di pnpm: l immagine ha gia /usr/bin/yarn.
   corepack enable pnpm
   COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack install >/dev/null
   pnpm install --filter @comunicapa/e2e --frozen-lockfile --ignore-scripts >/dev/null
