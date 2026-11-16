@@ -10,13 +10,47 @@ export interface LdapUser {
   role: OperatorRole;
 }
 
-/**
- * Escape RFC 4515 di un valore inserito in un filtro LDAP: senza, uno username
- * come `x)(sAMAccountName=*` altera il filtro (LDAP injection), e un DN di gruppo
- * con parentesi (`CN=Ufficio (IT),...`) lo rende malformato.
+/*
+ * Filtri LDAP costruiti come oggetti ldapjs, mai come stringhe: ogni valore va sul
+ * filo come octet string BER a sé, quindi nessun input (username, DN, CN) può
+ * alterare la struttura del filtro, e i caratteri speciali arrivano al server
+ * esattamente come sono. Con le stringhe serviva l'escape RFC 4515, ma ldapjs 3
+ * (`parseFilter`) non lo decodifica: il server riceveva il testo letterale `\28`
+ * e un DN di gruppo con parentesi (`CN=Ufficio (IT),...`) non corrispondeva mai.
+ * ldapjs rifiuta i valori vuoti (`EqualityFilter` lancia): username vuoto è respinto
+ * prima, i CN vuoti (gruppo non configurato) sono scartati.
  */
-export function escapeLdapFilterValue(value: string): string {
-  return value.replace(/[\\*()\0]/g, (c) => `\\${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
+
+/** `(|(sAMAccountName=<u>)(userPrincipalName=<u>))` */
+export function userLookupFilter(username: string): ldapjs.OrFilter {
+  return new ldapjs.OrFilter({
+    filters: [
+      new ldapjs.EqualityFilter({ attribute: 'sAMAccountName', value: username }),
+      new ldapjs.EqualityFilter({ attribute: 'userPrincipalName', value: username }),
+    ],
+  });
+}
+
+/** Utente membro di `groupDn` anche tramite gruppi annidati (LDAP_MATCHING_RULE_IN_CHAIN di AD). */
+export function recursiveMembershipFilter(username: string, groupDn: string): ldapjs.AndFilter {
+  return new ldapjs.AndFilter({
+    filters: [
+      userLookupFilter(username),
+      new ldapjs.ExtensibleFilter({ matchType: 'memberOf', rule: '1.2.840.113556.1.4.1941', value: groupDn }),
+    ],
+  });
+}
+
+/** `(&(objectClass=group)(|(cn=<cn1>)(cn=<cn2>)...))` */
+export function groupsByCnFilter(groupCns: string[]): ldapjs.AndFilter {
+  return new ldapjs.AndFilter({
+    filters: [
+      new ldapjs.EqualityFilter({ attribute: 'objectClass', value: 'group' }),
+      new ldapjs.OrFilter({
+        filters: groupCns.filter(Boolean).map((cn) => new ldapjs.EqualityFilter({ attribute: 'cn', value: cn })),
+      }),
+    ],
+  });
 }
 
 @Injectable()
@@ -59,6 +93,9 @@ export class LdapService {
 
     if (!host) {
       throw new UnauthorizedException('Servizio LDAP non configurato');
+    }
+    if (!username) {
+      throw new UnauthorizedException('Credenziali non valide');
     }
 
     const userDn = dnTemplate.replace('%s', username);
@@ -190,7 +227,7 @@ export class LdapService {
     baseDn: string,
     groupCns: string[],
   ): Promise<Record<string, string>> {
-    const filter = `(&(objectClass=group)(|${groupCns.map((cn) => `(cn=${escapeLdapFilterValue(cn)})`).join('')}))`;
+    const filter = groupsByCnFilter(groupCns);
     return new Promise((resolve) => {
       const dns: Record<string, string> = {};
       client.search(
@@ -247,8 +284,7 @@ export class LdapService {
     username: string,
     groupDn: string,
   ): Promise<boolean> {
-    const user = escapeLdapFilterValue(username);
-    const filter = `(&(|(sAMAccountName=${user})(userPrincipalName=${user}))(memberOf:1.2.840.113556.1.4.1941:=${escapeLdapFilterValue(groupDn)}))`;
+    const filter = recursiveMembershipFilter(username, groupDn);
     return new Promise((resolve) => {
       let matched = false;
       client.search(
@@ -290,8 +326,7 @@ export class LdapService {
     baseDn: string,
     username: string,
   ): Promise<Record<string, unknown> | null> {
-    const user = escapeLdapFilterValue(username);
-    const filter = `(|(sAMAccountName=${user})(userPrincipalName=${user}))`;
+    const filter = userLookupFilter(username);
     return new Promise((resolve, reject) => {
       let resolved = false;
       let found: Record<string, unknown> | null = null;

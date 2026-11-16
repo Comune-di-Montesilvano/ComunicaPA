@@ -4,7 +4,7 @@ import { readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { getAttachmentsRoot, getUploadsDir, safeGetUploadsDir } from '../attachments/attachment-paths.js';
 import { resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
-import { escapeLdapFilterValue } from '../auth/ldap/ldap.service.js';
+import { recursiveMembershipFilter, userLookupFilter } from '../auth/ldap/ldap.service.js';
 import { escapeCsvField } from '../campaigns/csv.util.js';
 import { CHUNK_ROOT, cleanupChunkedUpload, initChunkedUpload, isValidChunkIndex, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
 import { flattenZipEntryName } from '../campaigns/zip-extract.util.js';
@@ -35,23 +35,40 @@ const tricky = fc.oneof(
 
 const RUNS = { numRuns: 2000 };
 
-describe('fuzz: escapeLdapFilterValue', () => {
-  const unescape = (s: string) => s.replace(/\\([0-9a-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+describe('fuzz: filtri LDAP (userLookupFilter, recursiveMembershipFilter)', () => {
+  // Valori vuoti esclusi: ldapjs li rifiuta e il servizio li respinge prima (login DTO
+  // @IsNotEmpty + controllo in authenticate).
+  const value = tricky.filter((s) => s.length > 0);
+  // Forma runtime dei filtri ldapjs 3: `filters`/`value`/`toBer` non sono in @types/ldapjs.
+  type FilterNode = { type: string; attribute?: string; value?: string; filters?: FilterNode[]; toBer(): { buffer: Buffer } };
+  const node = (f: object) => f as unknown as FilterNode;
+  const leaves = (f: object) => node(f).filters ?? [];
+  const ber = (f: object) => Buffer.from(node(f).toBer().buffer);
 
-  it('nessun metacarattere RFC 4515 sopravvive non escapato', () => {
+  it("la struttura del filtro non dipende dall'input: due uguaglianze con il valore intatto", () => {
     fc.assert(
-      fc.property(tricky, (value) => {
-        const rest = escapeLdapFilterValue(value).replace(/\\[0-9a-f]{2}/g, '');
-        expect(rest).not.toMatch(/[\\*()\0]/);
+      fc.property(value, (v) => {
+        const f = userLookupFilter(v);
+        expect(f.type).toBe('OrFilter');
+        expect(leaves(f).map((x) => [x.type, x.attribute, x.value])).toEqual([
+          ['EqualityFilter', 'sAMAccountName', v],
+          ['EqualityFilter', 'userPrincipalName', v],
+        ]);
       }),
       RUNS,
     );
   });
 
-  it("l'escape è reversibile: il server LDAP riceve esattamente il valore digitato", () => {
+  it('il server LDAP riceve esattamente il valore digitato (byte nel BER)', () => {
     fc.assert(
-      fc.property(tricky, (value) => {
-        expect(unescape(escapeLdapFilterValue(value))).toBe(value);
+      fc.property(value, value, (username, groupDn) => {
+        const f = recursiveMembershipFilter(username, groupDn);
+        const [user, member] = leaves(f);
+        expect(leaves(user).map((x) => x.value)).toEqual([username, username]);
+        expect(member.value).toBe(groupDn);
+        const wire = ber(f);
+        expect(wire.includes(Buffer.from(username))).toBe(true);
+        expect(wire.includes(Buffer.from(groupDn))).toBe(true);
       }),
       RUNS,
     );
