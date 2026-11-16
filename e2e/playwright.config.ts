@@ -39,7 +39,13 @@ export default defineConfig({
           // Nel container i frontend sono http://<servizio>:8080, non localhost: senza questo
           // flag non sarebbero "secure context" (crypto.randomUUID ecc. assenti), a differenza
           // della produzione dietro HTTPS.
-          args: [`--unsafely-treat-insecure-origin-as-secure=${ADMIN_URL},${CITIZEN_URL}`],
+          // --dns-prefetch-disable: le pagine linkano siti esterni (ioapp.it, notifichedigitali.it,
+          // pagopa.gov.it) e Chromium ne risolveva i nomi in anticipo; in CI harden-runner (block)
+          // le scartava riempiendo il log di falsi positivi. I test non visitano mai quei siti.
+          args: [
+            `--unsafely-treat-insecure-origin-as-secure=${ADMIN_URL},${CITIZEN_URL}`,
+            '--dns-prefetch-disable',
+          ],
         },
       },
     },
