@@ -15,29 +15,10 @@ import { ENTITIES, MIGRATIONS } from './schema.list.js';
  * compaiono più. Le voci rimaste sono "richiede migration: non allineato":
  * allinearle cambierebbe nomi di vincoli/indici o aggiungerebbe relazioni.
  */
-const KNOWN_DRIFT: string[] = [
-  // Richiede migration: non allineato. FK create dalle migration con nome
-  // esplicito; l'entity non dà nome alla relazione e TypeORM vuole il nome
-  // hash generato → DROP + ADD della stessa FK.
-  'ALTER TABLE "download_events" DROP CONSTRAINT "FK_download_events_recipient"',
-  'ALTER TABLE "download_events" ADD CONSTRAINT "FK_9c7b2e7059fc08596b872789814" FOREIGN KEY ("recipient_id") REFERENCES "recipients"("id") ON DELETE CASCADE ON UPDATE NO ACTION',
-  'ALTER TABLE "enrichment_address_overrides" DROP CONSTRAINT "FK_enrichment_address_overrides_job_id"',
-  'ALTER TABLE "enrichment_address_overrides" ADD CONSTRAINT "FK_a809dc6c634776f632f5d1e0968" FOREIGN KEY ("job_id") REFERENCES "enrichment_jobs"("id") ON DELETE CASCADE ON UPDATE NO ACTION',
-  'ALTER TABLE "notification_attempts" DROP CONSTRAINT "FK_recipient_attempt"',
-  'ALTER TABLE "notification_attempts" ADD CONSTRAINT "FK_f73d33318403eed8edb732ec318" FOREIGN KEY ("recipient_id") REFERENCES "recipients"("id") ON DELETE CASCADE ON UPDATE NO ACTION',
-  'ALTER TABLE "postal_poste_tracking" DROP CONSTRAINT "FK_postal_poste_tracking_attempt"',
-  'ALTER TABLE "postal_poste_tracking" ADD CONSTRAINT "FK_0575112744a11795753bc5d94c5" FOREIGN KEY ("attempt_id") REFERENCES "notification_attempts"("id") ON DELETE CASCADE ON UPDATE NO ACTION',
-  // Richiede migration: non allineato. FK self-reference di
-  // AddTestCampaignColumns: nell'entity parent_campaign_id è una @Column
-  // semplice, senza @ManyToOne → TypeORM la toglierebbe.
-  'ALTER TABLE "campaigns" DROP CONSTRAINT "FK_campaigns_parent_campaign_id"',
-  // Richiede migration: non allineato. Unique (job_id, pdf_filename): la
-  // migration la chiama IDX_enrichment_address_overrides_job_pdf, l'@Index
-  // dell'entity è senza nome (enrichment-address-override.entity.ts:12)
-  // → DROP + CREATE.
-  'DROP INDEX "public"."IDX_enrichment_address_overrides_job_pdf"',
-  'CREATE UNIQUE INDEX "IDX_079a6e545481a4788e3ffe25f2" ON "enrichment_address_overrides" ("job_id", "pdf_filename")',
-];
+// Schema delle migration ed entity allineati: nessuno scarto ammesso. FK e indici
+// creati dalle migration con nome esplicito vanno dichiarati con lo stesso nome
+// nell'entity (`@JoinColumn({ foreignKeyConstraintName })`, `@Index('<nome>')`).
+const KNOWN_DRIFT: string[] = [];
 
 const normalize = (queries: string[]): string[] =>
   queries.map((q) => q.trim().replace(/\s+/g, ' ')).sort();

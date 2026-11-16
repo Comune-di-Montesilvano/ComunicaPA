@@ -34,6 +34,6 @@ export class DownloadEvent {
   downloadedAt!: Date;
 
   @ManyToOne('Recipient', { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'recipient_id' })
+  @JoinColumn({ name: 'recipient_id', foreignKeyConstraintName: 'FK_download_events_recipient' })
   recipient!: Recipient;
 }
