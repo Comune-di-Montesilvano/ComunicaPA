@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-12_
+_Ultimo aggiornamento: 2026-11-16_
 
 ## Cos'è e chi lo usa
 
@@ -71,7 +71,7 @@ Prima di un invio manuale verifica il domicilio digitale da **Verifica Anagrafic
 ### Lanciare un invio massivo da file CSV
 
 1. Apri **Invio Massivo** dal menu.
-2. **Dettagli & Canale**: dai un nome alla campagna e scegli il canale. Un invio massivo usa un solo canale.
+2. **Dettagli & Canale**: dai un nome alla campagna e scegli il canale. Un invio massivo usa un solo canale. Per Email e PEC il mittente predefinito del canale è già selezionato: cambialo solo se serve un altro server.
 3. **Caricamento File**: carica il CSV dei destinatari.
 4. **Mappatura & Validazione**: indica quale colonna contiene codice fiscale, nome, email o PEC, allegato. Le righe con errori sono elencate con il motivo.
 5. **Template & Anteprima**: scrivi oggetto e testo, con i segnaposto se servono (vedi sotto).
@@ -223,6 +223,8 @@ Se il wizard blocca **Avanti** o rifiuta un campo, quasi sempre è per una di qu
 | App IO | Facoltativo | Oggetto 10–120 caratteri, testo 80–10.000 | — | Facoltativo |
 | SEND | Obbligatorio | Solo oggetto, al massimo 134 caratteri | — | Obbligatorio |
 | Posta | Obbligatorio | Solo oggetto: il contenuto è l'allegato | Nessuna, parallela o esclusiva | Facoltativo |
+
+Se la co-consegna App IO è parallela o esclusiva, **Avanti** resta bloccato finché non scegli il servizio App IO (il campo lo ricorda sotto); se non ti serve, imposta la co-consegna su «Disabilitata». Senza alcun servizio App IO configurato la co-consegna è disabilitata e non selezionabile.
 
 App IO «esclusiva» significa solo App IO, senza il canale principale. Se quel destinatario viene dirottato su PEC per il domicilio digitale, per lui l'App IO diventa automaticamente «parallela».
 

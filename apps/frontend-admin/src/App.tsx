@@ -44,6 +44,7 @@ const CAMPAIGN_NOT_ACCESSIBLE_MESSAGE = 'Campagna non trovata o non accessibile'
 
 import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from './data/channels';
 import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, GUIDA_DATE_TERMINI, guidaSections } from './guida';
+import { pickWizardMailConfigId, coDeliveryModeWithServices } from './wizard-defaults';
 
 // ---------------------------------------------------------------------------
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
@@ -2723,6 +2724,20 @@ export function App(): React.JSX.Element {
 
   // App IO Settings — persistiti lato server (IoServiceConfig), non più in localStorage
   const [ioServices, setIoServices] = useState<IoService[]>([]);
+  const [ioServicesLoaded, setIoServicesLoaded] = useState(false);
+
+  // Passo 1 wizard: mittente predefinito anche quando EMAIL/PEC è già il canale
+  // all'apertura (non solo al cambio canale) e mai un mittente dell'altro tipo
+  // dopo un passaggio EMAIL ↔ PEC.
+  useEffect(() => {
+    setWizMailConfigId(prev => pickWizardMailConfigId(mailConfigs, wizChannel, prev));
+  }, [mailConfigs, wizChannel, wizMailConfigId]);
+
+  // Co-consegna App IO senza servizi configurati: disabilitata, altrimenti il
+  // passo 1 resta bloccato sul servizio obbligatorio senza alcun messaggio.
+  useEffect(() => {
+    setWizAppIoMode(prev => coDeliveryModeWithServices(prev, ioServicesLoaded, ioServices.length));
+  }, [ioServicesLoaded, ioServices.length, wizAppIoMode]);
 
   // App IO New Service form
   const [newSvcNome, setNewSvcNome] = useState('');
@@ -5272,6 +5287,7 @@ export function App(): React.JSX.Element {
       if (res.ok) {
         const data = await res.json();
         setIoServices(data.configs || []);
+        setIoServicesLoaded(true);
       }
     } catch (err) {
       if (err instanceof ApiAuthError) return;
@@ -11004,9 +11020,12 @@ export function App(): React.JSX.Element {
                                   }}
                                 >
                                   <option value="none">Disabilitata (Invia solo via {channelLabel(wizChannel)})</option>
-                                  <option value="parallel">Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
-                                  <option value="exclusive">Esclusiva (Invia su App IO, ripiega su {channelLabel(wizChannel)} se non registrato)</option>
+                                  <option value="parallel" disabled={ioServicesLoaded && ioServices.length === 0}>Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
+                                  <option value="exclusive" disabled={ioServicesLoaded && ioServices.length === 0}>Esclusiva (Invia su App IO, ripiega su {channelLabel(wizChannel)} se non registrato)</option>
                                 </select>
+                                {ioServicesLoaded && ioServices.length === 0 && (
+                                  <div className="form-text small text-muted">Nessun servizio App IO configurato: co-consegna non disponibile (Impostazioni → App IO).</div>
+                                )}
                               </div>
                               {wizAppIoMode !== 'none' && (
                                 <div className="mt-3">
@@ -11018,6 +11037,9 @@ export function App(): React.JSX.Element {
                                     placeholder="-- Seleziona Servizio App IO --"
                                     options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
                                   />
+                                  {!wizAppIoServiceId && (
+                                    <div className="form-text small text-danger">Seleziona il servizio App IO oppure imposta la co-consegna su Disabilitata per proseguire.</div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -11525,9 +11547,12 @@ export function App(): React.JSX.Element {
                             onChange={e => setWizAppIoMode(e.target.value as any)}
                           >
                             <option value="none">Disabilitata (Invia solo via {channelLabel(wizChannel)})</option>
-                            <option value="parallel">Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
-                            <option value="exclusive">Esclusiva (Invia su App IO se il cittadino è registrato, altrimenti ripiega su {channelLabel(wizChannel)})</option>
+                            <option value="parallel" disabled={ioServicesLoaded && ioServices.length === 0}>Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
+                            <option value="exclusive" disabled={ioServicesLoaded && ioServices.length === 0}>Esclusiva (Invia su App IO se il cittadino è registrato, altrimenti ripiega su {channelLabel(wizChannel)})</option>
                           </select>
+                          {ioServicesLoaded && ioServices.length === 0 && (
+                            <div className="form-text small text-muted">Nessun servizio App IO configurato: co-consegna non disponibile (Impostazioni → App IO).</div>
+                          )}
                         </div>
                         {wizAppIoMode !== 'none' && (
                           <div className="mb-0">
@@ -11539,6 +11564,9 @@ export function App(): React.JSX.Element {
                               placeholder="-- Seleziona Servizio App IO --"
                               options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
                             />
+                            {!wizAppIoServiceId && (
+                              <div className="form-text small text-danger">Seleziona il servizio App IO oppure imposta la co-consegna su Disabilitata per proseguire.</div>
+                            )}
                           </div>
                         )}
                       </div>
