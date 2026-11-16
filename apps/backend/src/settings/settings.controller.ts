@@ -21,6 +21,7 @@ import { isSettingKey, type SettingKey } from './settings.registry.js';
 import { PdndAuthService } from '../pdnd/pdnd-auth.service.js';
 import { InadService } from '../channels/inad/inad.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
+import { errorMessage } from '../common/error-message.js';
 
 class TestConnectionDto {
   host!: string;
@@ -74,9 +75,9 @@ export class SettingsController {
       });
 
       return { success: true, message: 'Email inviata con successo' };
-    } catch (error: any) {
-      this.logger.error(`SMTP Test failed: ${error.message}`, error.stack);
-      throw new BadRequestException(`Errore connessione SMTP: ${error.message}`);
+    } catch (error) {
+      this.logger.error(`SMTP Test failed: ${errorMessage(error)}`, error instanceof Error ? error.stack : undefined);
+      throw new BadRequestException(`Errore connessione SMTP: ${errorMessage(error)}`);
     }
   }
 
@@ -111,9 +112,9 @@ export class SettingsController {
       });
 
       return { success: true, message: 'PEC inviata con successo' };
-    } catch (error: any) {
-      this.logger.error(`PEC Test failed: ${error.message}`, error.stack);
-      throw new BadRequestException(`Errore connessione PEC: ${error.message}`);
+    } catch (error) {
+      this.logger.error(`PEC Test failed: ${errorMessage(error)}`, error instanceof Error ? error.stack : undefined);
+      throw new BadRequestException(`Errore connessione PEC: ${errorMessage(error)}`);
     }
   }
 
@@ -163,8 +164,8 @@ export class SettingsController {
     }
     try {
       createPrivateKey(privateKey);
-    } catch (error: any) {
-      return { success: false, message: `Chiave privata non valida: ${error.message}` };
+    } catch (error) {
+      return { success: false, message: `Chiave privata non valida: ${errorMessage(error)}` };
     }
     return { success: true, message: 'Configurazione locale valida: campi compilati e chiave privata corretta. Per verificare il voucher reale usa "Test connessione" nel tab del servizio (SEND/INAD/Registro Imprese).' };
   }
@@ -192,8 +193,8 @@ export class SettingsController {
     let voucher: string;
     try {
       voucher = await this.pdndAuth.getVoucher(env, purposeId, true);
-    } catch (error: any) {
-      return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
+    } catch (error) {
+      return { success: false, message: errorMessage(error, 'Errore sconosciuto durante la richiesta del voucher PDND.') };
     }
     try {
       // Query param si chiama notificationRequestId, NON requestId (schema
@@ -207,8 +208,8 @@ export class SettingsController {
       // 400/404 sono attesi (requestId inventato non esiste): confermano solo
       // che l'autenticazione è passata, non che la richiesta abbia senso.
       return { success: true, message: `API Key + voucher PDND SEND (${env}) accettati da PN (HTTP ${res.status}).` };
-    } catch (error: any) {
-      return { success: false, message: error.message || 'Errore sconosciuto durante la verifica della connessione SEND.' };
+    } catch (error) {
+      return { success: false, message: errorMessage(error, 'Errore sconosciuto durante la verifica della connessione SEND.') };
     }
   }
 
@@ -237,8 +238,8 @@ export class SettingsController {
       }
       const data = (await res.json()) as Array<{ id: string; name: string; description: string; status: string }>;
       return { groups: data.filter((g) => g.status === 'ACTIVE') };
-    } catch (error: any) {
-      return { groups: [], error: error.message || 'Errore sconosciuto durante il recupero dei gruppi PN.' };
+    } catch (error) {
+      return { groups: [], error: errorMessage(error, 'Errore sconosciuto durante il recupero dei gruppi PN.') };
     }
   }
 
@@ -257,8 +258,8 @@ export class SettingsController {
     try {
       const result = await this.inadService.extractDigitalAddress(body.codiceFiscale);
       return { success: true, found: result.found, data: result.data };
-    } catch (error: any) {
-      return { success: false, message: error.message || 'Errore sconosciuto durante l\'interrogazione INAD.' };
+    } catch (error) {
+      return { success: false, message: errorMessage(error, 'Errore sconosciuto durante l\'interrogazione INAD.') };
     }
   }
 
@@ -277,8 +278,8 @@ export class SettingsController {
     try {
       const result = await this.registroImpreseService.dettaglioImpresa(body.partitaIva);
       return { success: true, ...result };
-    } catch (error: any) {
-      return { success: false, message: error.message || 'Errore sconosciuto durante l\'interrogazione Registro Imprese.' };
+    } catch (error) {
+      return { success: false, message: errorMessage(error, 'Errore sconosciuto durante l\'interrogazione Registro Imprese.') };
     }
   }
 
@@ -302,8 +303,8 @@ export class SettingsController {
     try {
       await this.pdndAuth.getVoucher('prod', purposeId, true);
       return { success: true, message: 'Voucher PDND ottenuto correttamente: client e finalità validi.' };
-    } catch (error: any) {
-      return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
+    } catch (error) {
+      return { success: false, message: errorMessage(error, 'Errore sconosciuto durante la richiesta del voucher PDND.') };
     }
   }
 
@@ -318,8 +319,8 @@ export class SettingsController {
     try {
       await this.pdndAuth.getVoucher(env, purposeId, true);
       return { success: true, message: 'Voucher PDND ottenuto correttamente: client e finalità validi.' };
-    } catch (error: any) {
-      return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
+    } catch (error) {
+      return { success: false, message: errorMessage(error, 'Errore sconosciuto durante la richiesta del voucher PDND.') };
     }
   }
 
@@ -343,8 +344,8 @@ export class SettingsController {
     try {
       const publicKey = createPublicKey(createPrivateKey(privateKey)).export({ type: 'spki', format: 'pem' }) as string;
       return { publicKey };
-    } catch (error: any) {
-      throw new BadRequestException(`Chiave privata non valida: ${error.message}`);
+    } catch (error) {
+      throw new BadRequestException(`Chiave privata non valida: ${errorMessage(error)}`);
     }
   }
 

@@ -55,6 +55,8 @@ import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, p
 import { ATTACHMENT_DENIED_MESSAGE, canReadCampaignAttachments, canViewCampaign, logAttachmentDenied, visibleCampaignSql } from './campaign-access.util.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
+import { errorMessage } from '../common/error-message.js';
+import type { PaymentConfig } from '../channels/payment-config.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -260,7 +262,7 @@ export class CampaignsService {
       throw new BadRequestException('Il contenuto si può correggere solo su una campagna già conclusa (completata, fallita o annullata)');
     }
 
-    const cfg = campaign.channelConfig as Record<string, any>;
+    const cfg = campaign.channelConfig as Record<string, unknown>;
     const previousEntry = {
       subject: (cfg['subject'] as string) ?? null,
       body: (cfg['body'] as string) ?? null,
@@ -550,17 +552,17 @@ export class CampaignsService {
       }
 
       await this.campaignRepo.increment({ id: campaignId }, 'totalRecipients', imported);
-    } catch (err: any) {
+    } catch (err) {
       // Risposta 200 con blocked=true (non un errore HTTP non-2xx): il reverse
       // proxy di produzione intercetta le risposte non-2xx e ne sostituisce il
       // body con una pagina HTML propria, rendendo illeggibile il messaggio
       // lato frontend — stesso pattern già usato in launch().
-      this.logger.error(`Import CSV fallito per campagna ${campaignId} (${imported} destinatari già importati prima dell'errore): ${err?.message ?? err}`);
+      this.logger.error(`Import CSV fallito per campagna ${campaignId} (${imported} destinatari già importati prima dell'errore): ${errorMessage(err)}`);
       return {
         imported,
         campaignId,
         blocked: true,
-        message: `Import interrotto dopo ${imported} destinatari: ${err?.message ?? 'errore sconosciuto'}`,
+        message: `Import interrotto dopo ${imported} destinatari: ${errorMessage(err, 'errore sconosciuto')}`,
       };
     } finally {
       await unlink(filePath).catch(() => undefined);
@@ -947,9 +949,9 @@ export class CampaignsService {
       });
       child = await this.campaignRepo.save(created);
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- _QueryDeepPartialEntity non gestisce bene un
-      // index signature generico (Record<string, unknown>) su colonna jsonb, stesso limite noto di TypeORM 0.3.x.
-      await this.campaignRepo.update({ id: child.id }, { channelConfig: parent.channelConfig as any });
+      // _QueryDeepPartialEntity non gestisce bene un index signature generico
+      // (Record<string, unknown>) su colonna jsonb: cast al tipo del parametro di update.
+      await this.campaignRepo.update({ id: child.id }, { channelConfig: parent.channelConfig } as Parameters<Repository<Campaign>['update']>[1]);
       child = { ...child, channelConfig: parent.channelConfig };
     }
 
@@ -2072,7 +2074,7 @@ export class CampaignsService {
       .limit(15)
       .getRawMany();
 
-    return rows.map((r: any) => ({
+    return rows.map((r: Record<string, string>) => ({
       id: r.id,
       name: r.name,
       channelType: r.channelType,
@@ -2661,9 +2663,8 @@ export class CampaignsService {
     if (cfg.zipColumn) extraData[cfg.zipColumn] = dto.zip ?? '';
     if (cfg.provinceColumn) extraData[cfg.provinceColumn] = dto.province ?? '';
     if (cfg.countryColumn) extraData[cfg.countryColumn] = dto.country ?? '';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- _QueryDeepPartialEntity non gestisce bene un
-    // index signature generico (Record<string, unknown>) su colonna jsonb, stesso limite noto di TypeORM 0.3.x
-    // (vedi launchTestSend/channelConfig sopra).
+    // _QueryDeepPartialEntity non gestisce bene un index signature generico (Record<string, unknown>)
+    // su colonna jsonb (vedi launchTestSend/channelConfig sopra).
     const updateFields: Record<string, unknown> = { extraData };
     if (dto.fullName?.trim()) updateFields.fullName = dto.fullName.trim();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vedi nota sopra su extraData/_QueryDeepPartialEntity
@@ -2957,34 +2958,34 @@ export class CampaignsService {
 
     if (sortBy === 'alphabetical' || sortBy === 'name') {
       qb.orderBy("COALESCE(NULLIF(TRIM(r.fullName), ''), r.codiceFiscale)", dir);
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'contacts') {
       qb.orderBy("COALESCE(NULLIF(TRIM(r.email), ''), NULLIF(TRIM(r.pec), ''))", dir, 'NULLS LAST');
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'protocol') {
       qb.orderBy(
         `(SELECT na.protocol_number FROM notification_attempts na WHERE na.recipient_id = r.id AND na.protocol_number IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
         dir,
         'NULLS LAST',
       );
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'status') {
       qb.orderBy('r.status', dir);
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'iun') {
       qb.orderBy(
         `(SELECT na.iun FROM notification_attempts na WHERE na.recipient_id = r.id AND na.iun IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
         dir,
         'NULLS LAST',
       );
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'sendStatus') {
       qb.orderBy(
         `(SELECT na.send_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.send_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
         dir,
         'NULLS LAST',
       );
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'postalStatus') {
       if (isPostal) {
         qb.orderBy(postalLegalOutcomeSql(hasPostalArTracking(campaign)), dir);
@@ -2995,14 +2996,14 @@ export class CampaignsService {
           'NULLS LAST',
         );
       }
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'postalDeliveryStatus') {
       qb.orderBy(
         `(SELECT na.postal_delivery_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.postal_delivery_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
         dir,
         'NULLS LAST',
       );
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'updatedAt') {
       // notification_attempts non ha colonna updated_at (solo created_at,
       // send_status_updated_at, postal_status_updated_at) — bug reale: la
@@ -3016,21 +3017,21 @@ export class CampaignsService {
         dir,
         'NULLS LAST',
       );
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'download') {
       qb.orderBy(DOWNLOAD_COUNT_SQL, dir);
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'cost') {
       qb.orderBy(
         `(SELECT na.cost_cents FROM notification_attempts na WHERE na.recipient_id = r.id AND na.cost_cents IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
         dir,
         'NULLS LAST',
       );
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     } else {
       // Default: ordine deterministico per data creazione / id per evitare riordinamenti ad ogni polling
       qb.orderBy('r.createdAt', 'ASC');
-      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+      if (typeof qb.addOrderBy === 'function') qb.addOrderBy('r.id', 'ASC');
     }
 
     const [rawItems, total] = await qb
@@ -3688,7 +3689,7 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const paymentConfig = campaign.channelConfig?.['paymentConfig'] as Record<string, any> | undefined;
+    const paymentConfig = campaign.channelConfig?.['paymentConfig'] as PaymentConfig | undefined;
     if (!paymentConfig?.enabled) {
       return { campaignId, enabled: false, totalAmountCents: 0, recipientsWithPaymentCount: 0 };
     }

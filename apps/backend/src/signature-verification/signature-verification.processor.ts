@@ -13,6 +13,7 @@ import { SignatureVerificationService } from './signature-verification.service.j
 import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { getUploadsDir } from '../attachments/attachment-paths.js';
 import { captureException } from '../common/sentry.util.js';
+import { errorMessage } from '../common/error-message.js';
 
 @Injectable()
 @Processor(SIGNATURE_VERIFICATION_QUEUE)
@@ -100,10 +101,10 @@ export class SignatureVerificationProcessor extends WorkerHost {
           completedAt: new Date(),
         },
       );
-    } catch (err: any) {
-      this.logger.error(`Job verifica firma ${jobId} fallito: ${err?.message ?? err}`);
+    } catch (err) {
+      this.logger.error(`Job verifica firma ${jobId} fallito: ${errorMessage(err)}`);
       captureException(err, { jobId, campaignId, stage: 'signatureVerification' });
-      await this.jobRepo.update({ id: jobId }, { status: SignatureVerificationJobStatus.FAILED, errorMessage: err?.message ?? 'Errore sconosciuto', completedAt: new Date() });
+      await this.jobRepo.update({ id: jobId }, { status: SignatureVerificationJobStatus.FAILED, errorMessage: errorMessage(err, 'Errore sconosciuto'), completedAt: new Date() });
     }
   }
 }

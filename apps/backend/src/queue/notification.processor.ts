@@ -1,7 +1,7 @@
 import { Inject, Logger, Injectable } from '@nestjs/common';
 import { WorkerHost } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, type QueryDeepPartialEntity } from 'typeorm';
 import { DelayedError } from 'bullmq';
 import { createHash } from 'crypto';
 import type { Job } from 'bullmq';
@@ -21,6 +21,7 @@ import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service.js';
 import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service.js';
 import { captureException } from '../common/sentry.util.js';
+import type { RecipientInFlight } from '../channels/recipient-in-flight.js';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {
@@ -62,7 +63,7 @@ export class NotificationProcessor extends WorkerHost {
     // (bug reale riscontrato in test con GlobalCom: nessun invio arrivato a
     // destinazione, fallito prima). Stesso pattern già usato correttamente
     // in protocollazione.processor.ts (relations: { recipient: { campaign: true } }).
-    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
+    const recipient: RecipientInFlight | null = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) {
       throw new Error(`Recipient ${recipientId} not found`);
     }
@@ -130,9 +131,9 @@ export class NotificationProcessor extends WorkerHost {
     }
 
     if (existingAttempt && existingAttempt.protocolNumber) {
-      (recipient as any).protocolNumber = `${existingAttempt.protocolNumber}/${existingAttempt.protocolYear}`;
+      recipient.protocolNumber = `${existingAttempt.protocolNumber}/${existingAttempt.protocolYear}`;
     }
-    (recipient as any).attemptNumber = existingAttempt?.attemptNumber ?? 1;
+    recipient.attemptNumber = existingAttempt?.attemptNumber ?? 1;
 
     await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
 
@@ -209,11 +210,11 @@ export class NotificationProcessor extends WorkerHost {
         (campaign.channelConfig?.['body'] as string) ?? '',
       ]))
       .digest('hex');
-    const isPrimaryRetryAttempt = ((recipient as any).attemptNumber ?? 1) > 1;
+    const isPrimaryRetryAttempt = (recipient.attemptNumber ?? 1) > 1;
     const skipAppIoUnchanged =
       isPrimaryRetryAttempt && recipient.lastContentResendSignature === appIoContentSignature;
 
-    const responsePayload: Record<string, any> = {};
+    const responsePayload: Record<string, unknown> = {};
     let appIoLinkDelivered = false;
     let primaryResult: { messageId?: string; responsePayload?: Record<string, unknown> } | undefined;
     let primaryError: Error | undefined;
@@ -244,14 +245,14 @@ export class NotificationProcessor extends WorkerHost {
         // App IO fallita ⇒ si prosegue col canale primario (fallback)
       }
     } else if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0 && skipAppIoUnchanged) {
-      jobLog(`App IO esclusiva saltata per CF ${recipient.codiceFiscale}: contenuto invariato dall'ultimo invio riuscito (retry attempt ${(recipient as any).attemptNumber}).`);
+      jobLog(`App IO esclusiva saltata per CF ${recipient.codiceFiscale}: contenuto invariato dall'ultimo invio riuscito (retry attempt ${recipient.attemptNumber}).`);
     }
 
     // 1. Invio canale primario (saltato solo in esclusiva riuscita)
     if (!skipPrimary) {
       try {
         primaryResult = await strategy.send(recipient, campaign, jobLog, attemptId, job.attemptsMade);
-      } catch (err: any) {
+      } catch (err) {
         primaryError = err instanceof Error ? err : new Error(String(err));
         jobLog(`Errore canale primario ${channel}: ${primaryError.message}`);
       }
@@ -265,7 +266,7 @@ export class NotificationProcessor extends WorkerHost {
       // volta — senza questa scrittura, un crash qui lascerebbe l'attempt in
       // PROCESSING con responsePayload vuoto, invisibile alla guardia.
       if (primaryResult) {
-        await this.attemptRepo.update(attemptId, { responsePayload });
+        await this.attemptRepo.update(attemptId, { responsePayload: responsePayload as QueryDeepPartialEntity<Record<string, unknown>> });
         if (channel === 'POSTAL' && primaryResult.messageId) {
           const statoIniziale = (primaryResult.responsePayload as Record<string, unknown> | undefined)?.['stato'] as string | undefined;
           await this.attemptRepo.update(attemptId, {
@@ -302,7 +303,7 @@ export class NotificationProcessor extends WorkerHost {
           }
         }
       } else if (parallelAppIoApiKey && job.attemptsMade === 0 && skipAppIoUnchanged) {
-        jobLog(`App IO parallela saltata per CF ${recipient.codiceFiscale}: contenuto invariato dall'ultimo invio riuscito (retry attempt ${(recipient as any).attemptNumber}).`);
+        jobLog(`App IO parallela saltata per CF ${recipient.codiceFiscale}: contenuto invariato dall'ultimo invio riuscito (retry attempt ${recipient.attemptNumber}).`);
       }
     }
 
@@ -312,7 +313,7 @@ export class NotificationProcessor extends WorkerHost {
       await this.attemptRepo.update(attemptId, {
         status: AttemptStatus.FAILED,
         errorMessage: primaryError.message,
-        responsePayload,
+        responsePayload: responsePayload as QueryDeepPartialEntity<Record<string, unknown>>,
       });
       // Anche se il canale primario fallisce, se App IO ha consegnato un link firmato valido
       // il cittadino può scaricare l'allegato: la sua vita deve essere limitata dalla retention,
@@ -357,7 +358,7 @@ export class NotificationProcessor extends WorkerHost {
     recipientId: string,
     campaignId: string,
     campaign: Campaign,
-    responsePayload: Record<string, any>,
+    responsePayload: Record<string, unknown>,
     postalSkippedForAppIo = false,
   ): Promise<void> {
     const retentionMaxDaysForExpiry = await this.settings.get<number>('retention.maxDays');
@@ -368,7 +369,7 @@ export class NotificationProcessor extends WorkerHost {
       await manager.update(NotificationAttempt, attemptId, {
         status: AttemptStatus.SUCCESS,
         sentAt: new Date(),
-        responsePayload,
+        responsePayload: responsePayload as QueryDeepPartialEntity<Record<string, unknown>>,
         // Canale POSTAL saltato da un'App IO esclusiva riuscita: mai un IDPRO
         // GlobalCom, mai spedito realmente — senza questo sentinel postalStatus
         // resta NULL per sempre e la UI lo mostra come "In corso" indistinguibile

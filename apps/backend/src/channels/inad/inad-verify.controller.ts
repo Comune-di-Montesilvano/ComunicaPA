@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { Roles } from '../../auth/decorators/roles.decorator.js';
 import { InadService } from './inad.service.js';
 import { VerifyInadSingleDto } from './dto/inad-verify.dto.js';
+import { errorMessage } from '../../common/error-message.js';
 
 @Controller('admin/inad-verify')
 export class InadVerifyController {
@@ -23,8 +24,8 @@ export class InadVerifyController {
         message: 'Domicilio digitale trovato su INAD',
         digitalAddress: result.data?.digitalAddress ?? [],
       };
-    } catch (err: any) {
-      return { success: false, found: false, message: `Errore verifica INAD: ${err.message}` };
+    } catch (err) {
+      return { success: false, found: false, message: `Errore verifica INAD: ${errorMessage(err)}` };
     }
   }
 }

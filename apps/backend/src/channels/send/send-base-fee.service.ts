@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { errorMessage } from '../../common/error-message.js';
 
 /**
  * Costo digitale base ("gestione piattaforma", ~1€ nel contratto tipo
@@ -36,8 +37,8 @@ export class SendBaseFeeService {
       }
       const data = (await res.json()) as { sendFee?: number };
       return typeof data.sendFee === 'number' ? data.sendFee : fallback;
-    } catch (err: any) {
-      this.logger.warn(`Errore chiamata price endpoint: ${err.message}`);
+    } catch (err) {
+      this.logger.warn(`Errore chiamata price endpoint: ${errorMessage(err)}`);
       return fallback;
     }
   }

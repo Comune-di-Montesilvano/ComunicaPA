@@ -263,6 +263,14 @@ const xmlParser = new XMLParser({
   parseTagValue: false,
 });
 
+/**
+ * Nodo dell'albero di fast-xml-parser: attributi `@_nome`, figli (nodo o lista), `#text`.
+ * Il tracciato Registro Imprese non ha un tipo statico: ogni accesso è difensivo
+ * (`?.`, `toArray`, `textOf`) e i valori finiscono in campi stringa opzionali.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- albero XML dinamico, vedi sopra
+type XmlNode = any;
+
 /** fast-xml-parser restituisce un oggetto per un solo figlio, un array se ripetuto — normalizza sempre ad array. */
 function toArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
@@ -279,7 +287,7 @@ function textOf(value: unknown): string | undefined {
   return undefined;
 }
 
-function parseIndirizzo(el: any): RegistroImpreseIndirizzo | undefined {
+function parseIndirizzo(el: XmlNode): RegistroImpreseIndirizzo | undefined {
   if (!el) return undefined;
   return {
     comune: el['@_comune'],
@@ -292,16 +300,16 @@ function parseIndirizzo(el: any): RegistroImpreseIndirizzo | undefined {
   };
 }
 
-function parseAteco(classificazioniEl: any): RegistroImpreseAtecoVoce[] {
+function parseAteco(classificazioniEl: XmlNode): RegistroImpreseAtecoVoce[] {
   const voci = toArray(classificazioniEl?.['classificazione-ateco']);
-  return voci.map((v: any) => ({
+  return voci.map((v: XmlNode) => ({
     codice: v['@_c-attivita'],
     descrizione: v['@_attivita'],
     importanza: v['@_importanza'],
   }));
 }
 
-function parsePersona(el: any): RegistroImpresePersona {
+function parsePersona(el: XmlNode): RegistroImpresePersona {
   const pf = el['persona-fisica'] ?? {};
   const cariche: string[] = [];
   const poteri: string[] = [];
@@ -324,10 +332,10 @@ function parsePersona(el: any): RegistroImpresePersona {
   };
 }
 
-function parseLocalizzazione(el: any): RegistroImpreseLocalizzazione {
+function parseLocalizzazione(el: XmlNode): RegistroImpreseLocalizzazione {
   return {
     tipo: el['@_tipo'],
-    sottoTipi: toArray(el['sotto-tipi']?.['sotto-tipo']).map((s: any) => textOf(s)).filter((s): s is string => !!s),
+    sottoTipi: toArray(el['sotto-tipi']?.['sotto-tipo']).map((s: XmlNode) => textOf(s)).filter((s): s is string => !!s),
     dataApertura: el['@_dt-apertura'],
     indirizzo: parseIndirizzo(el['indirizzo-localizzazione']),
     attivitaEsercitata: textOf(el['attivita-esercitata']),
@@ -335,7 +343,7 @@ function parseLocalizzazione(el: any): RegistroImpreseLocalizzazione {
   };
 }
 
-function parseSocio(el: any): RegistroImpreseSocio {
+function parseSocio(el: XmlNode): RegistroImpreseSocio {
   const anagrafica = el['anagrafica-titolare'] ?? {};
   return {
     denominazione: anagrafica['@_denominazione'],
@@ -424,12 +432,12 @@ function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
     },
     persone: toArray(root['persone-sede']?.persona).map(parsePersona),
     localizzazioni: toArray(root['localizzazioni']?.localizzazione).map(parseLocalizzazione),
-    soci: toArray(root['elenco-soci']?.riquadri?.riquadro).flatMap((r: any) => toArray(r?.titolari?.titolare).map(parseSocio)),
+    soci: toArray(root['elenco-soci']?.riquadri?.riquadro).flatMap((r: XmlNode) => toArray(r?.titolari?.titolare).map(parseSocio)),
     statuto: {
       durataSocieta: durataSocieta?.['@_dt-termine'],
       sistemaAmministrazione: textOf(amministrazione['sistema-amministrazione']),
       formeAmministrative: toArray(amministrazione['forme-amministrative']?.['forma-amministrativa'])
-        .map((f: any) => textOf(f))
+        .map((f: XmlNode) => textOf(f))
         .filter((f): f is string => !!f),
       collegioSindacale: amministrazione['collegio-sindacale']
         ? {
@@ -483,7 +491,7 @@ function parseRicercaXml(xml: string): RegistroImpreseRicercaPosizione[] {
   const root = parsed['ListaImpreseRI'] ?? {};
   const items = toArray(root['Impresa']);
 
-  return items.map((el: any) => {
+  return items.map((el: XmlNode) => {
     const indirizzoEl = el['IndirizzoSedeLegale'];
     return {
       denominazione: textOf(el['Denominazione']),

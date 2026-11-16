@@ -2,7 +2,6 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
 import type { ChannelLogFn, IChannelStrategy } from '../channel.interface.js';
-import type { Recipient } from '../../entities/recipient.entity.js';
 import type { Campaign } from '../../entities/campaign.entity.js';
 import * as nodemailer from 'nodemailer';
 import type { AppConfiguration } from '../../config/configuration.js';
@@ -11,6 +10,7 @@ import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachme
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { MailConfigsService } from '../../mail-configs/mail-configs.service.js';
+import type { RecipientInFlight } from '../recipient-in-flight.js';
 
 @Injectable()
 export class PecStrategy implements IChannelStrategy {
@@ -23,7 +23,7 @@ export class PecStrategy implements IChannelStrategy {
     private readonly mailConfigs: MailConfigsService,
   ) {}
 
-  async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
+  async send(recipient: RecipientInFlight, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
     const log = (msg: string): void => {
       this.logger.debug(msg);
       onLog?.(msg);
@@ -68,7 +68,7 @@ export class PecStrategy implements IChannelStrategy {
     // Process templates
     let subject = processSubjectTemplate(subjectTemplate, recipient, 'html');
     if (protocollaAttiva) {
-      const protocolNumber = (recipient as any).protocolNumber as string | undefined;
+      const protocolNumber = recipient.protocolNumber;
       if (protocolNumber) {
         const [numero, anno] = protocolNumber.split('/');
         subject = `${subject} [Protocollo N.ro ${anno}-PROT-${numero}]`;
@@ -101,7 +101,7 @@ export class PecStrategy implements IChannelStrategy {
       subject,
       text: bodyText,
       html: bodyHtml,
-    })) as any;
+    }));
 
     this.logger.log(`PEC successfully sent to ${recipient.pec}: messageId=${info.messageId}`);
     log(`Risposta SMTP per ${recipient.pec}: response=${info.response}, accepted=${JSON.stringify(info.accepted)}, rejected=${JSON.stringify(info.rejected)}`);

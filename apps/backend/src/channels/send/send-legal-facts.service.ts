@@ -3,6 +3,7 @@ import { AppSettingsService } from '../../settings/app-settings.service.js';
 import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 import { PdfExtractorClient } from '../../enrichment/pdf-extractor.client.js';
+import { errorMessage } from '../../common/error-message.js';
 
 export interface SendLegalFactItem {
   legalFactId: string;
@@ -84,8 +85,8 @@ export class SendLegalFactsService {
     try {
       const codes = await this.pdfExtractor.qrCodes(aar.buffer, aar.filename);
       return codes.find(isSendPortalUrl) ?? null;
-    } catch (err: any) {
-      this.logger.warn(`QR dell'avviso SEND IUN ${iun} non letto: ${err.message}`);
+    } catch (err) {
+      this.logger.warn(`QR dell'avviso SEND IUN ${iun} non letto: ${errorMessage(err)}`);
       return null;
     }
   }
@@ -113,8 +114,8 @@ export class SendLegalFactsService {
       }
       const data = JSON.parse(text) as Array<{ legalFactsId: { key: string; category: string } }>;
       return data.map((item) => ({ legalFactId: item.legalFactsId.key, category: item.legalFactsId.category }));
-    } catch (err: any) {
-      this.logger.warn(`Errore elenco documenti SEND IUN ${iun}: ${err.message}`);
+    } catch (err) {
+      this.logger.warn(`Errore elenco documenti SEND IUN ${iun}: ${errorMessage(err)}`);
       return [];
     }
   }
@@ -167,8 +168,8 @@ export class SendLegalFactsService {
         return null;
       }
       return (JSON.parse(text) as { timeline?: PnTimelineElement[] }).timeline ?? [];
-    } catch (err: any) {
-      this.logger.warn(`Errore timeline SEND IUN ${iun} per elenco documenti: ${err.message}`);
+    } catch (err) {
+      this.logger.warn(`Errore timeline SEND IUN ${iun} per elenco documenti: ${errorMessage(err)}`);
       return null;
     }
   }
@@ -210,9 +211,9 @@ export class SendLegalFactsService {
         contentType: fileRes.headers.get('content-type') || 'application/octet-stream',
         buffer: Buffer.from(arrayBuffer),
       };
-    } catch (err: any) {
-      this.logger.warn(`Errore download documento SEND IUN ${iun} legalFactId ${legalFactId}: ${err.message}`);
-      return { ready: false, error: err.message };
+    } catch (err) {
+      this.logger.warn(`Errore download documento SEND IUN ${iun} legalFactId ${legalFactId}: ${errorMessage(err)}`);
+      return { ready: false, error: errorMessage(err) };
     }
   }
 }

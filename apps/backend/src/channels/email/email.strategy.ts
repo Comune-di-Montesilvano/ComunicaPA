@@ -78,7 +78,7 @@ export class EmailStrategy implements IChannelStrategy {
       subject,
       text: bodyText,
       html: bodyHtml,
-    })) as any;
+    }));
 
     this.logger.log(`Email successfully sent to ${recipient.email}: messageId=${info.messageId}`);
     log(`Risposta SMTP per ${recipient.email}: response=${info.response}, accepted=${JSON.stringify(info.accepted)}, rejected=${JSON.stringify(info.rejected)}`);

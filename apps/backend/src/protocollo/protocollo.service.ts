@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import type { SettingKey } from '../settings/settings.registry.js';
+import { errorMessage } from '../common/error-message.js';
 
 interface ProtocolloConfig {
   baseUrl: string;
@@ -127,11 +128,12 @@ export class ProtocolloService {
           throw err;
         }
         return text;
-      } catch (err: any) {
-        const isAbort = err.name === 'TimeoutError' || err.name === 'AbortError' || err.message?.includes('timeout');
+      } catch (caught) {
+        const err = (caught instanceof Error ? caught : new Error(String(caught))) as NodeJS.ErrnoException;
+        const isAbort = err.name === 'TimeoutError' || err.name === 'AbortError' || err.message.includes('timeout');
         const isNetworkErr = err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.code === 'ECONNREFUSED';
         if ((isAbort || isNetworkErr) && attempt < maxRetries) {
-          this.logger.warn(`Errore di connessione/timeout (${err.message}) durante ${soapAction}. Eseguo retry...`);
+          this.logger.warn(`Errore di connessione/timeout (${errorMessage(err)}) durante ${soapAction}. Eseguo retry...`);
           lastError = err;
           continue;
         }
@@ -220,8 +222,8 @@ export class ProtocolloService {
     let docId: number;
     try {
       docId = await this.inserimento(config, dst, input.documentBuffer);
-    } catch (err: any) {
-      if (err.message.includes('DST non valido') || err.message.includes('sessione scaduta') || err.message.includes('(-2)')) {
+    } catch (err) {
+      if (errorMessage(err).includes('DST non valido') || errorMessage(err).includes('sessione scaduta') || errorMessage(err).includes('(-2)')) {
         this.logger.warn('DST scaduto o non valido: eseguo relogin e riprovo inserimento principale...');
         dst = await this.login(true);
         docId = await this.inserimento(config, dst, input.documentBuffer);
@@ -236,8 +238,8 @@ export class ProtocolloService {
         let aId: number;
         try {
           aId = await this.inserimento(config, dst, a.buffer);
-        } catch (err: any) {
-          if (err.message.includes('DST non valido') || err.message.includes('sessione scaduta') || err.message.includes('(-2)')) {
+        } catch (err) {
+          if (errorMessage(err).includes('DST non valido') || errorMessage(err).includes('sessione scaduta') || errorMessage(err).includes('(-2)')) {
             this.logger.warn('DST scaduto o non valido durante allegati: eseguo relogin e riprovo...');
             dst = await this.login(true);
             aId = await this.inserimento(config, dst, a.buffer);
@@ -253,8 +255,8 @@ export class ProtocolloService {
     let result: ProtocollaResult;
     try {
       result = await this.protocollazione(config, dst, segnaturaXml);
-    } catch (err: any) {
-      if (err.message.includes('DST non valido') || err.message.includes('sessione scaduta') || err.message.includes('(-2)')) {
+    } catch (err) {
+      if (errorMessage(err).includes('DST non valido') || errorMessage(err).includes('sessione scaduta') || errorMessage(err).includes('(-2)')) {
         this.logger.warn('DST scaduto o non valido durante protocollazione: eseguo relogin e riprovo...');
         dst = await this.login(true);
         result = await this.protocollazione(config, dst, segnaturaXml);

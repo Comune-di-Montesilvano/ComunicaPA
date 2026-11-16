@@ -32,6 +32,7 @@ import { EnrichmentAddressOverrideService } from './enrichment-address-override.
 import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util.js';
 import { cleanupUploadBatch } from './enrichment-batch-upload.util.js';
 import { listEnrichmentSources, moveSourcesIntoJob } from './enrichment-sources.util.js';
+import { errorMessage } from '../common/error-message.js';
 
 const PROGRESS_UPDATE_EVERY = 10;
 const CHECKPOINT_EVERY = 100;
@@ -109,9 +110,9 @@ export class EnrichmentProcessor extends WorkerHost {
       }
       await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.QUEUED, totalRecords: records.length, errorMessage: null });
       await this.queue.add('enrich', { jobId }, { jobId });
-    } catch (err: any) {
-      this.logger.error(`Merge batch fallito per EnrichmentJob ${jobId}: ${err.message}`);
-      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.FAILED, errorMessage: err.message });
+    } catch (err) {
+      this.logger.error(`Merge batch fallito per EnrichmentJob ${jobId}: ${errorMessage(err)}`);
+      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.FAILED, errorMessage: errorMessage(err) });
     } finally {
       cleanupUploadBatch(batchId);
     }
@@ -267,16 +268,16 @@ export class EnrichmentProcessor extends WorkerHost {
       fs.rmSync(getEnrichmentSourcesDir(jobId), { recursive: true, force: true });
       this.events.emitTerminal(jobId, { type: 'done' });
       this.logger.log(`EnrichmentJob ${jobId} completato: ${records.length} righe, ${warnings.length} warning`);
-    } catch (err: any) {
+    } catch (err) {
       // Stato terminale PRIMA di uscire: mai lasciare il record in PROCESSING
-      this.logger.error(`EnrichmentJob ${jobId} fallito: ${err.message}`);
+      this.logger.error(`EnrichmentJob ${jobId} fallito: ${errorMessage(err)}`);
       await this.jobRepo.update(jobId, {
         status: EnrichmentJobStatus.FAILED,
-        errorMessage: err.message,
+        errorMessage: errorMessage(err),
         completedAt: new Date(),
       });
       deleteCheckpointSync(jobId);
-      this.events.emitTerminal(jobId, { type: 'error', message: err.message });
+      this.events.emitTerminal(jobId, { type: 'error', message: errorMessage(err) });
     }
   }
 
@@ -373,14 +374,14 @@ export class EnrichmentProcessor extends WorkerHost {
                 },
           });
         }
-      } catch (err: any) {
-        rowWarnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Estrazione fallita: ${err.message}` });
-        await job.log(`Riga ${rowNum}: estrazione fallita — ${err.message}`);
+      } catch (err) {
+        rowWarnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Estrazione fallita: ${errorMessage(err)}` });
+        await job.log(`Riga ${rowNum}: estrazione fallita — ${errorMessage(err)}`);
         this.events.emitLog(jobId, {
           row: rowNum,
           pdf: rec.pdfFilename,
           detail: rowNum === 1 ? 'full' : 'summary',
-          payload: { errore: `Estrazione fallita: ${err.message}` },
+          payload: { errore: `Estrazione fallita: ${errorMessage(err)}` },
         });
       }
     }
@@ -422,11 +423,11 @@ export class EnrichmentProcessor extends WorkerHost {
     for (let attempt = 0; attempt <= delays.length; attempt++) {
       try {
         return await this.extractor.extract(pdfBuffer, filename, { searchPayments });
-      } catch (err: any) {
+      } catch (err) {
         lastError = err;
         if (attempt === delays.length || !this.isTransientExtractorError(err)) break;
         const delayMs = delays[attempt];
-        await job.log(`Riga ${rowNum}: estrazione fallita (tentativo ${attempt + 1}/${delays.length + 1}) — ${err.message}, retry tra ${delayMs / 1000}s`);
+        await job.log(`Riga ${rowNum}: estrazione fallita (tentativo ${attempt + 1}/${delays.length + 1}) — ${errorMessage(err)}, retry tra ${delayMs / 1000}s`);
         await this.sleep(delayMs);
       }
     }

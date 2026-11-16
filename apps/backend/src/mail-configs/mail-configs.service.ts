@@ -10,6 +10,7 @@ import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/setti
 import type { AppConfiguration } from '../config/configuration.js';
 import type { CreateMailConfigDto, MailConfigMaskedDto, UpdateMailConfigDto } from './dto/mail-config.dto.js';
 import type { SettingKey } from '../settings/settings.registry.js';
+import { errorMessage } from '../common/error-message.js';
 
 export interface ResolvedMailConfig {
   host: string;
@@ -201,9 +202,9 @@ export class MailConfigsService {
         subject: `ComunicaPA - Test configurazione ${entity.type} "${entity.name}"`,
         text: `Messaggio di test inviato da ComunicaPA per verificare la configurazione "${entity.name}" (${entity.host}:${entity.port}).`,
       });
-    } catch (error: any) {
-      this.logger.error(`Test ${entity.type} "${entity.name}" fallito: ${error.message}`);
-      return { success: false, message: `Errore connessione: ${error.message}` };
+    } catch (error) {
+      this.logger.error(`Test ${entity.type} "${entity.name}" fallito: ${errorMessage(error)}`);
+      return { success: false, message: `Errore connessione: ${errorMessage(error)}` };
     }
 
     entity.testedAt = new Date();

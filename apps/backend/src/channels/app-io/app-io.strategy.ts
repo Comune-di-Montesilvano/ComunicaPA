@@ -10,6 +10,7 @@ import { processTemplate, processSubjectTemplate, formatAppIoMarkdown, resolveCi
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service.js';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { resolvePaymentData } from '../payment-config.util.js';
+import type { PaymentConfig } from '../payment-config.util.js';
 
 /** Endpoint ufficiale App IO (PagoPA). Non configurabile: cambia solo con una nuova release. */
 export const APP_IO_BASE_URL = 'https://api.io.pagopa.it';
@@ -76,15 +77,15 @@ export class AppIoStrategy implements IChannelStrategy {
     const portalUrl = await resolveCitizenPortalUrl(this.settings);
     const markdown = formatAppIoMarkdown(rawMarkdown, { portalUrl });
 
-    const contentPayload: Record<string, any> = {
+    const contentPayload: Record<string, unknown> = {
       subject,
       markdown,
     };
 
-    const paymentConfig = campaign.channelConfig?.['paymentConfig'] as Record<string, any> | undefined;
+    const paymentConfig = campaign.channelConfig?.['paymentConfig'] as PaymentConfig | undefined;
     const resolvedPayment = resolvePaymentData(recipient, paymentConfig);
     if (resolvedPayment?.noticeCode && resolvedPayment.amountCents != null) {
-      const paymentData: Record<string, any> = {
+      const paymentData: Record<string, unknown> = {
         amount: resolvedPayment.amountCents,
         notice_number: resolvedPayment.noticeCode,
         invalid_after_due_date: true,

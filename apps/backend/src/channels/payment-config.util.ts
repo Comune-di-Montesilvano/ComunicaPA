@@ -63,10 +63,32 @@ export function parseDateToIso(dateStr?: string): string | null {
   return null;
 }
 
+/** `channelConfig.paymentConfig` della campagna (colonne CSV dei dati pagoPA). */
+export interface PaymentConfig {
+  enabled?: boolean;
+  amountColumn?: string;
+  amountType?: string;
+  noticeNumberColumn?: string;
+  dueDateColumn?: string;
+  payeeFiscalCodeType?: string;
+  payeeFiscalCodeStatic?: string;
+  payeeFiscalCodeColumn?: string;
+}
+
+/** `channelConfig.physicalAddressConfig` (indirizzo fisico di fallback per SEND). */
+export interface PhysicalAddressConfig {
+  enabled?: boolean;
+  addressColumn?: string;
+  municipalityColumn?: string;
+  zipColumn?: string;
+  provinceColumn?: string;
+  countryColumn?: string;
+}
+
 /** Risolve i dati di pagamento pagoPA per un destinatario, o null se non applicabile. */
 export function resolvePaymentData(
   recipient: Recipient,
-  paymentConfig: Record<string, any> | undefined,
+  paymentConfig: PaymentConfig | undefined,
 ): ResolvedPaymentData | null {
   if (!paymentConfig || !paymentConfig.enabled) return null;
 
@@ -116,7 +138,7 @@ export function resolvePaymentData(
  */
 export function resolvePhysicalAddress(
   recipient: Recipient,
-  physicalAddressConfig: Record<string, any> | undefined,
+  physicalAddressConfig: PhysicalAddressConfig | undefined,
 ): ResolvedPhysicalAddress | null {
   if (!physicalAddressConfig || !physicalAddressConfig.enabled) return null;
 

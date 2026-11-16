@@ -7,6 +7,8 @@ import { DownloadEvent } from '../entities/download-event.entity.js';
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { sendDocumentsAvailableUntil, sendLegalDateOf } from '../campaigns/send-legal-date.util.js';
+import { errorMessage } from '../common/error-message.js';
+import type { SendStatusHistoryEntry, SendDigitalDomicile } from '../channels/send/send-status-history.util.js';
 
 export interface CitizenAttachmentDto {
   index: number;
@@ -29,8 +31,8 @@ export interface CitizenNotificationDto {
   attachments: CitizenAttachmentDto[];
   iun?: string | null;
   sendStatus?: string | null;
-  sendStatusHistory?: any[] | null;
-  sendDigitalDomicile?: any | null;
+  sendStatusHistory?: SendStatusHistoryEntry[] | null;
+  sendDigitalDomicile?: SendDigitalDomicile | null;
   /** SEND: data con valore legale (perfezionamento), null se non ancora raggiunta. */
   sendLegalDate?: string | null;
   /** SEND: fine dei 120 giorni di consultazione su SEND (null se non ancora con valore legale). */
@@ -153,8 +155,8 @@ export class CitizenService {
     await this.recipientRepo.save(recipient);
     try {
       await this.downloadEventRepo.insert({ recipientId: id, channel: 'CITIZEN_PORTAL', attachmentIndex });
-    } catch (err: any) {
-      this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${id}: ${err?.message ?? err}`);
+    } catch (err) {
+      this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${id}: ${errorMessage(err)}`);
     }
     return recipient;
   }

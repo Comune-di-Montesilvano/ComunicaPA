@@ -1,9 +1,9 @@
-import type { Recipient } from '../entities/recipient.entity.js';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 import { signDownloadLink } from './download-link.util.js';
 import { resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { resolvePhysicalAddress } from './payment-config.util.js';
 import type { AppSettingsService } from '../settings/app-settings.service.js';
+import type { RecipientInFlight } from './recipient-in-flight.js';
 
 /**
  * Replaces fixed placeholders (%%allegato1%%, %%allegato2%%, ...), the standard
@@ -66,7 +66,7 @@ function formatAmountIfImportoColumn(key: string, raw: string): string {
 
 export function processTemplate(
   bodyTemplate: string,
-  recipient: Recipient,
+  recipient: RecipientInFlight,
   publicApiUrl: string,
   downloadLinkSecret: string,
   expiresAtUnix: number,
@@ -144,7 +144,7 @@ export function processTemplate(
       return escapeHtml(recipient.pec || '');
     }
     if (k === 'numero_protocollo' || k === 'numeroprotocollo' || k === 'protocollo' || k === 'protocol_number') {
-      return escapeHtml((recipient as any).protocolNumber || '');
+      return escapeHtml(recipient.protocolNumber || '');
     }
     // Search in extraData keys case-insensitively
     if (recipient.extraData) {
@@ -219,7 +219,7 @@ export function processTemplate(
  */
 export function processSubjectTemplate(
   subjectTemplate: string,
-  recipient: Recipient,
+  recipient: RecipientInFlight,
   format: 'html' | 'markdown' = 'html',
 ): string {
   // Via il segnaposto insieme agli spazi che lo precedono; il resto
@@ -332,7 +332,7 @@ export async function resolveCitizenPortalUrl(settings: AppSettingsService): Pro
 }
 
 function formatPostalAddressForNotice(
-  recipient: Recipient,
+  recipient: RecipientInFlight,
   physicalAddressConfig: Record<string, unknown> | undefined,
 ): string {
   const resolved = resolvePhysicalAddress(recipient, physicalAddressConfig);
@@ -351,7 +351,7 @@ function formatPostalAddressForNotice(
  * un eventuale dirottamento INAD — nessuna logica di dirottamento qui.
  */
 export function buildParallelChannelNotice(
-  recipient: Recipient,
+  recipient: RecipientInFlight,
   primaryChannel: NotificationChannel,
   physicalAddressConfig?: Record<string, unknown>,
 ): string {

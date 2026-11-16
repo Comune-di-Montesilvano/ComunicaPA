@@ -6,6 +6,7 @@ import type { Job } from 'bullmq';
 import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus, CampaignBulkRetryFailure } from '../entities/campaign-bulk-retry-job.entity.js';
 import { CampaignsService } from './campaigns.service.js';
 import { CAMPAIGN_BULK_RETRY_QUEUE, CampaignBulkRetryJobData } from './campaign-bulk-retry-job.types.js';
+import { errorMessage } from '../common/error-message.js';
 
 const PROGRESS_UPDATE_EVERY = 50;
 // Solo lavoro DB + queue.add() per destinatario (nessuna chiamata HTTP
@@ -67,11 +68,11 @@ export class CampaignBulkRetryProcessor extends WorkerHost {
         completedAt: new Date(),
       });
       this.logger.log(`CampaignBulkRetryJob ${jobId} completato: ${requeued} rimessi in coda, ${failed.length} falliti`);
-    } catch (err: any) {
-      this.logger.error(`CampaignBulkRetryJob ${jobId} fallito: ${err.message}`);
+    } catch (err) {
+      this.logger.error(`CampaignBulkRetryJob ${jobId} fallito: ${errorMessage(err)}`);
       await this.jobRepo.update(jobId, {
         status: CampaignBulkRetryJobStatus.FAILED,
-        errorMessage: err.message,
+        errorMessage: errorMessage(err),
         completedAt: new Date(),
       });
     }

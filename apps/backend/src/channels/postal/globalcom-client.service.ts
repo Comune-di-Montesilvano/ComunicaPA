@@ -188,7 +188,36 @@ export function parseGlobalcomDate(value: unknown): string | null {
   return isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-export function mapDocStatus(raw: any): GbcDocStatus {
+/** Destinatario in `Risposta.StatoDestinatari.GBCDestStatus` (valori come arrivano da soap). */
+interface GbcRawDestStatus {
+  CodiceConsegna?: string | number | null;
+  StatoConsegna?: string | null;
+  DataConsegna?: unknown;
+  IDAccettazione?: string | null;
+}
+
+/** `Risposta` SOAP di invio/dettagli documento GlobalCom (struttura del WSDL v5.26). */
+export interface GbcRawDocStatus {
+  IDPRO: string;
+  Stato: string;
+  CodiceErrore?: string;
+  Descrizione?: string;
+  Nazionale?: boolean | null;
+  TipoDocumento?: string | null;
+  CodiceContratto?: string | null;
+  Valori?: {
+    Costo?: number | null;
+    NumeroPagine?: number | null;
+    DettaglioBilling?: {
+      ImportoPostaleNetto?: number | null;
+      ImportoStampaNetto?: number | null;
+      ImportoARNetto?: number | null;
+    } | null;
+  } | null;
+  StatoDestinatari?: { GBCDestStatus?: GbcRawDestStatus | GbcRawDestStatus[] } | null;
+}
+
+export function mapDocStatus(raw: GbcRawDocStatus): GbcDocStatus {
   const valori = raw.Valori;
   const billing = valori?.DettaglioBilling;
   const destContainer = raw.StatoDestinatari?.GBCDestStatus;
@@ -243,7 +272,7 @@ export class GlobalComClient {
     this.logger.debug(`createSession: WSDL=${endpoint}?wsdl, endpoint=${endpoint}`);
     const client = await soap.createClientAsync(`${endpoint}?wsdl`, { endpoint });
     this.logger.debug('createSession: client SOAP creato, chiamo LoginAsync...');
-    let loginResult: any;
+    let loginResult: { LoginResult?: unknown; message?: string };
     try {
       // Nome parametro WSDL reale: "group" (inglese) — il manuale tecnico
       // usa "gruppo" solo nel testo descrittivo italiano e nell'esempio C#
@@ -254,11 +283,11 @@ export class GlobalComClient {
       // reale riscontrato in test con credenziali vere, verificato
       // scaricando l'XSD della Login request dal WSDL live.
       [loginResult] = await client.LoginAsync({ user: creds.user, password: creds.password, group: creds.group });
-    } catch (err: any) {
-      // MAI loggare (client as any).lastRequest qui: il body SOAP di Login
+    } catch (err) {
+      // MAI loggare client.lastRequest qui: il body SOAP di Login
       // contiene la password in chiaro (<password>...</password>) — solo la
       // risposta (che non la contiene mai) è sicura da loggare.
-      this.logger.debug(`createSession: LoginAsync HA LANCIATO — response XML: ${(client as any).lastResponse}`);
+      this.logger.debug(`createSession: LoginAsync HA LANCIATO — response XML: ${client.lastResponse}`);
       throw err;
     }
     this.logger.debug(`createSession: LoginAsync risposta = ${JSON.stringify(loginResult)}`);
@@ -272,7 +301,7 @@ export class GlobalComClient {
       // la password.
       throw new Error(`Login GlobalCom fallito: ${loginResult.message || 'credenziali non valide'} (verifica anche la password, non solo utente/gruppo — GlobalCom usa lo stesso messaggio per entrambe le cause)`);
     }
-    const setCookie = (client as any).lastResponseHeaders?.['set-cookie'];
+    const setCookie = client.lastResponseHeaders?.['set-cookie'];
     if (setCookie) {
       const cookie = (Array.isArray(setCookie) ? setCookie : [setCookie])
         .map((c: string) => c.split(';')[0])
@@ -350,8 +379,8 @@ export class GlobalComClient {
     };
 
     try {
-      const [result] = await (client as any).invio_ext_singoloAsync({ Invio: invio });
-      this.logger.debug(`invio_ext_singolo request: ${(client as any).lastRequest}`);
+      const [result] = await client.invio_ext_singoloAsync({ Invio: invio });
+      this.logger.debug(`invio_ext_singolo request: ${client.lastRequest}`);
       // Convenzione WSDL ASMX: il campo booleano di esito si chiama
       // "<nomeMetodo>Result" (es. LoginResult per Login), non "Result"
       // generico — verificato su una risposta reale (invio_ext_singoloResult
@@ -374,8 +403,8 @@ export class GlobalComClient {
       // Fault server-side (es. NullReferenceException lato GlobalCom) dove
       // il messaggio d'errore da solo non basta a capire quale campo del
       // payload lo scatena. Solo a LOG_LEVEL=debug (vedi CLAUDE.md).
-      this.logger.debug(`invio_ext_singolo FALLITO — request XML: ${(client as any).lastRequest}`);
-      this.logger.debug(`invio_ext_singolo FALLITO — response XML: ${(client as any).lastResponse}`);
+      this.logger.debug(`invio_ext_singolo FALLITO — request XML: ${client.lastRequest}`);
+      this.logger.debug(`invio_ext_singolo FALLITO — response XML: ${client.lastResponse}`);
       throw err;
     }
   }
@@ -383,7 +412,7 @@ export class GlobalComClient {
   /** Ricerca testuale su PROTOCOLLO/LOTTO/NOTE — usata per il dedup su retry. */
   async cercaPerTesto(creds: GbcCredentials, testo: string): Promise<GbcDocStatus[]> {
     const client = await this.createSession(creds);
-    const [result] = await (client as any).lista_documentiAsync({
+    const [result] = await client.lista_documentiAsync({
       Filtri: { Testo: testo, SoloTesto: true, Limite: 1 },
     });
     const risposta = result.Risposta;
@@ -403,7 +432,7 @@ export class GlobalComClient {
   /** Poll-stato dedicato (manuale §2.2.10) — non presente nel solo WSDL. */
   async dettagliDocumento(creds: GbcCredentials, idPro: string): Promise<GbcDocStatus | null> {
     const client = await this.createSession(creds);
-    const [result] = await (client as any).dettagli_documentoAsync({ IDPRO: idPro });
+    const [result] = await client.dettagli_documentoAsync({ IDPRO: idPro });
     if (!result.dettagli_documentoResult || !result.Risposta) return null;
     return mapDocStatus(result.Risposta);
   }
@@ -429,7 +458,7 @@ export class GlobalComClient {
    */
   async listaRiaccodamentiDocumento(creds: GbcCredentials, idPro: string): Promise<string[]> {
     const client = await this.createSession(creds);
-    const [result] = await (client as any).lista_riaccodamenti_documentoAsync({ IDPRO: idPro });
+    const [result] = await client.lista_riaccodamenti_documentoAsync({ IDPRO: idPro });
     if (!result.lista_riaccodamenti_documentoResult || !result.Risposta) return [idPro];
     const wrapper = result.Risposta as { string?: string | string[] } | undefined;
     const raw = wrapper?.string;
@@ -452,7 +481,7 @@ export class GlobalComClient {
    */
   async informazioniUtenza(creds: GbcCredentials): Promise<GbcInfoUtenza> {
     const client = await this.createSession(creds);
-    const [result] = await (client as any).InformazioniUtenzaAsync({});
+    const [result] = await client.InformazioniUtenzaAsync({});
     const info = result.InformazioniUtenzaResult as Record<string, unknown>;
     if (!info?.['OperazioneRiuscita']) {
       return {

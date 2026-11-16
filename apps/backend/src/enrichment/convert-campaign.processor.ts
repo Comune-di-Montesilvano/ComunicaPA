@@ -11,6 +11,7 @@ import { getEnrichmentAttachmentsDir, getEnrichmentResultCsv } from './enrichmen
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { getUploadsDir } from '../attachments/attachment-paths.js';
 import { buildEnrichedCsv, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
+import { errorMessage } from '../common/error-message.js';
 
 /**
  * Coda dedicata (vedi CONVERT_CAMPAIGN_QUEUE in enrichment-job.types.ts) —
@@ -74,11 +75,11 @@ export class ConvertCampaignProcessor extends WorkerHost {
       // Cartella job NON cancellata qui: va tenuta per permettere di rigenerare
       // una nuova bozza (es. campagna lanciata con impostazione sbagliata) —
       // ripulita solo da EnrichmentRetentionService dopo retentionDays.
-    } catch (err: any) {
-      this.logger.error(`Conversione in campagna fallita per EnrichmentJob ${jobId}: ${err.message}`);
+    } catch (err) {
+      this.logger.error(`Conversione in campagna fallita per EnrichmentJob ${jobId}: ${errorMessage(err)}`);
       await this.jobRepo.update(jobId, {
         campaignConversionStatus: CampaignConversionStatus.FAILED,
-        campaignConversionError: err.message,
+        campaignConversionError: errorMessage(err),
       });
     }
   }

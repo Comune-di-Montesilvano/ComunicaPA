@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
+import { Repository, Like, type FindOptionsWhere } from 'typeorm';
 import { AuditLog } from '../entities/audit-log.entity.js';
 
 export interface AuditLogQueryDto {
@@ -23,7 +23,7 @@ export class AuditLogsService {
     campaignName?: string | null;
     operator: string;
     action: string;
-    details?: Record<string, any> | null;
+    details?: Record<string, unknown> | null;
   }): Promise<AuditLog> {
     const logEntry = this.auditLogRepo.create({
       campaignId: data.campaignId || null,
@@ -47,7 +47,7 @@ export class AuditLogsService {
 
     const skip = (page - 1) * pageSize;
 
-    let where: any = {};
+    let where: FindOptionsWhere<AuditLog> | FindOptionsWhere<AuditLog>[] = {};
     if (search) {
       where = [
         { operator: Like(`%${search}%`) },

@@ -9,6 +9,7 @@ import { IoServicesService } from './io-services.service.js';
 import { parseCsvContent } from './csv.util.js';
 import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types.js';
 import { DomicileVerificationEventsService } from '../channels/domicile-verification/domicile-verification-events.service.js';
+import { errorMessage } from '../common/error-message.js';
 
 const PROGRESS_UPDATE_EVERY = 25;
 const CONCURRENCY = 5;
@@ -109,11 +110,11 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       // questo, se INAD/Registro Imprese erano già pronti, il job padre
       // resta PROCESSING fino al prossimo tick cron.
       this.domicileEvents.notifyJobProgress(jobId);
-    } catch (err: any) {
-      this.logger.error(`DomicileVerificationJob ${jobId}: App IO fallito, job intero marcato FAILED — ${err.message}`);
+    } catch (err) {
+      this.logger.error(`DomicileVerificationJob ${jobId}: App IO fallito, job intero marcato FAILED — ${errorMessage(err)}`);
       await this.jobRepo.update(jobId, {
         status: DomicileVerificationJobStatus.FAILED,
-        errorMessage: err.message,
+        errorMessage: errorMessage(err),
         completedAt: new Date(),
       });
     }

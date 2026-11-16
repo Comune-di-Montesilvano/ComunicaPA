@@ -5,6 +5,7 @@ import { AnprService } from '../anpr/anpr.service.js';
 import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte, AnprAnagraficaCriteri } from '../anpr/anpr.types.js';
 import { RegistroImpreseService, type RegistroImpreseImpresaData, type RegistroImpreseRicercaPosizione } from '../registro-imprese/registro-imprese.service.js';
 import { isPartitaIva } from '../tax-id.util.js';
+import { errorMessage } from '../../common/error-message.js';
 
 export interface DomicilioInadResult {
   success: boolean;
@@ -126,8 +127,8 @@ export class DomicilioService {
       try {
         const esistenza = await this.anprService.getEsistenzaInVita(codiceFiscale, operatorUsername);
         result.anprEsistenzaInVita = { success: true, dataDecesso: esistenza.data?.dataDecesso };
-      } catch (error: any) {
-        result.anprEsistenzaInVita = { success: false, message: error?.message ?? 'Errore sconosciuto' };
+      } catch (error) {
+        result.anprEsistenzaInVita = { success: false, message: errorMessage(error, 'Errore sconosciuto') };
       }
     }
 
@@ -157,8 +158,8 @@ export class DomicilioService {
         residenza: anpr.data?.residenza,
         infoSoggettoEnte: anpr.data?.infoSoggettoEnte,
       };
-    } catch (error: any) {
-      return { success: false, found: false, message: error?.message ?? 'Errore sconosciuto' };
+    } catch (error) {
+      return { success: false, found: false, message: errorMessage(error, 'Errore sconosciuto') };
     }
   }
 
@@ -172,8 +173,8 @@ export class DomicilioService {
     try {
       const risultato = await this.registroImpreseService.ricercaDenominazione(denominazione, siglaProvincia);
       return { success: true, posizioni: risultato.posizioni };
-    } catch (error: any) {
-      return { success: false, posizioni: [], message: error?.message ?? 'Errore sconosciuto' };
+    } catch (error) {
+      return { success: false, posizioni: [], message: errorMessage(error, 'Errore sconosciuto') };
     }
   }
 
@@ -184,10 +185,10 @@ export class DomicilioService {
         codiceFiscale: partitaIva,
         registroImprese: { success: true, found: dettaglio.found, pec: dettaglio.pec, denominazione: dettaglio.denominazione, data: dettaglio.data },
       };
-    } catch (error: any) {
+    } catch (error) {
       return {
         codiceFiscale: partitaIva,
-        registroImprese: { success: false, found: false, message: error?.message ?? 'Errore sconosciuto' },
+        registroImprese: { success: false, found: false, message: errorMessage(error, 'Errore sconosciuto') },
       };
     }
   }

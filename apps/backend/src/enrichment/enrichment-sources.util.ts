@@ -19,8 +19,8 @@ export function moveSourcesIntoJob(jobId: string, zipPaths: string[], zipFilenam
     const destPath = join(dir, `${String(i).padStart(4, '0')}_${basename(zipFilenames[i])}`);
     try {
       fs.renameSync(srcPath, destPath);
-    } catch (err: any) {
-      if (err?.code !== 'EXDEV') throw err;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'EXDEV') throw err;
       fs.copyFileSync(srcPath, destPath);
       fs.unlinkSync(srcPath);
     }

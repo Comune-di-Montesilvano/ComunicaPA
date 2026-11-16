@@ -10,6 +10,8 @@ import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachme
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { resolvePaymentData } from '../payment-config.util.js';
+import { errorMessage } from '../../common/error-message.js';
+import type { PaymentConfig } from '../payment-config.util.js';
 
 @Injectable()
 export class AppIoDeliveryService {
@@ -45,8 +47,8 @@ export class AppIoDeliveryService {
         onLog?.(msg);
       }
       return !!data?.sender_allowed;
-    } catch (err: any) {
-      const msg = `Verifica profilo App IO fallita per CF ${fiscalCode}: ${err?.message ?? err}`;
+    } catch (err) {
+      const msg = `Verifica profilo App IO fallita per CF ${fiscalCode}: ${errorMessage(err)}`;
       this.logger.warn(msg);
       onLog?.(msg);
       return false;
@@ -83,12 +85,12 @@ export class AppIoDeliveryService {
         : undefined;
       const processedMarkdown = formatAppIoMarkdown(rawMarkdown, { parallelNotice, portalUrl });
 
-      const contentPayload: Record<string, any> = { subject: processedSubject, markdown: processedMarkdown };
+      const contentPayload: Record<string, unknown> = { subject: processedSubject, markdown: processedMarkdown };
 
-      const paymentConfig = campaign.channelConfig?.['paymentConfig'] as Record<string, any> | undefined;
+      const paymentConfig = campaign.channelConfig?.['paymentConfig'] as PaymentConfig | undefined;
       const resolvedPayment = resolvePaymentData(recipient, paymentConfig);
       if (resolvedPayment?.noticeCode && resolvedPayment.amountCents != null) {
-        const paymentData: Record<string, any> = {
+        const paymentData: Record<string, unknown> = {
           amount: resolvedPayment.amountCents,
           notice_number: resolvedPayment.noticeCode,
           invalid_after_due_date: true,
@@ -114,9 +116,9 @@ export class AppIoDeliveryService {
       }
       const appIoData = (await appIoRes.json()) as { id: string };
       return { success: true, messageId: appIoData.id };
-    } catch (err: any) {
-      onLog?.(`Eccezione invio App IO (co-delivery) per CF ${recipient.codiceFiscale}: ${err.message}`);
-      return { success: false, error: err.message };
+    } catch (err) {
+      onLog?.(`Eccezione invio App IO (co-delivery) per CF ${recipient.codiceFiscale}: ${errorMessage(err)}`);
+      return { success: false, error: errorMessage(err) };
     }
   }
 }

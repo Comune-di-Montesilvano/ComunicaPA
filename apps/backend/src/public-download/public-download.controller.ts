@@ -9,6 +9,7 @@ import { Recipient } from '../entities/recipient.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
 import { AttachmentService, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { verifyDownloadLink } from '../channels/download-link.util.js';
+import { errorMessage } from '../common/error-message.js';
 
 @Controller('public/download')
 @Public()
@@ -77,8 +78,8 @@ export class PublicDownloadController {
           channel: channel || 'UNKNOWN',
           attachmentIndex: index,
         });
-      } catch (err: any) {
-        this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${recipientId}: ${err?.message ?? err}`);
+      } catch (err) {
+        this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${recipientId}: ${errorMessage(err)}`);
       }
     }
 

@@ -9,6 +9,7 @@ import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost, extractSendTimeline } from './send-status-history.util.js';
 import { SendBaseFeeService } from './send-base-fee.service.js';
 import { captureException } from '../../common/sentry.util.js';
+import { errorMessage } from '../../common/error-message.js';
 
 const BATCH_SIZE = 200;
 // Backfill una tantum (spec Step 0): i terminali non vengono piu' ripollati, quindi
@@ -86,8 +87,8 @@ export class SendStatusSyncService {
           await this.attemptRepo.save(attempt);
           this.logger.warn(`Richiesta SEND ${requestId} rifiutata da PN: ${JSON.stringify(data.errors ?? [])}`);
         }
-      } catch (err: any) {
-        this.logger.warn(`Errore risoluzione IUN per richiesta SEND ${requestId}: ${err.message}`);
+      } catch (err) {
+        this.logger.warn(`Errore risoluzione IUN per richiesta SEND ${requestId}: ${errorMessage(err)}`);
         captureException(err instanceof Error ? err : new Error(String(err)), {
           attemptId: attempt.id,
           channel: 'SEND',
@@ -179,8 +180,8 @@ export class SendStatusSyncService {
         }
 
         if (changed) await this.attemptRepo.save(attempt);
-      } catch (err: any) {
-        this.logger.warn(`Errore aggiornamento stato SEND IUN ${attempt.iun}: ${err.message}`);
+      } catch (err) {
+        this.logger.warn(`Errore aggiornamento stato SEND IUN ${attempt.iun}: ${errorMessage(err)}`);
         captureException(err instanceof Error ? err : new Error(String(err)), {
           attemptId: attempt.id,
           channel: 'SEND',
