@@ -6,7 +6,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { Not, IsNull, In, Repository } from 'typeorm';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import { NotificationQueuesService } from '../queue/notification-queues.service.js';
+import { NotificationQueuesService, countFailedSince } from '../queue/notification-queues.service.js';
 import { OrphanReconciliationService } from '../queue/orphan-reconciliation.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types.js';
@@ -15,6 +15,9 @@ import { NotificationAttempt, AttemptStatus } from '../entities/notification-att
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
 import { canViewCampaign } from '../campaigns/campaign-access.util.js';
+
+/** Finestra dei job falliti segnalati in dashboard ("Da attenzionare"). */
+const RECENT_FAILED_DAYS = 30;
 
 function isEngineName(name: string): name is EngineName {
   return (ENGINE_NAMES as readonly string[]).includes(name);
@@ -38,6 +41,8 @@ export class EnginesController {
   @Get()
   @Roles('admin', 'user')
   async list() {
+    // Falliti recenti: la dashboard segnala solo questi, i più vecchi restano visibili in Motori.
+    const recentSince = Date.now() - RECENT_FAILED_DAYS * 86_400_000;
     const engines: Array<{
       channel: EngineName | 'INAD' | 'ENRICHMENT';
       queueName: string;
@@ -45,12 +50,15 @@ export class EnginesController {
       pausable: boolean;
       counts: Record<string, number>;
       lastFailedAt: string | null;
+      /** Job falliti negli ultimi RECENT_FAILED_DAYS giorni. */
+      failedRecent: number;
     }> = await Promise.all(
       ENGINE_NAMES.map(async (name) => {
-        const [paused, counts, lastFailedAt] = await Promise.all([
+        const [paused, counts, lastFailedAt, failedRecent] = await Promise.all([
           this.queues.isPaused(name),
           this.queues.getJobCounts(name),
           this.queues.getLastFailedAt(name),
+          this.queues.getFailedCountSince(name, recentSince),
         ]);
         return {
           channel: name,
@@ -59,6 +67,7 @@ export class EnginesController {
           pausable: true,
           counts,
           lastFailedAt,
+          failedRecent,
         };
       }),
     );
@@ -83,11 +92,13 @@ export class EnginesController {
         paused: 0,
       },
       lastFailedAt: null,
+      failedRecent: 0,
     });
 
-    const [enrichmentCounts, enrichmentFailedJobs] = await Promise.all([
+    const [enrichmentCounts, enrichmentFailedJobs, enrichmentFailedRecent] = await Promise.all([
       this.enrichmentQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
       this.enrichmentQueue.getFailed(0, 0),
+      countFailedSince(this.enrichmentQueue, recentSince),
     ]);
     engines.push({
       channel: 'ENRICHMENT',
@@ -96,6 +107,7 @@ export class EnginesController {
       pausable: false,
       counts: enrichmentCounts as Record<string, number>,
       lastFailedAt: enrichmentFailedJobs[0]?.finishedOn ? new Date(enrichmentFailedJobs[0].finishedOn).toISOString() : null,
+      failedRecent: enrichmentFailedRecent,
     });
 
     return { engines };

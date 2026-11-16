@@ -20,6 +20,7 @@ describe('EnginesController', () => {
     isPaused: jest.fn().mockResolvedValue(false),
     getJobCounts: jest.fn().mockResolvedValue({ waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 }),
     getLastFailedAt: jest.fn().mockResolvedValue(null),
+    getFailedCountSince: jest.fn().mockResolvedValue(0),
     pause: jest.fn(),
     resume: jest.fn(),
     getJobsDetail: jest.fn().mockResolvedValue([{ jobId: 'j1' }]),
@@ -29,6 +30,8 @@ describe('EnginesController', () => {
   const mockEnrichmentQueue = {
     getJobCounts: jest.fn().mockResolvedValue({ waiting: 1, active: 0, completed: 5, failed: 0, delayed: 0 }),
     getFailed: jest.fn().mockResolvedValue([]),
+    toKey: (type: string) => `bull:enrichment:${type}`,
+    getBackend: () => ({ client: Promise.resolve({ zrevrange: jest.fn().mockResolvedValue([]) }) }),
   };
   const mockAttemptRepo = { count: jest.fn(), createQueryBuilder: jest.fn() };
   const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]), findOne: jest.fn() };
@@ -64,6 +67,7 @@ describe('EnginesController', () => {
       pausable: true,
       counts: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
       lastFailedAt: null,
+      failedRecent: 0,
     });
     expect(res.engines.map((e: any) => e.channel)).toContain('PROTOCOLLAZIONE');
     expect(res.engines.map((e: any) => e.channel)).not.toContain('SEND');
@@ -79,7 +83,20 @@ describe('EnginesController', () => {
       pausable: false,
       counts: { waiting: 1, active: 0, completed: 5, failed: 0, delayed: 0 },
       lastFailedAt: null,
+      failedRecent: 0,
     });
+  });
+
+  it('list() espone i job falliti degli ultimi 30 giorni (failedRecent) per ogni motore BullMQ', async () => {
+    const before = Date.now();
+    mockQueuesService.getFailedCountSince.mockImplementation(async (name: string) => (name === 'PROTOCOLLAZIONE' ? 3 : 0));
+    const res = await controller.list();
+    const proto = res.engines.find((e: any) => e.channel === 'PROTOCOLLAZIONE');
+    expect(proto!.failedRecent).toBe(3);
+    const since = mockQueuesService.getFailedCountSince.mock.calls[0][1] as number;
+    expect(before - since).toBeGreaterThanOrEqual(30 * 86_400_000);
+    expect(before - since).toBeLessThan(30 * 86_400_000 + 60_000);
+    mockQueuesService.getFailedCountSince.mockResolvedValue(0);
   });
 
   it('list() popola lastFailedAt del motore ENRICHMENT dal job fallito più recente', async () => {

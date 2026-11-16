@@ -203,4 +203,47 @@ describe('OrphanReconciliationService', () => {
     expect(addBulk.mock.calls[1][1]).toHaveLength(1);
     expect(result).toEqual({ checked: 501, repaired: 501, markedFailed: 0 });
   });
+
+  describe('pruneSupersededFailed', () => {
+    const OLD = '11111111-1111-4111-8111-111111111111';
+    const LATEST = '22222222-2222-4222-8222-222222222222';
+
+    function buildPrune(failedIds: string[], supersededIds: string[]) {
+      const where = jest.fn();
+      const andWhere = jest.fn();
+      const qb: any = {
+        select: () => qb,
+        where: (...args: unknown[]) => { where(...args); return qb; },
+        andWhere: (...args: unknown[]) => { andWhere(...args); return qb; },
+        getRawMany: async () => supersededIds.map((id) => ({ id })),
+      };
+      const attemptRepo: any = { createQueryBuilder: () => qb };
+      const notificationQueues: any = {
+        getFailedJobIds: jest.fn().mockResolvedValue(failedIds),
+        removeFailedJob: jest.fn().mockResolvedValue(1),
+      };
+      const unused: any = {};
+      const service = new OrphanReconciliationService(attemptRepo, unused, unused, notificationQueues, unused);
+      return { service, notificationQueues, where, andWhere };
+    }
+
+    it("toglie dai falliti solo i job il cui destinatario ha un attempt più recente", async () => {
+      const { service, notificationQueues, where, andWhere } = buildPrune([OLD, LATEST, 'repeat:not-an-attempt'], [OLD]);
+
+      const removed = await service.pruneSupersededFailed('PROTOCOLLAZIONE');
+
+      expect(removed).toBe(1);
+      // Id non uuid (job non legati a un attempt) mai passati alla query.
+      expect(where.mock.calls[0][0].id.value).toEqual([OLD, LATEST]);
+      expect(andWhere.mock.calls[0][0]).toContain('n.attempt_number > a.attempt_number');
+      expect(notificationQueues.removeFailedJob).toHaveBeenCalledTimes(1);
+      expect(notificationQueues.removeFailedJob).toHaveBeenCalledWith(OLD, ['PROTOCOLLAZIONE']);
+    });
+
+    it('nessun fallito → nessuna query', async () => {
+      const { service, where } = buildPrune([], []);
+      expect(await service.pruneSupersededFailed('EMAIL')).toBe(0);
+      expect(where).not.toHaveBeenCalled();
+    });
+  });
 });

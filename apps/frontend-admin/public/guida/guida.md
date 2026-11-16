@@ -437,6 +437,8 @@ Un oggetto SEND che supera i 134 caratteri solo dopo la sostituzione dei segnapo
 
 I destinatari di una campagna annullata non si possono rimettere in coda.
 
+Rimessi in coda, i loro vecchi errori escono dai **job falliti** dei motori di invio (pagina Motori e riquadro **Da attenzionare** della Dashboard): restano solo quelli dei destinatari il cui ultimo tentativo è fallito. La Dashboard segnala solo i job falliti negli ultimi 30 giorni; i più vecchi si vedono ancora nella pagina Motori.
+
 **Apri un ticket se:** dopo la nuova messa in coda tutto il gruppo fallisce di nuovo con lo stesso motivo.
 
 ### Un indirizzo postale viene rifiutato

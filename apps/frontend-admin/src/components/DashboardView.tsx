@@ -15,7 +15,12 @@ interface EngineInfo {
   paused?: boolean;
   counts?: { waiting?: number; active?: number; delayed?: number; failed?: number; completed?: number };
   lastFailedAt?: string | null;
+  /** Job falliti negli ultimi 30 giorni (i più vecchi restano solo nella pagina Motori). */
+  failedRecent?: number;
 }
+
+/** Falliti da segnalare in dashboard: ultimi 30 giorni (SEND, pseudo-motore, usa i conteggi propri). */
+const recentFailed = (e: EngineInfo) => e.failedRecent ?? e.counts?.failed ?? 0;
 
 interface CampaignLite {
   id: string;
@@ -164,7 +169,6 @@ export function DashboardView(props: Props) {
 
   const alerts = useMemo(() => {
     const since = now.getTime() - 30 * 86_400_000;
-    const weekAgo = now.getTime() - 7 * 86_400_000;
     const failing = props.campaigns
       .filter((c) => !c.isTest && new Date(c.createdAt).getTime() >= since && c.totalRecipients >= 5)
       // failedCount è un contatore per tentativo: può superare i destinatari, limitato al 100%.
@@ -172,9 +176,7 @@ export function DashboardView(props: Props) {
       .filter((x) => x.rate > 0.1)
       .sort((a, b) => b.rate - a.rate);
     const paused = props.engines.filter((e) => e.paused);
-    const failingEngines = props.engines.filter(
-      (e) => (e.counts?.failed ?? 0) > 0 && e.lastFailedAt && new Date(e.lastFailedAt).getTime() >= weekAgo,
-    );
+    const failingEngines = props.engines.filter((e) => recentFailed(e) > 0);
     return { failing, paused, failingEngines, total: failing.length + paused.length + failingEngines.length };
   }, [props.campaigns, props.engines, now]);
 
@@ -269,7 +271,7 @@ export function DashboardView(props: Props) {
               <span className="stx-alert-main">
                 <span className="stx-alert-kind">Motore</span>
                 <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong>
-                <span className="stx-status is-bad">{plural(e.counts?.failed ?? 0, 'job fallito', 'job falliti')}</span>
+                <span className="stx-status is-bad">{plural(recentFailed(e), 'job fallito', 'job falliti')}</span>
               </span>
               <span className="stx-alert-cta">Risolvi<ChevronRight size={14} /></span>
             </div>
@@ -339,7 +341,7 @@ export function DashboardView(props: Props) {
             {engines.length === 0 ? <div className="stx-empty">Caricamento…</div> : engines.map((e) => {
               const queued = (e.counts?.waiting ?? 0) + (e.counts?.delayed ?? 0);
               const active = e.counts?.active ?? 0;
-              const failed = e.counts?.failed ?? 0;
+              const failed = recentFailed(e);
               const status = e.paused
                 ? { label: 'In pausa', tone: 'is-warn' }
                 : active > 0 ? { label: 'In lavorazione', tone: 'is-run' }
