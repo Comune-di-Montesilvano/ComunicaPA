@@ -1,10 +1,29 @@
 import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { LdapService, escapeLdapFilterValue } from './ldap.service.js';
+import { LdapService, groupsByCnFilter, recursiveMembershipFilter, userLookupFilter } from './ldap.service.js';
 import ldapjs from 'ldapjs';
 
-vi.mock('ldapjs');
+// Solo il client è finto: le classi filtro restano quelle vere, il servizio le
+// costruisce e i test ne leggono la forma testuale (toString) e i valori.
+// Forma runtime dei filtri ldapjs 3 (@ldapjs/filter): `filters`, `value` e `toBer`
+// esistono ma @types/ldapjs non li dichiara.
+type FilterNode = {
+  type: string;
+  attribute?: string;
+  matchType?: string;
+  matchingRule?: string;
+  value?: string;
+  filters?: FilterNode[];
+  toString(): string;
+  toBer(): { buffer: Buffer };
+};
+const node = (f: object) => f as unknown as FilterNode;
+
+vi.mock('ldapjs', async (importOriginal) => {
+  const actual = await importOriginal<{ default: typeof ldapjs }>();
+  return { default: { ...actual.default, createClient: vi.fn() } };
+});
 
 const mockClient = {
   bind: jest.fn(),
@@ -100,7 +119,7 @@ describe('LdapService', () => {
     );
 
     mockClient.search.mockImplementation((_base: string, searchOpts: any, cb: any) => {
-      const filter = searchOpts.filter || '';
+      const filter = String(searchOpts.filter ?? '');
 
       const mockSearchRes = {
         on: jest.fn().mockImplementation(function (
@@ -297,24 +316,38 @@ describe('LdapService', () => {
   });
 });
 
-describe('escapeLdapFilterValue (RFC 4515)', () => {
-  it('escapa i caratteri speciali dei filtri LDAP', () => {
-    expect(escapeLdapFilterValue('a*b(c)d\\e\0f')).toBe('a\\2ab\\28c\\29d\\5ce\\00f');
+describe('filtri LDAP (oggetti ldapjs)', () => {
+  it('ricerca utente per sAMAccountName o userPrincipalName', () => {
+    expect(userLookupFilter('mario.rossi@test.local').toString()).toBe(
+      '(|(sAMAccountName=mario.rossi@test.local)(userPrincipalName=mario.rossi@test.local))',
+    );
   });
 
-  it('lascia invariati i nomi utente normali', () => {
-    expect(escapeLdapFilterValue('mario.rossi@test.local')).toBe('mario.rossi@test.local');
+  it('appartenenza ricorsiva: DN con parentesi e asterisco arriva al server così com\'è', () => {
+    const groupDn = 'CN=Ufficio (IT)*,OU=Gruppi,DC=test,DC=local';
+    const filter = recursiveMembershipFilter('mario.rossi', groupDn);
+    const [user, member] = node(filter).filters ?? [];
+    expect(user.toString()).toBe('(|(sAMAccountName=mario.rossi)(userPrincipalName=mario.rossi))');
+    expect([member?.attribute, member?.matchingRule, member?.value]).toEqual(['memberOf', '1.2.840.113556.1.4.1941', groupDn]);
+    // Sul filo (BER) il valore è il DN letterale, non `\28`/`\2a`.
+    expect(Buffer.from(node(filter).toBer().buffer).includes(Buffer.from(groupDn))).toBe(true);
+  });
+
+  it('gruppi per CN, scartando quelli non configurati (vuoti)', () => {
+    expect(groupsByCnFilter(['COMUNICAPA_USERS', '', 'Ufficio (IT)']).toString()).toBe(
+      '(&(objectClass=group)(|(cn=COMUNICAPA_USERS)(cn=Ufficio \\28IT\\29)))',
+    );
   });
 });
 
 describe('LdapService — filtro di ricerca', () => {
-  it('username con metacaratteri LDAP finisce escapato nel filtro', async () => {
+  it('username con metacaratteri LDAP resta un valore, non altera il filtro', async () => {
     jest.clearAllMocks();
     (ldapjs.createClient as jest.Mock).mockReturnValue(mockClient);
     mockClient.unbind.mockImplementation((cb: () => void) => cb());
     mockClient.bind.mockImplementation((_dn: string, _pw: string, cb: (err: null) => void) => cb(null));
-    const filters: string[] = [];
-    mockClient.search.mockImplementation((_base: string, opts: { filter: string }, cb: (err: null, res: unknown) => void) => {
+    const filters: ldapjs.OrFilter[] = [];
+    mockClient.search.mockImplementation((_base: string, opts: { filter: ldapjs.OrFilter }, cb: (err: null, res: unknown) => void) => {
       filters.push(opts.filter);
       const res = {
         on(event: string, handler: (arg: unknown) => void) {
@@ -328,6 +361,18 @@ describe('LdapService — filtro di ricerca', () => {
 
     await expect(service.authenticate('mario)(sAMAccountName=*', 'pw')).rejects.toThrow();
 
-    expect(filters[0]).toBe('(|(sAMAccountName=mario\\29\\28sAMAccountName=\\2a)(userPrincipalName=mario\\29\\28sAMAccountName=\\2a))');
+    expect(filters[0].toString()).toBe('(|(sAMAccountName=mario\\29\\28sAMAccountName=\\2a)(userPrincipalName=mario\\29\\28sAMAccountName=\\2a))');
+    expect(node(filters[0]).filters?.map((f) => f.value)).toEqual([
+      'mario)(sAMAccountName=*',
+      'mario)(sAMAccountName=*',
+    ]);
+  });
+
+  it('username vuoto respinto senza contattare LDAP', async () => {
+    jest.clearAllMocks();
+    const service = await buildService('ldap://localhost:389');
+
+    await expect(service.authenticate('', 'pw')).rejects.toThrow('Credenziali non valide');
+    expect(ldapjs.createClient).not.toHaveBeenCalled();
   });
 });
