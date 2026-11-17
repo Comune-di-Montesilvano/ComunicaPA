@@ -14460,6 +14460,7 @@ export function App(): React.JSX.Element {
           {view === 'ricerca-iun-send' && sendIunLookupEnabled && (
             <SendIunLookupView
               apiFetch={apiFetch}
+              canDownloadNotifiedDocuments={role === 'admin'}
               renderSendStatus={(status) => <SendStatusBadge status={status} />}
               sendStatusLabel={(status) => SEND_STATUS_META[status]?.label ?? status}
             />

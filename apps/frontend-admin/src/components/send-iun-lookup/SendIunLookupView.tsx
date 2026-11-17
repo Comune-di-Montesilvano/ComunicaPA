@@ -48,6 +48,8 @@ interface NotificationDetail {
 
 interface Props {
   apiFetch: ApiFetch;
+  /** Atto notificato (comunicazione originale) scaricabile solo dagli admin; il backend lo impone. */
+  canDownloadNotifiedDocuments: boolean;
   renderSendStatus: (status: string | undefined) => ReactNode;
   sendStatusLabel: (status: string) => string;
 }
@@ -76,13 +78,11 @@ function recipientLabel(r: Recipient): string {
   return `${r.denomination || 'Destinatario senza nome'}${r.taxId ? ` (${r.taxId})` : ''}`;
 }
 
-export function SendIunLookupView({ apiFetch, renderSendStatus, sendStatusLabel }: Props) {
+export function SendIunLookupView({ apiFetch, canDownloadNotifiedDocuments, renderSendStatus, sendStatusLabel }: Props) {
   const apiFetchRef = useRef(apiFetch);
   useEffect(() => { apiFetchRef.current = apiFetch; }, [apiFetch]);
 
   const [protocol, setProtocol] = useState('');
-  const [token, setToken] = useState('');
-  const [tokenOpen, setTokenOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [result, setResult] = useState<LookupResult | null>(null);
@@ -102,7 +102,6 @@ export function SendIunLookupView({ apiFetch, renderSendStatus, sendStatusLabel 
     setDetail(null);
     try {
       const qs = new URLSearchParams({ protocollo: p });
-      if (token.trim()) qs.set('token', token.trim());
       const res = await apiFetchRef.current(`/send-iun-lookup?${qs.toString()}`);
       if (!res.ok) {
         setSearchError(await errorText(res));
@@ -286,12 +285,22 @@ export function SendIunLookupView({ apiFetch, renderSendStatus, sendStatusLabel 
                 <div className="small text-muted mb-2">Non più disponibili su SEND (oltre i 120 giorni dal perfezionamento).</div>
               )}
               {detail.documentsAvailable && detail.notifiedDocuments.length === 0 && <div className="small text-muted mb-2">Nessun documento.</div>}
-              {detail.documentsAvailable && detail.notifiedDocuments.map((doc) =>
+              {detail.documentsAvailable && canDownloadNotifiedDocuments && detail.notifiedDocuments.map((doc) =>
                 downloadButton(
                   `doc:${doc.docIdx}`,
                   `/send-iun-lookup/notifications/${encodeURIComponent(detail.iun)}/documents/${doc.docIdx}`,
                   doc.title,
                 ),
+              )}
+              {detail.documentsAvailable && !canDownloadNotifiedDocuments && detail.notifiedDocuments.length > 0 && (
+                <>
+                  <ul className="list-unstyled small mb-1 text-start">
+                    {detail.notifiedDocuments.map((doc) => (
+                      <li key={doc.docIdx} className="d-flex align-items-center gap-2"><FileText size={14} className="text-muted" />{doc.title}</li>
+                    ))}
+                  </ul>
+                  <div className="small text-muted mb-2">Il download dell'atto notificato è riservato agli amministratori.</div>
+                </>
               )}
               {commonDocs.length > 0 && (
                 <>
@@ -351,26 +360,17 @@ export function SendIunLookupView({ apiFetch, renderSendStatus, sendStatusLabel 
         <div className="form-text small">
           Il protocollo deve coincidere carattere per carattere con quello della notifica (con o senza anno, come è stato scritto).
         </div>
-        <button type="button" className="btn btn-link btn-sm p-0 mt-2 text-decoration-none text-start" onClick={() => setTokenOpen((o) => !o)}>
-          {tokenOpen ? 'Nascondi codice di idempotenza' : 'Inviata da un altro gestionale?'}
-        </button>
-        {tokenOpen && (
-          <div className="mt-2" style={{ maxWidth: '600px' }}>
-            <label className="form-label small fw-semibold text-muted" htmlFor="send-lookup-token">Codice di idempotenza (idempotenceToken)</label>
-            <input id="send-lookup-token" type="text" className="form-control form-control-sm" maxLength={256} value={token} onChange={(e) => setToken(e.target.value)} />
-            <div className="form-text small">
-              Lascia vuoto per le notifiche inviate dal portale SEND. Un gestionale che imposta un proprio codice va cercato con quello:
-              senza, SEND non trova la notifica.
-            </div>
-          </div>
-        )}
         {searchError && <div className="small text-danger mt-2">{searchError}</div>}
       </div>
 
       {result && !result.found && (
         <div className="alert alert-warning small">
-          Nessuna notifica trovata. Controlla che il protocollo sia scritto esattamente come nella notifica; se è stata inviata da un
-          altro gestionale, serve anche il suo codice di idempotenza.
+          <div className="fw-semibold mb-1">Nessuna notifica trovata con questo protocollo.</div>
+          <div>
+            SEND cerca il protocollo esattamente com'è stato scritto all'invio. Prova nel formato <strong>numero/anno</strong>{' '}
+            (es. 1234/2026): chi ha inviato la notifica potrebbe però averlo scritto come <strong>numero-anno</strong> (1234-2026)
+            o con il <strong>solo numero</strong> (1234), quindi prova anche queste forme.
+          </div>
         </div>
       )}
 

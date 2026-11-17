@@ -121,10 +121,14 @@ export class SendIunLookupService {
     return { baseUrl, headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` } };
   }
 
-  async lookup(protocol: string, token?: string): Promise<SendIunLookupResult> {
+  /**
+   * Token sempre "null": è quello degli invii dal portale SEND. Gli invii di
+   * altri gestionali hanno un proprio token e qui non si trovano.
+   */
+  async lookup(protocol: string): Promise<SendIunLookupResult> {
     const paProtocolNumber = String(protocol ?? '').trim();
-    const idempotenceToken = String(token ?? '').trim() || SEND_LOOKUP_DEFAULT_TOKEN;
-    if (!paProtocolNumber || paProtocolNumber.length > SEND_LOOKUP_MAX_LENGTH || idempotenceToken.length > SEND_LOOKUP_MAX_LENGTH) {
+    const idempotenceToken = SEND_LOOKUP_DEFAULT_TOKEN;
+    if (!paProtocolNumber || paProtocolNumber.length > SEND_LOOKUP_MAX_LENGTH) {
       throw new BadRequestException(`Numero di protocollo obbligatorio (max ${SEND_LOOKUP_MAX_LENGTH} caratteri)`);
     }
     const ctx = await this.context();

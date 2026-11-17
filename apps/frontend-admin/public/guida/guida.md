@@ -143,9 +143,9 @@ Nel portale cittadini una notifica SEND mostra solo lo stato e il link per aprir
 
 Apri **Ricerca IUN SEND** per trovare una notifica SEND conoscendo solo il numero di protocollo, anche se è stata inviata dal portale SEND o da un altro gestionale e quindi non compare in **Ricerca Notifiche**. La voce di menu c'è solo se l'amministratore ha configurato la chiave di ricerca in Impostazioni → SEND.
 
-Scrivi il protocollo **esattamente** come è stato inserito nella notifica: SEND non fa ricerche parziali, quindi `1234` e `1234/2026` sono protocolli diversi. Il risultato mostra lo IUN, lo stato, l'oggetto e i destinatari; **Apri notifica** mostra per ogni destinatario il percorso e i suoi documenti (avviso di avvenuta ricezione, attestazioni), più gli atti notificati e le attestazioni comuni. Gli atti notificati si scaricano finché SEND li rende disponibili (120 giorni dal perfezionamento). Ogni ricerca, apertura e download resta nel registro attività.
+Scrivi il protocollo **esattamente** come è stato inserito nella notifica: SEND non fa ricerche parziali, quindi `1234`, `1234/2026` e `1234-2026` sono protocolli diversi. Prova prima nel formato numero/anno; se non trovi niente, chi ha inviato la notifica potrebbe averlo scritto come numero-anno o con il solo numero: prova anche quelle forme. Il risultato mostra lo IUN, lo stato, l'oggetto e i destinatari; **Apri notifica** mostra per ogni destinatario il percorso e i suoi documenti (avviso di avvenuta ricezione, attestazioni), più gli atti notificati e le attestazioni comuni. Gli atti notificati (la comunicazione inviata) si scaricano finché SEND li rende disponibili (120 giorni dal perfezionamento) e **solo dagli amministratori**: gli altri operatori ne vedono il titolo, il percorso, l'avviso di avvenuta ricezione e le attestazioni. Ogni ricerca, apertura e download resta nel registro attività.
 
-Una notifica inviata con più destinatari ha un solo IUN: la trovi con un'unica ricerca. Le notifiche inviate da un altro gestionale si trovano solo indicando anche il suo **codice di idempotenza** (link **Inviata da un altro gestionale?**); per quelle inviate dal portale SEND lascia il campo vuoto.
+Una notifica inviata con più destinatari ha un solo IUN: la trovi con un'unica ricerca.
 
 ### Gestire le notifiche senza esito legale
 
