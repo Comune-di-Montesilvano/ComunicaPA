@@ -3,6 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import ldapjs from 'ldapjs';
 import type { OperatorRole } from '@comunicapa/shared-types';
 import type { AppConfiguration } from '../../config/configuration.js';
+import { describeLdapError, patchLdapjsDiagnosticMessage } from './ldap-errors.js';
+
+// Il messaggio diagnostico di AD (es. `data 775` = account bloccato) arriva nell'errore.
+patchLdapjsDiagnosticMessage();
 
 export interface LdapUser {
   username: string;
@@ -173,9 +177,7 @@ export class LdapService {
           }
         } catch (groupError) {
           this.logger.warn(
-            `Errore nella risoluzione dei gruppi ricorsivi per ${opts.username}: ${String(
-              groupError,
-            )}`,
+            `Errore nella risoluzione dei gruppi ricorsivi per ${opts.username}: ${describeLdapError(groupError)}`,
           );
         }
       }
@@ -213,7 +215,7 @@ export class LdapService {
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
-      this.logger.error(`LDAP error for user ${opts.username}: ${String(error)}`);
+      this.logger.error(`LDAP error for user ${opts.username}: ${describeLdapError(error)}`);
       throw new UnauthorizedException('Credenziali non valide');
     } finally {
       client.unbind(() => {
