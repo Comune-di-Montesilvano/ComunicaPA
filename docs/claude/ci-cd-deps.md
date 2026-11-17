@@ -102,11 +102,15 @@ di sicurezza di Claude Code (cancellazione irreversibile) — preferire
 sempre il fix non distruttivo sopra.
 
 
-**Procedura release**: bump `publiccode.yml` (`softwareVersion` + `releaseDate`) DENTRO la PR della feature (niente PR di solo bump), merge squash, poi `git tag -a vX.Y.Z` sul commit di merge + `git push origin vX.Y.Z`. GitHub Release creata solo occasionalmente (non a ogni tag).
+**Procedura release**: bump `publiccode.yml` (`softwareVersion` + `releaseDate`) nella PR della feature, oppure in una PR `chore(release): vX.Y.Z` a parte quando il tag raccoglie più PR già mergiate (prassi da v1.21.1), merge squash, poi `git tag -a vX.Y.Z` sul commit di merge + `git push origin vX.Y.Z`. GitHub Release creata solo occasionalmente (non a ogni tag).
 
 **Tag solo dopo `git fetch origin`, e sempre per SHA esplicito** (`git tag -a vX.Y.Z <sha-merge>`), mai `origin/main` senza fetch: bug reale, v1.8.11 taggato su un `origin/main` locale fermo al merge precedente → immagini `:vX.Y.Z`/`:latest` col codice vecchio, tag da spostare. Verificare con `git ls-remote origin refs/tags/vX.Y.Z^{}`.
 
 **Merge**: `gh pr merge N --squash -R Comune-di-Montesilvano/ComunicaPA`, poi verificare `gh pr view N --json state` prima del tag. In auto mode il classificatore di Claude Code può negarlo (`[Merge Without Review]`, anche dopo `/permissions`; un comando composto con attesa CI + merge viene negato più spesso del comando da solo): in quel caso lo lancia l'utente con `! gh pr merge N --squash -R Comune-di-Montesilvano/ComunicaPA`.
+
+PR rimandata indietro dalla merge queue (check rosso) = auto-merge disattivato: dopo il fix su main, `gh pr merge <N> --auto` di nuovo.
+
+Pulizia branch locali: con lo squash `git branch -d` non li vede mergiati. Confrontare `git rev-parse <b>` con `headRefOid` di `gh pr list --state merged --json headRefName,headRefOid`, poi `-D` solo sui combacianti.
 
 `gh` risolve il repo dalla cwd: da un'altra cartella (es. utenzepa) → "Could not resolve to a PullRequest". Usare sempre `-R Comune-di-Montesilvano/ComunicaPA`; con `-R`, `--delete-branch` cancella solo il branch remoto.
 
@@ -128,6 +132,8 @@ sempre il fix non distruttivo sopra.
 - **Workflow**: `permissions: contents: read` a livello di workflow e permessi di scrittura solo nel job che li usa, `persist-credentials: false` su ogni checkout, `timeout-minutes` su ogni job. `scorecard.yml` (OpenSSF) pubblica il punteggio su scorecard.dev.
 - **pytest pdf-extractor** (`pdf-extractor-tests` in `tests.yml`, required): immagine `Dockerfile.dev` + `requirements-dev.txt` con hash. Il bug noto del CAP estero è `xfail(strict=True)`: quando viene corretto il test passa e il job fallisce finché non si toglie il marker.
 - **`security-alerts.yml`** (giornaliero 06:00 UTC + push main): la regola code scanning blocca solo gli alert nuovi di una PR, questo job conta quelli già aperti su main (CodeQL/Trivy high/critical, Scorecard escluso). Se ce ne sono fallisce e aggiorna la issue "Alert di sicurezza aperti su main"; senza alert la chiude. Ogni alert va corretto o chiuso dalla tab Security con motivazione. Non è required (bloccherebbe anche la PR che corregge).
+
+  Togliere un `as any` o tipizzare una libreria può far emergere alert CodeQL nuovi su codice già sicuro (sink prima invisibile: #390 → `js/sql-injection` su ldapjs). Il run di `security-alerts.yml` sul push parte prima che CodeQL chiuda gli alert risolti: dopo CodeQL, `gh run rerun <id>` (chiude la issue).
 - **Segnalazione privata delle vulnerabilità** attiva (Security → Advisories → Report a vulnerability), indicata in `SECURITY.md`.
 
 ## Versioni fissate e da dove si aggiornano (dal 2026-10-26)

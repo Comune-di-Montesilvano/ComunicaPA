@@ -27,6 +27,8 @@ packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condiv
 
 **Accesso per conto di impresa (SPID persona giuridica)**: flag `oidc.legalEntityEnabled` da Impostazioni → OIDC; `oidc/start?type=pg` aggiunge lo scope `legal_entity` (IdP senza identità PG → errore SPID, quindi solo su scelta esplicita). Il tipo PF/PG si salva con lo `state` e al callback si rilegge solo da lì. Claim `company_name`/`iva_code` (`VATIT-` da strippare)/`registered_office` obbligatori, altrimenti esito 200 `{ error: 'legal_entity_required' }` e nessuna sessione (CIE non li invia mai). Nel flusso impresa i destinatari si cercano per P.IVA (`recipientKeyOf`, `auth/citizen-claims.ts`), mai per il CF della persona. Simulatore dev: checkbox "per conto di un'impresa" nel login mock.
 
+**Filtri LDAP solo come oggetti ldapjs** (`EqualityFilter`/`OrFilter`/`AndFilter`/`ExtensibleFilter`, builder in `auth/ldap/ldap.service.ts`), mai stringhe: ldapjs 3 `parseFilter` NON decodifica gli escape RFC 4515 (sul filo va `\28` letterale). Valori vuoti → eccezione; `@types/ldapjs` non dichiara `filters`/`value`/`toBer`; regola di `ExtensibleFilter` = `matchingRule`.
+
 ## Dev Environment
 
 Tutti i comandi si eseguono con Docker Compose. Copiare `.env.example` in `.env` prima del primo avvio.
@@ -193,6 +195,12 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Fuzzing property-based** (`fast-check`): `apps/backend/src/common/untrusted-input.fuzz.spec.ts` — una nuova funzione che trasforma input non fidato in path/filtri LDAP/celle CSV aggiunge lì la sua proprietà. Per verificare che una proprietà morda: mutare la funzione in una copia (script `.cjs` scritto con Write, mai heredoc: Git Bash collassa `\\`) e controllare il controesempio.
 
+**Asserzioni su un `Date.now()` letto dentro il codice**: limiti letti prima E dopo la chiamata (`since` tra `before - X` e `after - X`), mai solo `before`: 1 ms di scarto rompe la merge queue (#398).
+
+`eslint src` nel container dev segnala parsing error sugli script locali non tracciati `src/debug/*.cjs`: `--ignore-pattern 'src/debug/**'` (in CI non esistono).
+
+Script `bash -c`/`sh -ec` passati a `docker run` che contengono `rm`: bloccati dal controllo di sicurezza di Claude Code (non può verificarli). Nei test usa e getta ometti `rm`: il container è già `--rm`.
+
 **CI: sulle PR girano solo lint e type-check**; build, test completi, pytest e Trivy immagini girano nella merge queue. Un test rotto emerge quando la PR entra in coda, non al push.
 
 **Test rapido di un endpoint autenticato senza frontend**: nessun `curl` nel container backend — usare `node -e` con `fetch()` verso `http://localhost:8080/...` e il token JWT generato con lo snippet sopra. Utile per lanciare/testare una campagna reale da riga di comando durante il debug.
@@ -221,7 +229,7 @@ Quando si debugga un PDF/CSV reale fornito dall'utente, il testo dumpato va SEMP
 
 ## Guida operatori
 
-Unica fonte: `apps/frontend-admin/public/guida/guida.md` (Markdown, struttura comune delle guide integrate del Comune: Cos'è, Accesso, Operazioni frequenti, Regole e riferimenti, Problemi frequenti con Causa/Soluzione/Apri un ticket se, Contatti). La vista "Guida" dell'admin la scarica da `/guida/guida.md` e la rende con `MDEditor.Markdown` (HTML grezzo scartato); CruscottoPA la importa dallo stesso file su GitHub. **Ogni modifica visibile all'operatore aggiorna la guida nella stessa PR, con la data in testa.** Ancore = slug dei titoli (`guidaSlug`, `src/guida.ts`): bottone "?" della topbar per vista (`GUIDA_PER_VISTA`) e link contestuali `guidaLink('…')`; rinominare un titolo citato rompe `pnpm test` (`scripts/check-guida.mjs`, controlla anche titoli ripetuti e HTML nella guida). `<!-- DA VERIFICARE -->` = punti ancora da confermare. Riferimenti normativi nella guida = link Normattiva `https://www.normattiva.it/uri-res/N2Ls?urn:nir:<atto>~art<N>` (c.p.a. allegato: `…decreto.legislativo:2010-07-02;104:2~art29`), testo vigente letto prima di citarlo. WebFetch sull'URN dà solo l'indice: `curl -c/-b <jar>` sulla pagina URN, grep del link `caricaArticolo…idArticolo=<N>&` senza `imUpdate`, poi `curl https://www.normattiva.it/atto/<link>`.
+Unica fonte: `apps/frontend-admin/public/guida/guida.md` (Markdown, struttura comune delle guide integrate del Comune: Cos'è, Accesso, Operazioni frequenti, Regole e riferimenti, Problemi frequenti con Causa/Soluzione/Apri un ticket se, Contatti). La vista "Guida" dell'admin la scarica da `/guida/guida.md` e la rende con `MDEditor.Markdown` (HTML grezzo scartato); CruscottoPA la importa dallo stesso file su GitHub. **Ogni modifica visibile all'operatore aggiorna la guida nella stessa PR, con la data in testa.** Ancore = slug dei titoli (`guidaSlug`, `src/guida.ts`): bottone "?" della topbar per vista (`GUIDA_PER_VISTA`) e link contestuali `guidaLink('…')`; rinominare un titolo citato rompe `pnpm test` (`apps/frontend-admin/scripts/check-guida.mjs`, da lanciare con `cd apps/frontend-admin && node scripts/check-guida.mjs`, controlla anche titoli ripetuti e HTML nella guida). `<!-- DA VERIFICARE -->` = punti ancora da confermare. Riferimenti normativi nella guida = link Normattiva `https://www.normattiva.it/uri-res/N2Ls?urn:nir:<atto>~art<N>` (c.p.a. allegato: `…decreto.legislativo:2010-07-02;104:2~art29`), testo vigente letto prima di citarlo. WebFetch sull'URN dà solo l'indice: `curl -c/-b <jar>` sulla pagina URN, grep del link `caricaArticolo…idArticolo=<N>&` senza `imUpdate`, poi `curl https://www.normattiva.it/atto/<link>`.
 
 ## Documentazione dettagliata
 
