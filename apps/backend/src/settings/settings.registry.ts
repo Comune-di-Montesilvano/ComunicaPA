@@ -74,6 +74,12 @@ export const SETTING_DEFS = {
   'send.prod.apiKey': { type: 'string', secret: true, default: '' },
   'send.prod.purposeId': { type: 'string', default: '' },
   'send.prod.group': { type: 'string', default: '' },
+  // apiKey PN dedicata alla sola ricerca IUN per protocollo (menu "Ricerca IUN
+  // SEND"), mai usata per gli invii: va creata in self-care SENZA gruppi per
+  // vedere anche gli invii di altri uffici (portale SEND, altri gestionali).
+  // Vuota = funzione assente. Vedi SendIunLookupService.
+  'send.test.lookupApiKey': { type: 'string', secret: true, default: '' },
+  'send.prod.lookupApiKey': { type: 'string', secret: true, default: '' },
   'send.senderTaxId': { type: 'string', default: '' },
   'send.entityType': { type: 'string', default: '' },
   'send.enabledTaxonomyCodes': { type: 'string', default: '[]' },
