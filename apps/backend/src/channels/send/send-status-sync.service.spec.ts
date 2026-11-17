@@ -17,7 +17,7 @@ const settingsValues: Record<string, unknown> = {
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
-const mockSendBaseFee = { resolve: jest.fn(async () => 100) };
+const mockSendBaseFee = { resolve: jest.fn(async () => ({ cents: 100, source: 'config' as 'pn' | 'config' })) };
 
 function makeQueryBuilder(results: any[]) {
   const qb: any = {
@@ -168,9 +168,76 @@ describe('SendStatusSyncService', () => {
     expect(attempt.costCents).toBe(1070); // 100 (fallback base fee mockato) + 970
     expect(attempt.costBreakdown).toEqual({
       baseFeeCents: 100,
+      baseFeeSource: 'config',
       analogEvents: [{ productType: 'AR', analogCostCents: 970, envelopeWeight: 20, numberOfPages: 2 }],
     });
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
+  });
+
+  it('costo base: con avviso pagoPA nella notifica passa creditorTaxId/noticeCode a resolve e salva la fonte PN', async () => {
+    mockSendBaseFee.resolve.mockClear();
+    mockSendBaseFee.resolve.mockResolvedValueOnce({ cents: 120, source: 'pn' });
+    const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'ACCEPTED', costCents: null };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        notificationStatus: 'ACCEPTED',
+        recipients: [{ payments: [{ pagoPa: { creditorTaxId: '01234567890', noticeCode: '302000100000019421' } }] }],
+        timeline: [],
+      })),
+    });
+
+    await service.updateStatuses();
+
+    expect(mockSendBaseFee.resolve).toHaveBeenCalledWith('test', 'https://send.test', 'apikey-abc', 'voucher-abc', '01234567890', '302000100000019421');
+    expect(attempt.costCents).toBe(120);
+    expect(attempt.costBreakdown).toEqual({ baseFeeCents: 120, baseFeeSource: 'pn', analogEvents: [] });
+  });
+
+  it('costo base già da PN: al ricalcolo per il cartaceo non richiama price', async () => {
+    mockSendBaseFee.resolve.mockClear();
+    const attempt: any = {
+      id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERING', costCents: 120,
+      costBreakdown: { baseFeeCents: 120, baseFeeSource: 'pn', analogEvents: [] },
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        notificationStatus: 'DELIVERING',
+        recipients: [{ payments: [{ pagoPa: { creditorTaxId: '01234567890', noticeCode: '302000100000019421' } }] }],
+        timeline: [{ category: 'SEND_ANALOG_DOMICILE', details: { productType: 'AR', analogCost: 970 } }],
+      })),
+    });
+
+    await service.updateStatuses();
+
+    expect(mockSendBaseFee.resolve).not.toHaveBeenCalled();
+    expect(attempt.costCents).toBe(1090);
+  });
+
+  it('costo base dal valore configurato e avviso pagoPA presente: al ricalcolo riprova price', async () => {
+    mockSendBaseFee.resolve.mockClear();
+    mockSendBaseFee.resolve.mockResolvedValueOnce({ cents: 100, source: 'pn' });
+    const attempt: any = {
+      id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERING', costCents: 100,
+      costBreakdown: { baseFeeCents: 100, analogEvents: [] },
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        notificationStatus: 'DELIVERING',
+        recipients: [{ payments: [{ pagoPa: { creditorTaxId: '01234567890', noticeCode: '302000100000019421' } }] }],
+        timeline: [{ category: 'SEND_ANALOG_DOMICILE', details: { productType: 'AR', analogCost: 970 } }],
+      })),
+    });
+
+    await service.updateStatuses();
+
+    expect(mockSendBaseFee.resolve).toHaveBeenCalledTimes(1);
+    expect(attempt.costBreakdown).toMatchObject({ baseFeeCents: 100, baseFeeSource: 'pn' });
   });
 
   it('updateStatuses: include nella query gli attempt terminali senza costo ancora calcolato', async () => {

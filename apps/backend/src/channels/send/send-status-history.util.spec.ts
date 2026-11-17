@@ -1,4 +1,18 @@
-import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost, extractSendTimeline } from './send-status-history.util.js';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost, extractSendTimeline, extractSendPaymentNotice } from './send-status-history.util.js';
+
+describe('extractSendPaymentNotice', () => {
+  it('primo avviso pagoPA tra destinatari e pagamenti; null senza pagamenti', () => {
+    expect(extractSendPaymentNotice({
+      recipients: [
+        { payments: [{ f24: {} }] },
+        { payments: [{ pagoPa: { creditorTaxId: '01234567890', noticeCode: '302000100000019421' } }] },
+      ],
+    })).toEqual({ creditorTaxId: '01234567890', noticeCode: '302000100000019421' });
+    expect(extractSendPaymentNotice({ recipients: [{}] })).toBeNull();
+    expect(extractSendPaymentNotice({})).toBeNull();
+    expect(extractSendPaymentNotice(null)).toBeNull();
+  });
+});
 
 describe('send-status-history.util', () => {
   describe('extractSendStatusHistory', () => {
