@@ -111,10 +111,16 @@ export class SendLegalFactsService {
   }
 
   async listLegalFacts(iun: string, keyKind: SendApiKeyKind = 'apiKey'): Promise<SendLegalFactItem[]> {
+    // Lo IUN può arrivare dal path di una route (ricerca IUN): validato qui,
+    // dove diventa parte dell'URL verso PN, non solo nel chiamante.
+    if (!isValidIun(iun)) {
+      this.logger.warn('Elenco documenti SEND: IUN non valido, richiesta scartata');
+      return [];
+    }
     const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl(keyKind);
     try {
       const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
-      const res = await fetch(`${baseUrl}/delivery-push/v2.0/${iun}/legal-facts`, {
+      const res = await fetch(`${baseUrl}/delivery-push/v2.0/${encodeURIComponent(iun)}/legal-facts`, {
         headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       });
       const text = await res.text();

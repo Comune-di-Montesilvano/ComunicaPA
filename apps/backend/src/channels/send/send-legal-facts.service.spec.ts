@@ -350,6 +350,11 @@ describe('SendLegalFactsService', () => {
       expect(result).toMatchObject({ ready: true, filename: 'atto.pdf', contentType: 'application/pdf' });
     });
 
+    it('listLegalFacts: IUN non valido → [] senza chiamare PN', async () => {
+      await expect(service.listLegalFacts('../../evil?x=', 'lookupApiKey')).resolves.toEqual([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('downloadNotifiedDocument: indice non valido → nessuna chiamata', async () => {
       await expect(service.downloadNotifiedDocument('IUN-1', -1)).resolves.toMatchObject({ ready: false });
       await expect(service.downloadNotifiedDocument('../x', 0)).resolves.toMatchObject({ ready: false });
