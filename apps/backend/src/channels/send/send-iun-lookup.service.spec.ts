@@ -114,11 +114,11 @@ describe('SendIunLookupService', () => {
     });
   });
 
-  it('lookup: token esplicito passato così com\'è', async () => {
+  it('lookup: protocollo ripulito dagli spazi, token sempre "null"', async () => {
     mockFetch.mockResolvedValueOnce(pnResponse(200, REQUEST_STATUS)).mockResolvedValueOnce(pnResponse(200, DETAIL));
-    await service.lookup(' 12345 ', ' tok-123 ');
+    await service.lookup(' 12345 ');
     expect(mockFetch.mock.calls[0][0]).toBe(
-      'https://send.prod/delivery/v2.6/requests?paProtocolNumber=12345&idempotenceToken=tok-123',
+      'https://send.prod/delivery/v2.6/requests?paProtocolNumber=12345&idempotenceToken=null',
     );
   });
 
