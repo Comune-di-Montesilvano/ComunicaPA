@@ -55,8 +55,11 @@ export class SendIunLookupController {
     return detail;
   }
 
+  // Atto notificato (la comunicazione originale): solo admin. Con la chiave di
+  // ricerca si aprono anche notifiche di altri uffici; gli operatori vedono
+  // percorso, AAR e attestazioni, non il contenuto dell'atto.
   @Get('notifications/:iun/documents/:docIdx')
-  @Roles('user', 'admin')
+  @Roles('admin')
   async notifiedDocument(
     @Param('iun') iun: string,
     @Param('docIdx', ParseIntPipe) docIdx: number,

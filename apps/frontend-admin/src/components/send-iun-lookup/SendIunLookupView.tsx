@@ -48,6 +48,8 @@ interface NotificationDetail {
 
 interface Props {
   apiFetch: ApiFetch;
+  /** Atto notificato (comunicazione originale) scaricabile solo dagli admin; il backend lo impone. */
+  canDownloadNotifiedDocuments: boolean;
   renderSendStatus: (status: string | undefined) => ReactNode;
   sendStatusLabel: (status: string) => string;
 }
@@ -76,7 +78,7 @@ function recipientLabel(r: Recipient): string {
   return `${r.denomination || 'Destinatario senza nome'}${r.taxId ? ` (${r.taxId})` : ''}`;
 }
 
-export function SendIunLookupView({ apiFetch, renderSendStatus, sendStatusLabel }: Props) {
+export function SendIunLookupView({ apiFetch, canDownloadNotifiedDocuments, renderSendStatus, sendStatusLabel }: Props) {
   const apiFetchRef = useRef(apiFetch);
   useEffect(() => { apiFetchRef.current = apiFetch; }, [apiFetch]);
 
@@ -286,12 +288,22 @@ export function SendIunLookupView({ apiFetch, renderSendStatus, sendStatusLabel 
                 <div className="small text-muted mb-2">Non più disponibili su SEND (oltre i 120 giorni dal perfezionamento).</div>
               )}
               {detail.documentsAvailable && detail.notifiedDocuments.length === 0 && <div className="small text-muted mb-2">Nessun documento.</div>}
-              {detail.documentsAvailable && detail.notifiedDocuments.map((doc) =>
+              {detail.documentsAvailable && canDownloadNotifiedDocuments && detail.notifiedDocuments.map((doc) =>
                 downloadButton(
                   `doc:${doc.docIdx}`,
                   `/send-iun-lookup/notifications/${encodeURIComponent(detail.iun)}/documents/${doc.docIdx}`,
                   doc.title,
                 ),
+              )}
+              {detail.documentsAvailable && !canDownloadNotifiedDocuments && detail.notifiedDocuments.length > 0 && (
+                <>
+                  <ul className="list-unstyled small mb-1 text-start">
+                    {detail.notifiedDocuments.map((doc) => (
+                      <li key={doc.docIdx} className="d-flex align-items-center gap-2"><FileText size={14} className="text-muted" />{doc.title}</li>
+                    ))}
+                  </ul>
+                  <div className="small text-muted mb-2">Il download dell'atto notificato è riservato agli amministratori.</div>
+                </>
               )}
               {commonDocs.length > 0 && (
                 <>

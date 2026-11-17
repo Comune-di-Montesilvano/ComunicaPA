@@ -261,7 +261,7 @@ describe('Inventario sicurezza route', () => {
       GET /admin/remote-sign/config | auth | roles=user,admin | guards=-
       GET /admin/send-iun-lookup | auth | roles=user,admin | guards=-
       GET /admin/send-iun-lookup/notifications/:iun | auth | roles=user,admin | guards=-
-      GET /admin/send-iun-lookup/notifications/:iun/documents/:docIdx | auth | roles=user,admin | guards=-
+      GET /admin/send-iun-lookup/notifications/:iun/documents/:docIdx | auth | roles=admin | guards=-
       GET /admin/send-iun-lookup/notifications/:iun/send-documents/download | auth | roles=user,admin | guards=-
       GET /admin/send-iun-lookup/status | auth | roles=user,admin | guards=-
       GET /admin/settings | auth | roles=user,admin | guards=-
