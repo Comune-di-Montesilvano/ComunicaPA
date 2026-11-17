@@ -114,6 +114,7 @@ L'elenco mostra 20 campagne per pagina. La casella di ricerca cerca per nome o I
 3. Per ogni destinatario si vede il **canale effettivo**: per il dirottamento su domicilio digitale può essere diverso da quello della campagna.
 4. Il widget **Costo Campagna** mostra il costo di SEND e Posta. Dal dettaglio scarichi i report in CSV.
 5. Nelle campagne SEND non compaiono i dati sui documenti scaricati: il destinatario apre la notifica su SEND (app IO, sito di SEND o punto di ritiro), non da ComunicaPA. Per sapere se l'ha letta guarda lo stato SEND **Letta dal destinatario**.
+6. Con **Torna a Campagne** l'elenco riporta in vista la campagna appena consultata e la evidenzia per qualche secondo.
 
 ### Cercare una singola notifica
 

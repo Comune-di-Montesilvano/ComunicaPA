@@ -9003,6 +9003,34 @@ export function App(): React.JSX.Element {
     }
   };
 
+  // Al ritorno dal dettaglio campagna alla lista, la riga della campagna appena
+  // vista viene portata in vista ed evidenziata per qualche secondo.
+  const [highlightCampaignId, setHighlightCampaignId] = useState<string | null>(null);
+  const prevViewRef = useRef(view);
+  const highlightScrolledRef = useRef(false);
+  useEffect(() => {
+    if (prevViewRef.current === 'campaign-detail' && view === 'invio-massivo' && selectedCampaignIdRef.current) {
+      highlightScrolledRef.current = false;
+      setHighlightCampaignId(selectedCampaignIdRef.current);
+    } else if (view !== 'invio-massivo') {
+      setHighlightCampaignId(null);
+    }
+    prevViewRef.current = view;
+  }, [view]);
+  useEffect(() => {
+    if (!highlightCampaignId || view !== 'invio-massivo' || highlightScrolledRef.current) return;
+    // La lista può arrivare dopo il cambio vista: si riprova a ogni aggiornamento.
+    const row = document.querySelector(`tr[data-campaign-id="${CSS.escape(highlightCampaignId)}"]`);
+    if (!row) return;
+    highlightScrolledRef.current = true;
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [highlightCampaignId, view, campaigns]);
+  useEffect(() => {
+    if (!highlightCampaignId) return;
+    const t = setTimeout(() => setHighlightCampaignId(null), 4000);
+    return () => clearTimeout(t);
+  }, [highlightCampaignId]);
+
   const handleCampaignClick = (id: string) => {
     selectedCampaignIdRef.current = id;
     setSelectedCampaignId(id);
@@ -10158,7 +10186,7 @@ export function App(): React.JSX.Element {
 
                                 if (isChildOfPair) {
                                   return (
-                                    <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
+                                    <tr key={c.id} data-campaign-id={c.id} className={highlightCampaignId === c.id ? 'highlight-row' : undefined} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
                                       <td
                                         colSpan={6}
                                         className="text-primary"
@@ -10174,7 +10202,7 @@ export function App(): React.JSX.Element {
                                 }
 
                                 return (
-                                  <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
+                                  <tr key={c.id} data-campaign-id={c.id} className={highlightCampaignId === c.id ? 'highlight-row' : undefined} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
                                     <td className="fw-bold text-primary" style={{ ...cellStyle, borderLeft: pairBorderLeft }}>
                                       {isParentOfPair && <span title="Collegata a una campagna di prova"><Link className="text-primary me-2" /></span>}
                                       {c.name}
