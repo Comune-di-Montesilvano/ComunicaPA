@@ -46,6 +46,8 @@ import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-
 import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
 import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
+
+const SEND_SIGNATURE_REQUIRED_MESSAGE = 'Firma digitale obbligatoria per gli allegati SEND (Impostazioni → SEND).';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 import { samePecAddress } from '../channels/pec-address.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
@@ -759,6 +761,8 @@ export class CampaignsService {
     let signatureWarning: string | undefined;
     let forcedUnsignedAttachments: number | undefined;
     if (campaign.channelType === 'SEND') {
+      // Obbligo di firma da Impostazioni → SEND: nessun avviso, nessuna forzatura.
+      const signatureRequired = await this.isSendSignatureRequired();
       // Firma remota in corso: l'ultima verifica "done" è quella PRIMA della
       // firma — senza questo blocco si lancerebbe a metà sostituzione file.
       if (this.remoteSignJobRepo && await this.remoteSignJobRepo.exists({
@@ -782,7 +786,21 @@ export class CampaignsService {
             const filePath = join(getUploadsDir(campaignId), filename);
             if (fs.existsSync(filePath)) {
               const result = await this.signatureVerification.verify(fs.readFileSync(filePath), filename);
-              if (!result.valid) signatureWarning = `Allegato non firmato correttamente: ${result.reason}`;
+              if (!result.valid) {
+                if (signatureRequired) {
+                  await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+                  return {
+                    launched: 0,
+                    campaignId,
+                    blocked: true,
+                    code: 'UNSIGNED_ATTACHMENTS',
+                    invalidCount: 1,
+                    totalRows: 1,
+                    message: `${SEND_SIGNATURE_REQUIRED_MESSAGE} Allegato non firmato correttamente: ${result.reason}`,
+                  };
+                }
+                signatureWarning = `Allegato non firmato correttamente: ${result.reason}`;
+              }
             }
           }
         }
@@ -798,7 +816,7 @@ export class CampaignsService {
           };
         }
         if (verificationStatus.invalidCount > 0) {
-          if (!options.forceUnsignedAttachments) {
+          if (signatureRequired || !options.forceUnsignedAttachments) {
             await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
             return {
               launched: 0,
@@ -807,7 +825,7 @@ export class CampaignsService {
               code: 'UNSIGNED_ATTACHMENTS',
               invalidCount: verificationStatus.invalidCount,
               totalRows: verificationStatus.totalRows,
-              message: `${verificationStatus.invalidCount} allegato/i non risultano firmati validamente. Correggi i file prima di rilanciare.`,
+              message: `${signatureRequired ? `${SEND_SIGNATURE_REQUIRED_MESSAGE} ` : ''}${verificationStatus.invalidCount} allegato/i non risultano firmati validamente. Correggi i file prima di rilanciare.`,
             };
           }
           forcedUnsignedAttachments = verificationStatus.invalidCount;
@@ -893,6 +911,11 @@ export class CampaignsService {
     return { launched, campaignId, signatureWarning, forcedUnsignedAttachments };
   }
 
+  /** Impostazioni → SEND: firma valida obbligatoria sugli allegati in ogni caso. */
+  async isSendSignatureRequired(): Promise<boolean> {
+    return (await this.settings.get<boolean>('send.requireSignedAttachments')) === true;
+  }
+
   async launchTestSend(
     parentCampaignId: string,
     dto: TestSendDto,
@@ -928,7 +951,17 @@ export class CampaignsService {
           const filePath = join(getUploadsDir(parentCampaignId), filename);
           if (fs.existsSync(filePath)) {
             const result = await this.signatureVerification.verify(fs.readFileSync(filePath), filename);
-            if (!result.valid) signatureWarning = `Allegato non firmato correttamente: ${result.reason}`;
+            if (!result.valid) {
+              if (await this.isSendSignatureRequired()) {
+                return {
+                  attemptId: '',
+                  testCampaignId: '',
+                  blocked: true,
+                  message: `${SEND_SIGNATURE_REQUIRED_MESSAGE} Allegato non firmato correttamente: ${result.reason}`,
+                };
+              }
+              signatureWarning = `Allegato non firmato correttamente: ${result.reason}`;
+            }
           }
         }
       }

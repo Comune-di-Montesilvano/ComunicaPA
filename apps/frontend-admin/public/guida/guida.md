@@ -193,6 +193,8 @@ Se la verifica firma segnala allegati non firmati validamente:
 
 La firma con Aruba compare solo se attivata in **Impostazioni → Firma remota (Aruba)**.
 
+Se l'amministratore ha attivato **Firma digitale obbligatoria sugli allegati** in **Impostazioni → SEND**, un allegato senza firma valida blocca sempre l'avvio: nell'invio massivo non c'è più la conferma per procedere comunque, nell'Invio Manuale manca **Invia comunque**, e anche l'invio di prova e gli invii dalle API esterne vengono rifiutati. Firma gli allegati e riprova.
+
 Gli allegati li firma chi ha creato la campagna, un amministratore o il **firmatario indicato** (ad esempio il dirigente che firma la campagna preparata dall'ufficio). Avviare la campagna, inviare il test, annullarla o eliminarla resta invece a chi l'ha creata o a un amministratore.
 
 ### Indicare il firmatario di una campagna SEND
@@ -348,6 +350,8 @@ Da **Impostazioni** gli amministratori configurano server Email e PEC, App IO, S
 
 In Impostazioni → SEND il campo **API Key ricerca IUN** abilita il menu **Ricerca IUN SEND**: va creata nel portale self-care di SEND come chiave separata e **senza gruppi**, così vede le notifiche di tutti gli uffici. Non usare né modificare la chiave di invio: se le si aggiungono gruppi, SEND inizia a chiedere il gruppo in ogni invio. Lasciando il campo vuoto la funzione scompare dal menu.
 
+Sempre in Impostazioni → SEND, l'interruttore **Firma digitale obbligatoria sugli allegati** impedisce di inviare su SEND allegati senza firma digitale valida, in ogni caso: invio massivo (senza possibilità di forzare), Invio Manuale, invio di prova e API esterne. Spento, l'invio massivo chiede conferma e gli altri mostrano solo un avviso.
+
 ## Problemi frequenti
 
 ### Il wizard non va avanti dopo la mappatura
@@ -472,7 +476,7 @@ Rimessi in coda, i loro vecchi errori escono dai **job falliti** dei motori di i
 
 **Causa:** per le campagne SEND massive ComunicaPA verifica la firma digitale di ogni allegato. Il messaggio compare quando uno o più PDF non hanno una firma digitale valida (per esempio documenti con firma autografa a stampa).
 
-**Soluzione:** firma gli allegati dal riquadro (vedi [Firmare gli allegati SEND](#firmare-gli-allegati-send)). Se devi inviare comunque, premi **Conferma ed Avvia Campagna** e conferma l'avviso: l'invio parte sotto la tua responsabilità e la forzatura resta registrata nel registro attività. Senza firma valida la notifica può essere contestata.
+**Soluzione:** firma gli allegati dal riquadro (vedi [Firmare gli allegati SEND](#firmare-gli-allegati-send)). Se devi inviare comunque, premi **Conferma ed Avvia Campagna** e conferma l'avviso: l'invio parte sotto la tua responsabilità e la forzatura resta registrata nel registro attività. Senza firma valida la notifica può essere contestata. Con la firma obbligatoria attiva (Impostazioni → SEND) l'avvio forzato non è possibile: l'unica strada è firmare gli allegati.
 
 **Apri un ticket se:** il messaggio «Verifica firma digitale allegati in corso…» resta visibile per più di qualche minuto.
 

@@ -555,6 +555,30 @@ describe('CampaignsService', () => {
     expect(mockCampaignRepo.update).not.toHaveBeenCalledWith({ id: 'c-send-forced' }, { status: CampaignStatus.DRAFT });
   });
 
+  it('launch(): SEND massivo con obbligo di firma attivo resta bloccato anche se forzato', async () => {
+    mockSettings.get.mockImplementation(async (key?: string) => (key === 'send.requireSignedAttachments' ? true : null));
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: false },
+    });
+    mockSignatureVerificationBulkService.getLatestStatus.mockResolvedValueOnce({
+      status: 'done', totalRows: 5, validCount: 4, invalidCount: 1, errorMessage: null,
+    });
+
+    try {
+      const result = await service.launch('c-send-required', ADMIN_REQUESTER, { forceUnsignedAttachments: true });
+
+      expect(result.blocked).toBe(true);
+      expect(result.code).toBe('UNSIGNED_ATTACHMENTS');
+      expect(result.message).toContain('Firma digitale obbligatoria');
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-send-required' }, { status: CampaignStatus.DRAFT });
+    } finally {
+      mockSettings.get.mockImplementation(async () => null);
+    }
+  });
+
   it('launch(): SEND massivo bloccato se la firma remota è in corso', async () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
     mockCampaignRepo.findOneBy.mockResolvedValueOnce({
@@ -642,6 +666,35 @@ describe('CampaignsService', () => {
       expect(result.blocked).toBeUndefined();
       expect(result.signatureWarning).toContain('CA non riconosciuta');
     } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('launch(): SEND singolo con obbligo di firma attivo → bloccato, non solo warning', async () => {
+    const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-sig-'));
+    tmpDirRef.dir = tmpDir;
+    fs.writeFileSync(join(tmpDir, 'nonfirmato.pdf'), 'dummy');
+    mockSettings.get.mockImplementation(async (key?: string) => (key === 'send.requireSignedAttachments' ? true : null));
+
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: true },
+    });
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1', extraData: { doc: 'nonfirmato.pdf' } }]);
+    mockSignatureVerificationService.verify.mockResolvedValueOnce({ valid: false, reason: 'firma assente' });
+
+    try {
+      const result = await service.launch('c-send-single-req', ADMIN_REQUESTER);
+
+      expect(result.blocked).toBe(true);
+      expect(result.code).toBe('UNSIGNED_ATTACHMENTS');
+      expect(result.message).toContain('firma assente');
+      expect(result.signatureWarning).toBeUndefined();
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-send-single-req' }, { status: CampaignStatus.DRAFT });
+    } finally {
+      mockSettings.get.mockImplementation(async () => null);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -3182,6 +3235,33 @@ describe('CampaignsService', () => {
       expect(result.blocked).toBe(true);
       expect(result.message).toContain('Non sei autorizzato');
       expect(mockCampaignRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('launchTestSend(): SEND con obbligo di firma attivo e allegato non valido → bloccato, nessuna campagna di test', async () => {
+      const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-sig-'));
+      tmpDirRef.dir = tmpDir;
+      fs.writeFileSync(join(tmpDir, 'nonfirmato.pdf'), 'dummy');
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'send.requireSignedAttachments' ? true : null));
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+        ...mockCampaign, id: 'parent-1', channelType: 'SEND', createdBy: 'user1',
+        channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }] },
+      });
+      mockSignatureVerificationService.verify.mockResolvedValueOnce({ valid: false, reason: 'firma assente' });
+
+      try {
+        const result = await service.launchTestSend(
+          'parent-1',
+          { codiceFiscale: 'RSSMRA80A01H501U', extraData: { doc: 'nonfirmato.pdf' } },
+          { username: 'user1', role: 'user' },
+        );
+
+        expect(result.blocked).toBe(true);
+        expect(result.message).toContain('Firma digitale obbligatoria');
+        expect(mockCampaignRepo.save).not.toHaveBeenCalled();
+      } finally {
+        mockSettings.get.mockImplementation(async () => null);
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
 
     it('crea una campagna figlia isTest=true al primo invio di prova', async () => {
