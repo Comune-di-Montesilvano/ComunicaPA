@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { NotificationsSearchService } from './notifications-search.service.js';
+import { NotificationsSearchService, parseProtocolQuery } from './notifications-search.service.js';
 import { Recipient } from '../entities/recipient.entity.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
@@ -13,6 +13,20 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { visibleCampaignSql } from '../campaigns/campaign-access.util.js';
 
 const ADMIN = { username: 'admin', role: 'admin' as const };
+
+describe('parseProtocolQuery', () => {
+  it('riconosce "n" e "n/anno", spazi ammessi attorno alla barra', () => {
+    expect(parseProtocolQuery('12345')).toEqual({ number: 12345, year: null });
+    expect(parseProtocolQuery(' 12345/2026 ')).toEqual({ number: 12345, year: 2026 });
+    expect(parseProtocolQuery('12345 / 2026')).toEqual({ number: 12345, year: 2026 });
+  });
+
+  it('scarta tutto il resto (CF, testo, anno non a 4 cifre, numeri oltre la colonna int)', () => {
+    for (const v of ['', 'RSSMRA80A01H501U', 'mario', '12345/26', '12345/2026/1', '-5', '1234567890', '12a']) {
+      expect(parseProtocolQuery(v)).toBeNull();
+    }
+  });
+});
 
 describe('NotificationsSearchService.search', () => {
   const qbMock = {
@@ -65,6 +79,26 @@ describe('NotificationsSearchService.search', () => {
     expect(qbMock.andWhere).toHaveBeenCalledWith(
       '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
       { q: '%mario%' },
+    );
+  });
+
+  it('testo a forma di protocollo "n/anno": aggiunge il match esatto su numero e anno', async () => {
+    qbMock.getManyAndCount.mockResolvedValue([[], 0]);
+    await service.search({ query: ' 12345 / 2026 ', page: 1, pageSize: 20 }, ADMIN);
+
+    expect(qbMock.andWhere).toHaveBeenCalledWith(
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber AND p.protocol_year = :protocolYear))',
+      { q: '%12345 / 2026%', protocolNumber: 12345, protocolYear: 2026 },
+    );
+  });
+
+  it('testo solo numerico: match esatto sul numero di protocollo di qualunque anno', async () => {
+    qbMock.getManyAndCount.mockResolvedValue([[], 0]);
+    await service.search({ query: '12345', page: 1, pageSize: 20 }, ADMIN);
+
+    expect(qbMock.andWhere).toHaveBeenCalledWith(
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber))',
+      { q: '%12345%', protocolNumber: 12345 },
     );
   });
 

@@ -24,6 +24,17 @@ const READ_STATUS_CHANNELS_SQL = "campaign.channelType IN ('EMAIL', 'PEC', 'APP_
 const RECIPIENT_HAS_DOWNLOAD_SQL = '(recipient.download_count > 0 OR EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = recipient.id))';
 const READ_STATUS_CHANNELS = ['EMAIL', 'PEC', 'APP_IO'];
 
+/**
+ * Testo di ricerca a forma di numero di protocollo: `12345` (qualunque anno) o
+ * `12345/2026`. Match esatto, mai parziale: "12" non deve trovare ogni
+ * protocollo che contiene 12. Numeri oltre 9 cifre esclusi (colonna int).
+ */
+export function parseProtocolQuery(text: string): { number: number; year: number | null } | null {
+  const m = /^(\d{1,9})(?:\s*\/\s*(\d{4}))?$/.exec(text.trim());
+  if (!m) return null;
+  return { number: Number(m[1]), year: m[2] ? Number(m[2]) : null };
+}
+
 export type PosteVerificationFilter = 'delivered' | 'returned' | 'pending' | 'gave_up' | 'any';
 export const POSTE_VERIFICATION_FILTERS: readonly PosteVerificationFilter[] = ['delivered', 'returned', 'pending', 'gave_up', 'any'];
 
@@ -85,9 +96,18 @@ export class NotificationsSearchService {
     const searchText = filters.query || filters.codiceFiscale;
     if (searchText) {
       const q = `%${searchText.trim()}%`;
+      // Numero di protocollo (assegnato a ogni tentativo protocollato).
+      const protocol = parseProtocolQuery(searchText);
+      const protocolSql = protocol
+        ? ` OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber${protocol.year !== null ? ' AND p.protocol_year = :protocolYear' : ''})`
+        : '';
       qb.andWhere(
-        '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
-        { q },
+        `(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q))${protocolSql})`,
+        {
+          q,
+          ...(protocol ? { protocolNumber: protocol.number } : {}),
+          ...(protocol && protocol.year !== null ? { protocolYear: protocol.year } : {}),
+        },
       );
     }
     // Campo "Campagna" libero: id (anche parziale) o nome. CAST a text perché
