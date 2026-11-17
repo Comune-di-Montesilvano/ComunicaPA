@@ -139,6 +139,14 @@ Il perfezionamento per decorrenza dei termini non genera un documento: la data c
 
 Nel portale cittadini una notifica SEND mostra solo lo stato e il link per aprirla su SEND (lo stesso del codice QR dell'avviso, o la pagina di accesso di SEND se il codice non è leggibile): documenti e attestazioni con valore legale si consultano solo lì. SEND mostra i documenti per 120 giorni dalla data in cui la notifica assume valore legale (avviso e attestazioni per 10 anni): passato quel periodo il portale cittadini offre la copia del documento inviato, indicata come copia di cortesia senza valore legale, con la data da cui decorrono i termini.
 
+### Cercare una notifica SEND dal numero di protocollo
+
+Apri **Ricerca IUN SEND** per trovare una notifica SEND conoscendo solo il numero di protocollo, anche se è stata inviata dal portale SEND o da un altro gestionale e quindi non compare in **Ricerca Notifiche**. La voce di menu c'è solo se l'amministratore ha configurato la chiave di ricerca in Impostazioni → SEND.
+
+Scrivi il protocollo **esattamente** come è stato inserito nella notifica: SEND non fa ricerche parziali, quindi `1234` e `1234/2026` sono protocolli diversi. Il risultato mostra lo IUN, lo stato, l'oggetto e i destinatari; **Apri notifica** mostra per ogni destinatario il percorso e i suoi documenti (avviso di avvenuta ricezione, attestazioni), più gli atti notificati e le attestazioni comuni. Gli atti notificati si scaricano finché SEND li rende disponibili (120 giorni dal perfezionamento). Ogni ricerca, apertura e download resta nel registro attività.
+
+Una notifica inviata con più destinatari ha un solo IUN: la trovi con un'unica ricerca. Le notifiche inviate da un altro gestionale si trovano solo indicando anche il suo **codice di idempotenza** (link **Inviata da un altro gestionale?**); per quelle inviate dal portale SEND lascia il campo vuoto.
+
 ### Gestire le notifiche senza esito legale
 
 In **Dashboard** il riquadro **Notifiche senza esito legale** elenca, per campagna, le notifiche SEND senza perfezionamento per il destinatario e le raccomandate con ricevuta di ritorno (o atti giudiziari) senza data legale di notifica: quelle con esito bloccante non l'avranno mai, le altre sono ferme senza esito da almeno 45 giorni. Ogni operatore vede le campagne che ha creato; gli amministratori le vedono tutte.
@@ -337,6 +345,8 @@ Ogni tentativo di aprire un allegato riservato resta registrato nel registro att
 ### Impostazioni (solo amministratori)
 
 Da **Impostazioni** gli amministratori configurano server Email e PEC, App IO, SEND, Postalizzazione (fornitore e utenti abilitati), verifica INAD e aspetto del portale. Le modifiche valgono subito, senza riavvii.
+
+In Impostazioni → SEND il campo **API Key ricerca IUN** abilita il menu **Ricerca IUN SEND**: va creata nel portale self-care di SEND come chiave separata e **senza gruppi**, così vede le notifiche di tutti gli uffici. Non usare né modificare la chiave di invio: se le si aggiungono gruppi, SEND inizia a chiedere il gruppo in ogni invio. Lasciando il campo vuoto la funzione scompare dal menu.
 
 ## Problemi frequenti
 

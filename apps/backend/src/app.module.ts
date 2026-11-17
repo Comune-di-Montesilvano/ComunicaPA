@@ -30,6 +30,7 @@ import { TemplatesModule } from './templates/templates.module.js';
 import { AuditLogsModule } from './audit-logs/audit-logs.module.js';
 import { PresenceModule } from './presence/presence.module.js';
 import { ExternalApiModule } from './external-api/external-api.module.js';
+import { SendIunLookupModule } from './channels/send/send-iun-lookup.module.js';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from './auth/guards/roles.guard.js';
 import configuration from './config/configuration.js';
@@ -67,6 +68,7 @@ import configuration from './config/configuration.js';
     AuditLogsModule,
     PresenceModule,
     ExternalApiModule,
+    SendIunLookupModule,
   ],
   controllers: [AppController],
   providers: [

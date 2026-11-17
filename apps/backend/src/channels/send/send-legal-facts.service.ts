@@ -20,12 +20,14 @@ export interface SendLegalFactItem {
  */
 export interface SendDocumentItem extends SendLegalFactItem {
   documentType?: string;
+  /** Destinatario (indice in recipients[]) dall'evento di timeline del documento; assente per quelli comuni (SENDER_ACK). */
+  recIndex?: number;
 }
 
-interface PnTimelineElement {
+export interface PnTimelineElement {
   category: string;
   legalFactsIds?: Array<{ key: string; category: string }>;
-  details?: { generatedAarUrl?: string; attachments?: Array<{ documentType?: string }> };
+  details?: { recIndex?: number; generatedAarUrl?: string; attachments?: Array<{ documentType?: string }> };
 }
 
 const AAR_KEY_MARKER = 'PN_AAR-';
@@ -48,6 +50,14 @@ export function isSendPortalUrl(value: string): boolean {
     return false;
   }
 }
+
+/**
+ * Quale apiKey PN usare: quella di invio (default, gruppo di ComunicaPA) o
+ * quella dedicata alla ricerca IUN per protocollo (senza gruppi, vede anche
+ * gli invii fatti fuori da ComunicaPA). PN filtra ogni lettura sui gruppi
+ * della chiave: con la chiave sbagliata risponde 404.
+ */
+export type SendApiKeyKind = 'apiKey' | 'lookupApiKey';
 
 export type SendLegalFactDownloadResult =
   | { ready: true; filename: string; contentType: string; buffer: Buffer }
@@ -91,20 +101,26 @@ export class SendLegalFactsService {
     }
   }
 
-  private async getEnvAndBaseUrl(): Promise<{ envKey: 'test' | 'prod'; baseUrl: string; apiKey: string; purposeId: string }> {
+  private async getEnvAndBaseUrl(keyKind: SendApiKeyKind = 'apiKey'): Promise<{ envKey: 'test' | 'prod'; baseUrl: string; apiKey: string; purposeId: string }> {
     const env = await this.settings.get<string>('send.environment');
     const envKey = env === 'produzione' ? 'prod' : 'test';
     const baseUrl = await this.settings.get<string>(`send.${envKey}.baseUrl` as SettingKey);
-    const apiKey = await this.settings.get<string>(`send.${envKey}.apiKey` as SettingKey);
+    const apiKey = await this.settings.get<string>(`send.${envKey}.${keyKind}` as SettingKey);
     const purposeId = await this.settings.get<string>(`send.${envKey}.purposeId` as SettingKey);
     return { envKey, baseUrl, apiKey, purposeId };
   }
 
-  async listLegalFacts(iun: string): Promise<SendLegalFactItem[]> {
-    const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
+  async listLegalFacts(iun: string, keyKind: SendApiKeyKind = 'apiKey'): Promise<SendLegalFactItem[]> {
+    // Lo IUN può arrivare dal path di una route (ricerca IUN): validato qui,
+    // dove diventa parte dell'URL verso PN, non solo nel chiamante.
+    if (!isValidIun(iun)) {
+      this.logger.warn('Elenco documenti SEND: IUN non valido, richiesta scartata');
+      return [];
+    }
+    const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl(keyKind);
     try {
       const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
-      const res = await fetch(`${baseUrl}/delivery-push/v2.0/${iun}/legal-facts`, {
+      const res = await fetch(`${baseUrl}/delivery-push/v2.0/${encodeURIComponent(iun)}/legal-facts`, {
         headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       });
       const text = await res.text();
@@ -125,38 +141,46 @@ export class SendLegalFactsService {
    * timeline + AAR. Se la timeline non risponde degrada all'elenco legal-facts
    * nudo, mai un errore. Il portale cittadini resta su listLegalFacts.
    */
-  async listDocuments(iun: string): Promise<SendDocumentItem[]> {
-    const legalFacts = await this.listLegalFacts(iun);
-    const timeline = await this.fetchTimeline(iun);
+  async listDocuments(iun: string, keyKind: SendApiKeyKind = 'apiKey', knownTimeline?: PnTimelineElement[]): Promise<SendDocumentItem[]> {
+    const legalFacts = await this.listLegalFacts(iun, keyKind);
+    const timeline = knownTimeline ?? (await this.fetchTimeline(iun, keyKind));
     if (!timeline) return legalFacts;
 
     const documentTypeByKey = new Map<string, string>();
+    const recIndexByKey = new Map<string, number>();
     const aarKeys: string[] = [];
     for (const el of timeline) {
       const documentType = el.details?.attachments?.[0]?.documentType;
-      if (documentType) {
-        for (const lf of el.legalFactsIds ?? []) documentTypeByKey.set(lf.key, documentType);
+      const recIndex = el.details?.recIndex;
+      for (const lf of el.legalFactsIds ?? []) {
+        if (documentType) documentTypeByKey.set(lf.key, documentType);
+        if (typeof recIndex === 'number' && !recIndexByKey.has(lf.key)) recIndexByKey.set(lf.key, recIndex);
       }
       const aar = el.details?.generatedAarUrl;
       if (aar && !aarKeys.includes(aar)) aarKeys.push(aar);
+      if (aar && typeof recIndex === 'number' && !recIndexByKey.has(aar)) recIndexByKey.set(aar, recIndex);
     }
 
+    const withRecIndex = (item: SendDocumentItem): SendDocumentItem => {
+      const recIndex = recIndexByKey.get(item.legalFactId);
+      return recIndex === undefined ? item : { ...item, recIndex };
+    };
     const items: SendDocumentItem[] = legalFacts.map((lf) => {
       const documentType = lf.category === 'ANALOG_DELIVERY' ? documentTypeByKey.get(lf.legalFactId) : undefined;
-      return documentType ? { ...lf, documentType } : lf;
+      return withRecIndex(documentType ? { ...lf, documentType } : lf);
     });
-    const aarItems: SendDocumentItem[] = aarKeys.map((key) => ({ legalFactId: key, category: 'AAR' }));
+    const aarItems: SendDocumentItem[] = aarKeys.map((key) => withRecIndex({ legalFactId: key, category: 'AAR' }));
     const ackIndex = items.findIndex((i) => i.category === 'SENDER_ACK');
     items.splice(ackIndex + 1, 0, ...aarItems);
     return items;
   }
 
-  private async fetchTimeline(iun: string): Promise<PnTimelineElement[] | null> {
+  private async fetchTimeline(iun: string, keyKind: SendApiKeyKind = 'apiKey'): Promise<PnTimelineElement[] | null> {
     if (!isValidIun(iun)) {
       this.logger.warn('Timeline SEND per elenco documenti: IUN non valido, richiesta scartata');
       return null;
     }
-    const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
+    const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl(keyKind);
     try {
       const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
       const res = await fetch(`${baseUrl}/delivery/v2.9/notifications/sent/${encodeURIComponent(iun)}`, {
@@ -174,18 +198,45 @@ export class SendLegalFactsService {
     }
   }
 
-  async downloadLegalFact(iun: string, legalFactId: string): Promise<SendLegalFactDownloadResult> {
+  async downloadLegalFact(iun: string, legalFactId: string, keyKind: SendApiKeyKind = 'apiKey'): Promise<SendLegalFactDownloadResult> {
     // Lo IUN finisce nel path della richiesta a PN; legalFactId deve essere una
     // stringa (non un array da parametro ripetuto in query).
     if (!isValidIun(iun) || typeof legalFactId !== 'string' || !legalFactId) {
       return { ready: false, error: 'IUN o legalFactId non validi' };
     }
-    const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
+    const creds = await this.getEnvAndBaseUrl(keyKind);
     // L'AAR non è un legal-fact: PN lo serve da /document/AAR (stessa forma
     // di risposta filename/url/retryAfter, verificato dal vivo).
-    const metaUrl = legalFactId.includes(AAR_KEY_MARKER)
-      ? `${baseUrl}/delivery-push/${encodeURIComponent(iun)}/document/AAR?documentId=${encodeURIComponent(legalFactId)}`
-      : `${baseUrl}/delivery-push/${encodeURIComponent(iun)}/download/legal-facts/${encodeURIComponent(legalFactId)}`;
+    const metaPath = legalFactId.includes(AAR_KEY_MARKER)
+      ? `/delivery-push/${encodeURIComponent(iun)}/document/AAR?documentId=${encodeURIComponent(legalFactId)}`
+      : `/delivery-push/${encodeURIComponent(iun)}/download/legal-facts/${encodeURIComponent(legalFactId)}`;
+    return this.downloadViaMetadata(creds, metaPath, `IUN ${iun} legalFactId ${legalFactId}`);
+  }
+
+  /**
+   * Documento notificato (l'atto originale depositato dal mittente), indice
+   * `docIdx` di `documents[]` della notifica. PN lo serve solo finché
+   * `documentsAvailable` è true (120 giorni dal perfezionamento).
+   */
+  async downloadNotifiedDocument(iun: string, docIdx: number, keyKind: SendApiKeyKind = 'apiKey'): Promise<SendLegalFactDownloadResult> {
+    if (!isValidIun(iun) || !Number.isInteger(docIdx) || docIdx < 0 || docIdx > 999) {
+      return { ready: false, error: 'IUN o indice documento non validi' };
+    }
+    const creds = await this.getEnvAndBaseUrl(keyKind);
+    return this.downloadViaMetadata(
+      creds,
+      `/delivery/notifications/sent/${encodeURIComponent(iun)}/attachments/documents/${docIdx}`,
+      `IUN ${iun} documento ${docIdx}`,
+    );
+  }
+
+  /** Metadati PN (filename/url presigned/retryAfter) → contenuto del file. */
+  private async downloadViaMetadata(
+    { envKey, baseUrl, apiKey, purposeId }: { envKey: 'test' | 'prod'; baseUrl: string; apiKey: string; purposeId: string },
+    metaPath: string,
+    what: string,
+  ): Promise<SendLegalFactDownloadResult> {
+    const metaUrl = `${baseUrl}${metaPath}`;
     try {
       const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
       const metaRes = await fetch(metaUrl, {
@@ -193,7 +244,7 @@ export class SendLegalFactsService {
       });
       const metaText = await metaRes.text();
       if (!metaRes.ok) {
-        this.logger.warn(`Metadati download documento SEND IUN ${iun} legalFactId ${legalFactId} falliti: HTTP ${metaRes.status} — ${metaText.slice(0, 300)}`);
+        this.logger.warn(`Metadati download documento SEND ${what} falliti: HTTP ${metaRes.status} — ${metaText.slice(0, 300)}`);
         return { ready: false, error: `Errore PN: HTTP ${metaRes.status}` };
       }
       const meta = JSON.parse(metaText) as { filename: string; url?: string; retryAfter?: number };
@@ -212,7 +263,7 @@ export class SendLegalFactsService {
         buffer: Buffer.from(arrayBuffer),
       };
     } catch (err) {
-      this.logger.warn(`Errore download documento SEND IUN ${iun} legalFactId ${legalFactId}: ${errorMessage(err)}`);
+      this.logger.warn(`Errore download documento SEND ${what}: ${errorMessage(err)}`);
       return { ready: false, error: errorMessage(err) };
     }
   }

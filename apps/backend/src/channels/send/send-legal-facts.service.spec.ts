@@ -276,6 +276,92 @@ describe('SendLegalFactsService', () => {
     });
   });
 
+  describe('chiave di ricerca (lookupApiKey)', () => {
+    beforeEach(() => {
+      settingsValues['send.test.lookupApiKey'] = 'apikey-ricerca';
+    });
+    afterEach(() => {
+      delete settingsValues['send.test.lookupApiKey'];
+    });
+
+    it('listLegalFacts con lookupApiKey usa la chiave dedicata, non quella di invio', async () => {
+      mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve('[]') });
+      await service.listLegalFacts('IUN-1', 'lookupApiKey');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://send.test/delivery-push/v2.0/IUN-1/legal-facts',
+        expect.objectContaining({ headers: { 'x-api-key': 'apikey-ricerca', Authorization: 'Bearer voucher-abc' } }),
+      );
+    });
+
+    it('listDocuments con timeline già letta: nessuna seconda lettura della notifica', async () => {
+      mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve('[]') });
+      const items = await service.listDocuments('IUN-1', 'lookupApiKey', [
+        { category: 'AAR_GENERATION', details: { generatedAarUrl: 'safestorage://PN_AAR-1' } },
+      ]);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(items).toEqual([{ legalFactId: 'safestorage://PN_AAR-1', category: 'AAR' }]);
+    });
+
+    it('listDocuments: recIndex dall\'evento di timeline (AAR e atti per destinatario), assente per i comuni', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify([
+              { legalFactsId: { key: 'safestorage://ACK', category: 'SENDER_ACK' } },
+              { legalFactsId: { key: 'safestorage://DD1', category: 'DIGITAL_DELIVERY' } },
+            ]),
+          ),
+      });
+      const items = await service.listDocuments('IUN-1', 'lookupApiKey', [
+        { category: 'REQUEST_ACCEPTED', legalFactsIds: [{ key: 'safestorage://ACK', category: 'SENDER_ACK' }] },
+        { category: 'AAR_GENERATION', details: { recIndex: 0, generatedAarUrl: 'safestorage://PN_AAR-0' } },
+        { category: 'AAR_GENERATION', details: { recIndex: 1, generatedAarUrl: 'safestorage://PN_AAR-1' } },
+        { category: 'DIGITAL_SUCCESS_WORKFLOW', details: { recIndex: 1 }, legalFactsIds: [{ key: 'safestorage://DD1', category: 'DIGITAL_DELIVERY' }] },
+      ]);
+      expect(items).toEqual([
+        { legalFactId: 'safestorage://ACK', category: 'SENDER_ACK' },
+        { legalFactId: 'safestorage://PN_AAR-0', category: 'AAR', recIndex: 0 },
+        { legalFactId: 'safestorage://PN_AAR-1', category: 'AAR', recIndex: 1 },
+        { legalFactId: 'safestorage://DD1', category: 'DIGITAL_DELIVERY', recIndex: 1 },
+      ]);
+    });
+
+    it('downloadNotifiedDocument: metadati da /attachments/documents/{docIdx}, poi il file', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: () => Promise.resolve(JSON.stringify({ filename: 'atto.pdf', url: 'https://s3.example/atto' })),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          headers: { get: () => 'application/pdf' },
+          arrayBuffer: () => Promise.resolve(new TextEncoder().encode('%PDF').buffer),
+        });
+
+      const result = await service.downloadNotifiedDocument('IUN-1', 0, 'lookupApiKey');
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        'https://send.test/delivery/notifications/sent/IUN-1/attachments/documents/0',
+        expect.objectContaining({ headers: { 'x-api-key': 'apikey-ricerca', Authorization: 'Bearer voucher-abc' } }),
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(2, 'https://s3.example/atto');
+      expect(result).toMatchObject({ ready: true, filename: 'atto.pdf', contentType: 'application/pdf' });
+    });
+
+    it('listLegalFacts: IUN non valido → [] senza chiamare PN', async () => {
+      await expect(service.listLegalFacts('../../evil?x=', 'lookupApiKey')).resolves.toEqual([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('downloadNotifiedDocument: indice non valido → nessuna chiamata', async () => {
+      await expect(service.downloadNotifiedDocument('IUN-1', -1)).resolves.toMatchObject({ ready: false });
+      await expect(service.downloadNotifiedDocument('../x', 0)).resolves.toMatchObject({ ready: false });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   it('isSendPortalUrl: solo https verso notifichedigitali.it e sottodomini', () => {
     expect(isSendPortalUrl('https://cittadini.notifichedigitali.it/io/?aar=x')).toBe(true);
     expect(isSendPortalUrl('https://notifichedigitali.it/')).toBe(true);

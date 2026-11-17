@@ -259,6 +259,11 @@ describe('Inventario sicurezza route', () => {
       GET /admin/presence/online | auth | roles=admin,user | guards=-
       GET /admin/presence/online-users | auth | roles=admin | guards=-
       GET /admin/remote-sign/config | auth | roles=user,admin | guards=-
+      GET /admin/send-iun-lookup | auth | roles=user,admin | guards=-
+      GET /admin/send-iun-lookup/notifications/:iun | auth | roles=user,admin | guards=-
+      GET /admin/send-iun-lookup/notifications/:iun/documents/:docIdx | auth | roles=user,admin | guards=-
+      GET /admin/send-iun-lookup/notifications/:iun/send-documents/download | auth | roles=user,admin | guards=-
+      GET /admin/send-iun-lookup/status | auth | roles=user,admin | guards=-
       GET /admin/settings | auth | roles=user,admin | guards=-
       PUT /admin/settings | auth | roles=admin | guards=-
       POST /admin/settings/anpr/c002/test-connection | auth | roles=admin | guards=-

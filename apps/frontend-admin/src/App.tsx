@@ -7,6 +7,7 @@ import { latestSendPosteLetter, posteVerificationsOf, sendAttemptName, sendPoste
 import { sendDocumentLabel, type SendDocumentItem } from './components/notification-detail/send-documents';
 import type { SendTimelineEvent } from './components/notification-detail/send-timeline';
 import { SearchableSelect } from './components/SearchableSelect';
+import { SendIunLookupView } from './components/send-iun-lookup/SendIunLookupView';
 import { StatisticsView } from './components/StatisticsView';
 import { DashboardView, type RecentCampaign } from './components/DashboardView';
 import { uploadFileInChunks } from './chunked-upload';
@@ -30,6 +31,7 @@ import {
   Play, FileArchive, Keyboard, Key,
   Minus, Star, Stamp, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
   Users, Euro, ChevronDown, PenLine,
+  FileSearch,
 } from 'lucide-react';
 
 declare global {
@@ -1585,7 +1587,7 @@ export function App(): React.JSX.Element {
   const [displayName, setDisplayName] = useState<string | null>(localStorage.getItem('comunicapa_display_name'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
   const [canUsePostal, setCanUsePostal] = useState<boolean>(localStorage.getItem('comunicapa_can_use_postal') === 'true');
-  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-domicili' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento' | 'guida'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-domicili' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento' | 'guida' | 'ricerca-iun-send'>('dashboard');
 
   // Guida operatori (public/guida/guida.md): scaricata alla prima apertura
   // della vista, poi tenuta in memoria. guidaAnchor = sezione da mostrare
@@ -2849,6 +2851,7 @@ export function App(): React.JSX.Element {
   const [settSendEnvironment, setSettSendEnvironment] = useState<'collaudo' | 'produzione'>('collaudo');
   const [settSendTestBaseUrl, setSettSendTestBaseUrl] = useState('https://api.uat.notifichedigitali.it');
   const [settSendTestApiKey, setSettSendTestApiKey] = useState('');
+  const [settSendTestLookupApiKey, setSettSendTestLookupApiKey] = useState('');
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
   const [settSendTestGroup, setSettSendTestGroup] = useState('');
   const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
@@ -2859,6 +2862,7 @@ export function App(): React.JSX.Element {
   const [wizAddTaxonomyCode, setWizAddTaxonomyCode] = useState('');
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
   const [settSendProdApiKey, setSettSendProdApiKey] = useState('');
+  const [settSendProdLookupApiKey, setSettSendProdLookupApiKey] = useState('');
   const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
   const [settSendProdGroup, setSettSendProdGroup] = useState('');
   const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
@@ -3357,6 +3361,7 @@ export function App(): React.JSX.Element {
         setSettSendEnvironment((String(s['send.environment'] ?? 'collaudo')) as 'collaudo' | 'produzione');
         setSettSendTestBaseUrl(String(s['send.test.baseUrl'] ?? ''));
         setSettSendTestApiKey(String(s['send.test.apiKey'] ?? ''));
+        setSettSendTestLookupApiKey(String(s['send.test.lookupApiKey'] ?? ''));
         setSettSendTestPurposeId(String(s['send.test.purposeId'] ?? ''));
         setSettSendTestGroup(String(s['send.test.group'] ?? ''));
         setSettSendSenderTaxId(String(s['send.senderTaxId'] ?? ''));
@@ -3369,6 +3374,7 @@ export function App(): React.JSX.Element {
         setSettDenominazioneAbbreviationsText(String(s['notifiche.denominazioneAbbreviations'] ?? '[]'));
         setSettSendProdBaseUrl(String(s['send.prod.baseUrl'] ?? ''));
         setSettSendProdApiKey(String(s['send.prod.apiKey'] ?? ''));
+        setSettSendProdLookupApiKey(String(s['send.prod.lookupApiKey'] ?? ''));
         setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
         setSettSendProdGroup(String(s['send.prod.group'] ?? ''));
         setSettPdndTestTokenUrl(String(s['pdnd.test.tokenUrl'] ?? ''));
@@ -3501,6 +3507,22 @@ export function App(): React.JSX.Element {
     }
     return res;
   };
+
+  // Ricerca IUN SEND: voce di menu solo con la apiKey PN di ricerca configurata
+  // (Impostazioni → SEND). Riletto all'uscita dalle Impostazioni.
+  const [sendIunLookupEnabled, setSendIunLookupEnabled] = useState(false);
+  const inSettingsView = view === 'impostazioni';
+  useEffect(() => {
+    if (!token || inSettingsView) return;
+    apiFetch('/send-iun-lookup/status')
+      .then((res) => (res.ok ? res.json() : { enabled: false }))
+      .then((d: { enabled?: boolean }) => setSendIunLookupEnabled(d.enabled === true))
+      .catch(() => setSendIunLookupEnabled(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, inSettingsView]);
+  useEffect(() => {
+    if (view === 'ricerca-iun-send' && !sendIunLookupEnabled) setView('dashboard');
+  }, [view, sendIunLookupEnabled]);
 
   useEffect(() => {
     if (!token) return;
@@ -4751,6 +4773,7 @@ export function App(): React.JSX.Element {
     'send.environment': settSendEnvironment,
     'send.test.baseUrl': settSendTestBaseUrl,
     'send.test.apiKey': settSendTestApiKey,
+    'send.test.lookupApiKey': settSendTestLookupApiKey,
     'send.test.purposeId': settSendTestPurposeId,
     'send.test.group': settSendTestGroup,
     'send.senderTaxId': settSendSenderTaxId,
@@ -4759,6 +4782,7 @@ export function App(): React.JSX.Element {
     'notifiche.denominazioneAbbreviations': settDenominazioneAbbreviationsText,
     'send.prod.baseUrl': settSendProdBaseUrl,
     'send.prod.apiKey': settSendProdApiKey,
+    'send.prod.lookupApiKey': settSendProdLookupApiKey,
     'send.prod.purposeId': settSendProdPurposeId,
     'send.prod.group': settSendProdGroup,
     'pdnd.test.tokenUrl': settPdndTestTokenUrl,
@@ -9805,6 +9829,16 @@ export function App(): React.JSX.Element {
             <Search />
             <span>Ricerca Notifiche</span>
           </a>
+          {sendIunLookupEnabled && (
+            <a
+              className={`bo-nav-item ${view === 'ricerca-iun-send' ? 'is-active' : ''}`}
+              href="#"
+              onClick={(e) => { e.preventDefault(); setView('ricerca-iun-send'); }}
+            >
+              <FileSearch />
+              <span>Ricerca IUN SEND</span>
+            </a>
+          )}
 
           <div className="bo-nav-section-title">Utility</div>
           <a
@@ -14423,6 +14457,14 @@ export function App(): React.JSX.Element {
             </div>
           )}
 
+          {view === 'ricerca-iun-send' && sendIunLookupEnabled && (
+            <SendIunLookupView
+              apiFetch={apiFetch}
+              renderSendStatus={(status) => <SendStatusBadge status={status} />}
+              sendStatusLabel={(status) => SEND_STATUS_META[status]?.label ?? status}
+            />
+          )}
+
           {view === 'cerca-domicilio' && (
             <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
               <div className="d-flex align-items-center justify-content-between mb-3">
@@ -16437,11 +16479,13 @@ export function App(): React.JSX.Element {
                               { label: 'Collaudo (UAT)', prefix: 'test' as const,
                                 baseUrl: settSendTestBaseUrl, setBaseUrl: setSettSendTestBaseUrl,
                                 apiKey: settSendTestApiKey, setApiKey: setSettSendTestApiKey,
+                                lookupApiKey: settSendTestLookupApiKey, setLookupApiKey: setSettSendTestLookupApiKey,
                                 purposeId: settSendTestPurposeId, setPurposeId: setSettSendTestPurposeId,
                                 group: settSendTestGroup, setGroup: setSettSendTestGroup },
                               { label: 'Produzione', prefix: 'prod' as const,
                                 baseUrl: settSendProdBaseUrl, setBaseUrl: setSettSendProdBaseUrl,
                                 apiKey: settSendProdApiKey, setApiKey: setSettSendProdApiKey,
+                                lookupApiKey: settSendProdLookupApiKey, setLookupApiKey: setSettSendProdLookupApiKey,
                                 purposeId: settSendProdPurposeId, setPurposeId: setSettSendProdPurposeId,
                                 group: settSendProdGroup, setGroup: setSettSendProdGroup },
                             ]).map((e) => (
@@ -16467,6 +16511,17 @@ export function App(): React.JSX.Element {
                                     onChange={(ev) => e.setApiKey(ev.target.value)}
                                   />
                                   <div className="form-text small text-muted">Emessa dal portale self-care di PN (Piattaforma Notifiche) — header x-api-key, richiesta insieme al voucher PDND su ogni chiamata.</div>
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_lookupapikey`}>API Key ricerca IUN (opzionale)</label>
+                                  <input
+                                    type="password"
+                                    id={`send_${e.prefix}_lookupapikey`}
+                                    className="form-control form-control-sm"
+                                    value={e.lookupApiKey}
+                                    onChange={(ev) => e.setLookupApiKey(ev.target.value)}
+                                  />
+                                  <div className="form-text small text-muted">Chiave separata, usata solo dal menu "Ricerca IUN SEND" per trovare e aprire notifiche dal numero di protocollo, anche inviate dal portale SEND o da altri gestionali. Creala in self-care PN senza gruppi, così vede le notifiche di tutti gli uffici; non usare la chiave di invio. Vuota = funzione non disponibile.</div>
                                 </div>
                                 <div className="mb-1">
                                   <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_purposeid`}>Purpose ID</label>
