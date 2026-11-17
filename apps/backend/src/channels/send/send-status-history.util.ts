@@ -92,6 +92,25 @@ export function extractSendAnalogCost(data: unknown): SendAnalogCostInfo {
 }
 
 /**
+ * Primo avviso pagoPA della notifica (recipients[].payments[].pagoPa): serve a
+ * GET price/{paTaxId}/{noticeCode} per il costo base reale. Null per le
+ * notifiche senza pagamento.
+ */
+export function extractSendPaymentNotice(data: unknown): { creditorTaxId: string; noticeCode: string } | null {
+  const recipients = (data as { recipients?: unknown })?.recipients;
+  if (!Array.isArray(recipients)) return null;
+  for (const r of recipients as PnJson[]) {
+    for (const p of Array.isArray(r?.payments) ? r.payments : []) {
+      const pagoPa = p?.pagoPa;
+      if (typeof pagoPa?.creditorTaxId === 'string' && typeof pagoPa?.noticeCode === 'string') {
+        return { creditorTaxId: pagoPa.creditorTaxId, noticeCode: pagoPa.noticeCode };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Evento della timeline PN: tutti i fatti PN. Indirizzi tenuti (sono i dati del
  * destinatario che l'ente gia' possiede); dati di identita' rimossi. I campi
  * normalizzati sono estratti prima della rimozione; `details` ha il resto.

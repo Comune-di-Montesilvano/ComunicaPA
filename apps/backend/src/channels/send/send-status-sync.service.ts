@@ -6,7 +6,7 @@ import { NotificationAttempt } from '../../entities/notification-attempt.entity.
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
-import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost, extractSendTimeline } from './send-status-history.util.js';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost, extractSendTimeline, extractSendPaymentNotice } from './send-status-history.util.js';
 import { SendBaseFeeService } from './send-base-fee.service.js';
 import { captureException } from '../../common/sentry.util.js';
 import { errorMessage } from '../../common/error-message.js';
@@ -162,15 +162,22 @@ export class SendStatusSyncService {
         // diverso da quello salvato — non solo alla prima sincronizzazione:
         // l'invio analogico (e il suo analogCost) arriva giorni dopo l'accettazione.
         const analog = extractSendAnalogCost(data);
-        const storedBreakdown = attempt.costBreakdown as { baseFeeCents?: number; analogEvents?: Array<{ analogCostCents: number }> } | null;
+        const storedBreakdown = attempt.costBreakdown as { baseFeeCents?: number; baseFeeSource?: 'pn' | 'config'; analogEvents?: Array<{ analogCostCents: number }> } | null;
         const storedAnalogCents = (storedBreakdown?.analogEvents ?? []).reduce((sum, e) => sum + (e.analogCostCents ?? 0), 0);
         if (attempt.costCents === null || analog.analogCostCents !== storedAnalogCents) {
-          const baseFeeCents = typeof storedBreakdown?.baseFeeCents === 'number'
-            ? storedBreakdown.baseFeeCents
-            : await this.baseFee.resolve(envKey, baseUrl, apiKey, voucher, null, null);
-          attempt.costCents = baseFeeCents + analog.analogCostCents;
+          // Costo base reale da PN solo con avviso pagoPA (GET price): già
+          // ottenuto da PN → riusato; dal valore configurato → si riprova a
+          // ogni ricalcolo finché c'è un avviso, senza avviso resta quello.
+          const notice = extractSendPaymentNotice(data);
+          const storedBaseFee = typeof storedBreakdown?.baseFeeCents === 'number'
+            ? { cents: storedBreakdown.baseFeeCents, source: storedBreakdown.baseFeeSource ?? 'config' as const }
+            : null;
+          const baseFee = storedBaseFee && (storedBaseFee.source === 'pn' || !notice)
+            ? storedBaseFee
+            : await this.baseFee.resolve(envKey, baseUrl, apiKey, voucher, notice?.creditorTaxId ?? null, notice?.noticeCode ?? null);
+          attempt.costCents = baseFee.cents + analog.analogCostCents;
           attempt.costCalculatedAt = new Date();
-          attempt.costBreakdown = { baseFeeCents, analogEvents: analog.events };
+          attempt.costBreakdown = { baseFeeCents: baseFee.cents, baseFeeSource: baseFee.source, analogEvents: analog.events };
           changed = true;
         } else if (!attempt.costCalculatedAt || (attempt.sendStatusUpdatedAt && attempt.costCalculatedAt < attempt.sendStatusUpdatedAt)) {
           // Verificato, nessuna variazione: avanza solo il timestamp così
