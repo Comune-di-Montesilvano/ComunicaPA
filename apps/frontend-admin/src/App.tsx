@@ -13343,7 +13343,7 @@ export function App(): React.JSX.Element {
                 <div className="d-flex align-items-end flex-wrap gap-2">
                   <div style={{ flex: '2 1 260px', minWidth: 0 }}>
                     <label className="form-label small text-muted mb-1" htmlFor="ns-query">Ricerca</label>
-                    <input id="ns-query" className="form-control form-control-sm" placeholder="CF, nome, email, PEC, IUN..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                    <input id="ns-query" className="form-control form-control-sm" placeholder="CF, nome, email, PEC, IUN, protocollo..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                   </div>
                   <div style={{ flex: '1 1 150px', minWidth: 0 }}>
                     <label className="form-label small text-muted mb-1" htmlFor="ns-campaign">Campagna</label>
