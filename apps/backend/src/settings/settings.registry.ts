@@ -89,6 +89,10 @@ export const SETTING_DEFS = {
   // pagoPA associato alla notifica, o chiamata fallita). Vedi
   // docs/superpowers/specs/2026-07-21-costo-notifiche-design.md.
   'send.digitalBaseFeeCents': { type: 'number', default: 100 },
+  // Firma digitale valida obbligatoria sugli allegati SEND in ogni caso:
+  // massivo senza "procedi comunque", Invio Manuale, invio di prova e API
+  // esterne bloccati invece che solo avvisati.
+  'send.requireSignedAttachments': { type: 'boolean', default: false },
 
   'pdnd.test.tokenUrl': { type: 'string', default: 'https://auth.uat.interop.pagopa.it/token.oauth2' },
   'pdnd.test.audience': { type: 'string', default: 'auth.uat.interop.pagopa.it/client-assertion' },

@@ -11,6 +11,8 @@ interface Props {
   invalidCount: number;
   totalRows: number;
   arubaEnabled: boolean;
+  /** Obbligo di firma attivo (Impostazioni → SEND): niente "Invia comunque". */
+  signatureRequired?: boolean;
   onDecision: (d: UnsignedDecision) => void;
 }
 
@@ -19,7 +21,7 @@ interface Props {
  * (e l'invio riprende da solo se la nuova verifica è tutta valida), invia
  * comunque sotto la responsabilità dell'operatore, o annulla.
  */
-export function UnsignedDecisionModal({ apiFetch, campaignId, invalidCount, totalRows, arubaEnabled, onDecision }: Props) {
+export function UnsignedDecisionModal({ apiFetch, campaignId, invalidCount, totalRows, arubaEnabled, signatureRequired = false, onDecision }: Props) {
   const [signing, setSigning] = useState(false);
   const [waitingVerification, setWaitingVerification] = useState(false);
   const [counts, setCounts] = useState({ invalidCount, totalRows });
@@ -43,7 +45,7 @@ export function UnsignedDecisionModal({ apiFetch, campaignId, invalidCount, tota
         if (cancelled) return;
         if (s.status === 'failed') {
           setWaitingVerification(false);
-          setNote('Verifica firma non riuscita: riprova o invia comunque.');
+          setNote(signatureRequired ? 'Verifica firma non riuscita: riprova.' : 'Verifica firma non riuscita: riprova o invia comunque.');
         } else if (s.status === 'done') {
           setWaitingVerification(false);
           if (s.invalidCount === 0) onDecisionRef.current('continue');
@@ -57,7 +59,7 @@ export function UnsignedDecisionModal({ apiFetch, campaignId, invalidCount, tota
       }
     }, 2000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [waitingVerification, campaignId]);
+  }, [waitingVerification, campaignId, signatureRequired]);
 
   const onSignFinished = (s: RemoteSignStatus) => {
     if (s.status === 'done') {
@@ -87,13 +89,16 @@ export function UnsignedDecisionModal({ apiFetch, campaignId, invalidCount, tota
           <div className="modal-body">
             <p>{counts.invalidCount} allegato/i su {counts.totalRows} non risulta/no firmato/i digitalmente in modo valido.</p>
             <p className="small text-muted mb-2">Per SEND l'allegato è il documento legale notificato: senza firma digitale valida la notifica rischia di essere contestata (autenticità dell'atto, decorrenza dei termini).</p>
+            {signatureRequired && <div className="alert alert-danger small mb-2">La firma digitale è obbligatoria (Impostazioni → SEND): l'invio parte solo con allegati firmati validamente.</div>}
             {note && <div className="alert alert-warning small">{note}</div>}
             {waitingVerification && <div className="d-flex align-items-center gap-2"><Loader2 className="icon-spin" size={16} /> Verifica della firma in corso…</div>}
           </div>
           <div className="modal-footer">
             {/* Annulla sempre attivo: anche durante l'attesa della verifica (ferma il polling). */}
             <button type="button" className="btn btn-outline-secondary" onClick={() => { setWaitingVerification(false); onDecision('cancel'); }}>Annulla</button>
-            <button type="button" className="btn btn-outline-danger" disabled={waitingVerification} onClick={() => onDecision('continue')}>Invia comunque</button>
+            {!signatureRequired && (
+              <button type="button" className="btn btn-outline-danger" disabled={waitingVerification} onClick={() => onDecision('continue')}>Invia comunque</button>
+            )}
             {arubaEnabled && (
               <button type="button" className="btn btn-primary" disabled={waitingVerification} onClick={() => { setNote(null); setSigning(true); }}>
                 <PenLine size={14} className="me-1" />Firma con Aruba

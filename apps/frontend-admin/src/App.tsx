@@ -2517,7 +2517,7 @@ export function App(): React.JSX.Element {
     externalId: '',
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
-  const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<{ status: string; totalRows: number; validCount: number; invalidCount: number; errorMessage: string | null } | null>(null);
+  const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<{ status: string; totalRows: number; validCount: number; invalidCount: number; errorMessage: string | null; required?: boolean } | null>(null);
   // Invio Manuale SEND: decisione dell'operatore su allegati non firmati,
   // risolta da UnsignedDecisionModal (firma Aruba / invia comunque / annulla).
   const [unsignedDecision, setUnsignedDecision] = useState<{
@@ -2525,6 +2525,7 @@ export function App(): React.JSX.Element {
     invalidCount: number;
     totalRows: number;
     arubaEnabled: boolean;
+    signatureRequired: boolean;
     resolve: (d: UnsignedDecision) => void;
   } | null>(null);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
@@ -2855,6 +2856,7 @@ export function App(): React.JSX.Element {
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
   const [settSendTestGroup, setSettSendTestGroup] = useState('');
   const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
+  const [settSendRequireSignedAttachments, setSettSendRequireSignedAttachments] = useState(false);
   const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string; isDefault?: boolean }>>([]);
   const [settDenominazioneAbbreviationsText, setSettDenominazioneAbbreviationsText] = useState('[]');
   const [settDenominazioneAbbreviationsError, setSettDenominazioneAbbreviationsError] = useState('');
@@ -3365,6 +3367,7 @@ export function App(): React.JSX.Element {
         setSettSendTestPurposeId(String(s['send.test.purposeId'] ?? ''));
         setSettSendTestGroup(String(s['send.test.group'] ?? ''));
         setSettSendSenderTaxId(String(s['send.senderTaxId'] ?? ''));
+        setSettSendRequireSignedAttachments(s['send.requireSignedAttachments'] === true);
         setSettSendEntityType(String(s['send.entityType'] ?? ''));
         try {
           setSettSendTaxonomies(JSON.parse(String(s['send.enabledTaxonomyCodes'] ?? '[]')));
@@ -4777,6 +4780,7 @@ export function App(): React.JSX.Element {
     'send.test.purposeId': settSendTestPurposeId,
     'send.test.group': settSendTestGroup,
     'send.senderTaxId': settSendSenderTaxId,
+    'send.requireSignedAttachments': settSendRequireSignedAttachments,
     'send.entityType': settSendEntityType,
     'send.enabledTaxonomyCodes': JSON.stringify(settSendTaxonomies),
     'notifiche.denominazioneAbbreviations': settDenominazioneAbbreviationsText,
@@ -8559,7 +8563,7 @@ export function App(): React.JSX.Element {
   // Ritorna `false` solo se il singolo viene annullato (Annulla sulla
   // conferma) — i chiamanti interrompono il flusso silenziosamente, nessun
   // ulteriore popup di errore: la conferma già spiegata è l'unico messaggio.
-  const askUnsignedDecision = async (campaignId: string, invalidCount: number, totalRows: number): Promise<boolean> => {
+  const askUnsignedDecision = async (campaignId: string, invalidCount: number, totalRows: number, signatureRequired: boolean): Promise<boolean> => {
     let arubaEnabled = false;
     try {
       const res = await apiFetch('/remote-sign/config');
@@ -8568,7 +8572,7 @@ export function App(): React.JSX.Element {
       // senza config: solo Invia comunque / Annulla
     }
     const decision = await new Promise<UnsignedDecision>((resolve) => {
-      setUnsignedDecision({ campaignId, invalidCount, totalRows, arubaEnabled, resolve });
+      setUnsignedDecision({ campaignId, invalidCount, totalRows, arubaEnabled, signatureRequired, resolve });
     });
     setUnsignedDecision(null);
     return decision === 'continue';
@@ -8592,9 +8596,11 @@ export function App(): React.JSX.Element {
         if (status.status === 'done') {
           if (status.invalidCount > 0) {
             if (isSingolo) {
-              return askUnsignedDecision(campaignId, status.invalidCount, status.totalRows);
+              return askUnsignedDecision(campaignId, status.invalidCount, status.totalRows, status.required === true);
             }
-            alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
+            alert(status.required
+              ? `${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente. La firma digitale è obbligatoria: correggi o firma i file prima di avviare la campagna.`
+              : `Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
           }
           return true;
         }
@@ -8709,6 +8715,10 @@ export function App(): React.JSX.Element {
     // blocca senza il flag forceUnsignedAttachments e traccia la forzatura in audit.
     let forceUnsignedAttachments = false;
     if (wizChannel === 'SEND' && !wizSingleMode && wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount > 0) {
+      if (wizSignatureJobStatus.required) {
+        alert(`${wizSignatureJobStatus.invalidCount} allegato/i su ${wizSignatureJobStatus.totalRows} non risultano firmati validamente. La firma digitale è obbligatoria (Impostazioni → SEND): correggi o firma i file prima di avviare.`);
+        return;
+      }
       if (!confirmContinueDespiteInvalidSignature(wizSignatureJobStatus.invalidCount, wizSignatureJobStatus.totalRows)) return;
       forceUnsignedAttachments = true;
     }
@@ -16360,6 +16370,24 @@ export function App(): React.JSX.Element {
                               <div className="form-text small text-muted">11 cifre, obbligatorio nel payload SEND come mittente.</div>
                             </div>
 
+                            <div className="form-check form-switch mb-4">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                role="switch"
+                                id="send_require_signed"
+                                checked={settSendRequireSignedAttachments}
+                                onChange={(e) => setSettSendRequireSignedAttachments(e.target.checked)}
+                              />
+                              <label className="form-check-label small fw-semibold" htmlFor="send_require_signed">
+                                Firma digitale obbligatoria sugli allegati
+                              </label>
+                              <div className="form-text small text-muted">
+                                Se attivo, un allegato senza firma digitale valida blocca sempre l'avvio: invio massivo (senza "procedi comunque"),
+                                Invio Manuale, invio di prova e API esterne. Se spento, l'invio massivo chiede conferma e gli altri mostrano solo un avviso.
+                              </div>
+                            </div>
+
                             <div className="mb-3">
                               <label className="form-label small fw-bold text-dark" htmlFor="send_entity_type">Tipologia Ente</label>
                               <select
@@ -19818,6 +19846,7 @@ export function App(): React.JSX.Element {
           invalidCount={unsignedDecision.invalidCount}
           totalRows={unsignedDecision.totalRows}
           arubaEnabled={unsignedDecision.arubaEnabled}
+          signatureRequired={unsignedDecision.signatureRequired}
           onDecision={unsignedDecision.resolve}
         />
       )}
