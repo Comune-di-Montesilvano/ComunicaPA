@@ -1,0 +1,60 @@
+# OPZIONALE: esposizione tramite un Traefik v3 gia' in esecuzione sullo stesso host
+# (provider docker), al posto delle porte ADMIN_PORT/CITIZEN_PORT.
+#
+# Uso: docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+# Portainer (stack Git): Compose path docker-compose.yml, Additional paths
+# docker-compose.traefik.yml.
+#
+# Variabili dello stack:
+#   TRAEFIK_HOST_ADMIN    (obbligatoria) hostname del backoffice, es. comunicapa-bo.ente.it
+#   TRAEFIK_HOST_CITIZEN  (obbligatoria) hostname del portale cittadini, es. comunicapa.ente.it
+#   TRAEFIK_ADMIN_MIDDLEWARES middleware gia' definiti in Traefik da applicare al
+#                         backoffice, separati da virgola (es. un ipallowlist per
+#                         la sola rete interna: lan-only@docker). Default: nessuno
+#   TRAEFIK_NETWORK       rete docker esterna condivisa con Traefik (default: proxy)
+#   TRAEFIK_ENTRYPOINT    entrypoint HTTPS di Traefik (default: websecure)
+#   TRAEFIK_ROUTER_PREFIX prefisso di router e service, unico per istanza
+#                         se piu' stack ComunicaPA girano sullo stesso Traefik
+#                         (default: comunicapa)
+#
+# TLS: tls=true usa il certificato di default di Traefik (o il resolver configurato
+# sull'entrypoint). CITIZEN_ORIGIN va impostata a https://<TRAEFIK_HOST_CITIZEN>.
+
+x-traefik-admin: &traefik-admin
+  - traefik.enable=true
+  - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.rule=Host(`${TRAEFIK_HOST_ADMIN:?TRAEFIK_HOST_ADMIN obbligatoria}`)
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.tls=true
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.middlewares=${TRAEFIK_ADMIN_MIDDLEWARES:-}
+  - traefik.http.services.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.loadbalancer.server.port=8080
+
+x-traefik-citizen: &traefik-citizen
+  - traefik.enable=true
+  - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-citizen.rule=Host(`${TRAEFIK_HOST_CITIZEN:?TRAEFIK_HOST_CITIZEN obbligatoria}`)
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-citizen.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-citizen.tls=true
+  - traefik.http.services.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-citizen.loadbalancer.server.port=8080
+
+services:
+
+  frontend-admin:
+    # Nessuna porta sull'host: si entra solo da Traefik.
+    ports: !reset []
+    networks:
+      - comunicapa-net
+      - traefik
+    labels: *traefik-admin
+
+  frontend-citizen:
+    ports: !reset []
+    networks:
+      - comunicapa-net
+      - traefik
+    labels: *traefik-citizen
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
