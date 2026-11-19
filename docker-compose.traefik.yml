@@ -8,14 +8,12 @@
 # Variabili dello stack:
 #   TRAEFIK_HOST_ADMIN    (obbligatoria) hostname del backoffice, es. comunicapa-bo.ente.it
 #   TRAEFIK_HOST_CITIZEN  (obbligatoria) hostname del portale cittadini, es. comunicapa.ente.it
-#   TRAEFIK_ADMIN_ALLOW   IP/CIDR ammessi al backoffice, separati da virgola
-#                         (default: tutti; es. 10.0.0.0/8 per la sola rete interna)
-#   TRAEFIK_ADMIN_MIDDLEWARES middleware del router backoffice, al posto
-#                         dell'allowlist sopra: per riusarne uno gia' definito
-#                         in Traefik (es. lan-only@docker); separati da virgola
+#   TRAEFIK_ADMIN_MIDDLEWARES middleware gia' definiti in Traefik da applicare al
+#                         backoffice, separati da virgola (es. un ipallowlist per
+#                         la sola rete interna: lan-only@docker). Default: nessuno
 #   TRAEFIK_NETWORK       rete docker esterna condivisa con Traefik (default: proxy)
 #   TRAEFIK_ENTRYPOINT    entrypoint HTTPS di Traefik (default: websecure)
-#   TRAEFIK_ROUTER_PREFIX prefisso di router/service/middleware, unico per istanza
+#   TRAEFIK_ROUTER_PREFIX prefisso di router e service, unico per istanza
 #                         se piu' stack ComunicaPA girano sullo stesso Traefik
 #                         (default: comunicapa)
 #
@@ -28,8 +26,7 @@ x-traefik-admin: &traefik-admin
   - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.rule=Host(`${TRAEFIK_HOST_ADMIN:?TRAEFIK_HOST_ADMIN obbligatoria}`)
   - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
   - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.tls=true
-  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.middlewares=${TRAEFIK_ADMIN_MIDDLEWARES:-${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin-allow}
-  - traefik.http.middlewares.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin-allow.ipallowlist.sourcerange=${TRAEFIK_ADMIN_ALLOW:-0.0.0.0/0,::/0}
+  - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.middlewares=${TRAEFIK_ADMIN_MIDDLEWARES:-}
   - traefik.http.services.${TRAEFIK_ROUTER_PREFIX:-comunicapa}-admin.loadbalancer.server.port=8080
 
 x-traefik-citizen: &traefik-citizen
