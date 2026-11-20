@@ -22,6 +22,7 @@ const baseReport: SendReportDto = {
     externalId: null,
     sendDeliveryKind: null,
     sendRegisteredLetterCode: null,
+    protocol: null,
   }],
 };
 

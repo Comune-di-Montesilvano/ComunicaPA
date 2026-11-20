@@ -4799,6 +4799,7 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
         externalId: null,
         sendDeliveryKind: 'PEC',
         sendRegisteredLetterCode: null,
+        protocol: null,
       }]);
     });
 
@@ -5035,6 +5036,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         postalDeliveryDate: null,
         postalAcceptanceId: null,
         sentAt: null,
+        protocol: null,
         postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }],
         address: '', municipality: '', foreignState: '',
         codiceErrore: '',

@@ -5,6 +5,7 @@ import {
   maggioliFromSend,
   sendDeliveryKind,
   sendRegisteredLetterOf,
+  protocolOf,
   maggioliOcr,
 } from './maggioli-export.util.js';
 import type { PostalReportRowDto, SendReportRowDto } from './dto/campaign-stats.dto.js';
@@ -19,7 +20,7 @@ function postal(over: Partial<PostalReportRowDto>): PostalReportRowDto {
     externalId: OCR18, posteVerification: null, posteDiscrepancy: false,
     legalOutcome: 'delivered', legalOutcomeReason: 'Consegnato a Domicilio', legalOutcomeAt: '2026-05-14T10:00:00.000Z',
     postalAcceptanceId: '614451234567', postalDeliveryStatus: 'Consegnato a Domicilio', postalDeliveryDate: '2026-05-14T10:00:00.000Z',
-    sentAt: '2026-05-02T09:00:00.000Z',
+    sentAt: '2026-05-02T09:00:00.000Z', protocol: null,
     ...over,
   };
 }
@@ -28,7 +29,7 @@ function send(over: Partial<SendReportRowDto>): SendReportRowDto {
   return {
     codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi', iun: 'IUN-1', digitalDomicileType: null, digitalDomicileAddress: null,
     sendStatus: 'EFFECTIVE_DATE', address: '', municipality: '', foreignState: '', appIoOutcome: null, externalId: OCR18,
-    sendDeliveryKind: null, sendRegisteredLetterCode: null,
+    sendDeliveryKind: null, sendRegisteredLetterCode: null, protocol: null,
     sendStatusHistory: [
       { status: 'ACCEPTED', activeFrom: '2026-05-01T08:00:00Z' },
       { status: 'EFFECTIVE_DATE', activeFrom: '2026-05-12T22:30:00Z' },
@@ -72,7 +73,7 @@ describe('tracciato Notifiche (64 caratteri)', () => {
       postal({ legalOutcomeReason: 'Via PEC', postalAcceptanceId: null }),
     ]);
     expect(exp.notifiche).toHaveLength(2);
-    expect(exp.notifiche[1].raccomandata).toBeNull();
+    expect(exp.notifiche[1].raccomandata).toBe('PEC');
   });
 });
 
@@ -110,7 +111,7 @@ describe('tracciato Mancate notifiche (150 caratteri)', () => {
       { status: 'UNREACHABLE', activeFrom: '2026-05-10T08:00:00Z' },
     ] })]);
     const [line] = buildMaggioliMancateTxt(exp.mancate).split('\n');
-    expect(line.slice(2, 26)).toBe(' '.repeat(24));
+    expect(line.slice(2, 26)).toBe('SEND RACC'.padEnd(24));
     expect(line.slice(42, 44)).toBe(' 4');
     expect(line.slice(44, 64)).toBe('01/05/202610/05/2026');
   });
@@ -163,26 +164,40 @@ describe('canale SEND nei campi note', () => {
     expect(sendRegisteredLetterOf(null)).toBeNull();
   });
 
-  it('notifiche: sigla nel campo inkjet (42-49) e raccomandata del recapitista nei campi raccomandata', () => {
+  it('protocollo n/anno del tentativo protocollato più recente', () => {
+    expect(protocolOf([
+      { attemptNumber: 1, protocolNumber: 10, protocolYear: 2026 },
+      { attemptNumber: 2, protocolNumber: null },
+      { attemptNumber: 3, protocolNumber: 12345, protocolYear: 2026 },
+    ])).toBe('12345/2026');
+    expect(protocolOf([null, { attemptNumber: 1, protocolNumber: null }])).toBeNull();
+  });
+
+  it('notifiche: raccomandata in entrambi i campi; senza, sigla (12-23) e protocollo (52-63)', () => {
     const exp = maggioliFromSend([
-      send({ sendDeliveryKind: 'RACC', sendRegisteredLetterCode: '614451234567' }),
-      send({ sendDeliveryKind: 'PEC', sendRegisteredLetterCode: '614451234567' }),
+      send({ sendDeliveryKind: 'RACC', sendRegisteredLetterCode: '614451234567', protocol: '12345/2026' }),
+      send({ sendDeliveryKind: 'PEC', sendRegisteredLetterCode: '614451234567', protocol: '12345/2026' }),
       send({ sendDeliveryKind: 'IO' }),
     ]);
     const [racc, pec, io] = buildMaggioliNotificheTxt(exp.notifiche).split('\n');
     expect(racc.slice(11, 23)).toBe('614451234567');
-    expect(racc.slice(41, 49)).toBe('SEND RAC');
     expect(racc.slice(51, 63)).toBe('614451234567');
-    expect(pec.slice(11, 23)).toBe(' '.repeat(12));
-    expect(pec.slice(41, 49)).toBe('SEND PEC');
-    expect(io.slice(41, 49)).toBe('SEND IO ');
+    expect(pec.slice(11, 23)).toBe('SEND PEC    ');
+    expect(pec.slice(51, 63)).toBe('12345/2026  ');
+    expect(io.slice(11, 23)).toBe('SEND APPIO  ');
+    expect(io.slice(51, 63)).toBe(' '.repeat(12));
+    expect(racc.slice(41, 49)).toBe(' '.repeat(8));
     expect(racc).toHaveLength(64);
   });
 
-  it('mancate: sigla nel campo inkjet (65-80), default SEND RACC', () => {
-    const exp = maggioliFromSend([send({ sendStatusHistory: [ACC, { status: 'RETURNED_TO_SENDER', activeFrom: '2026-05-10T08:00:00Z' }] })]);
+  it('mancate: sigla (3-14) e protocollo (15-26), default SEND RACC; postalizzazione dirottata = PEC', () => {
+    const exp = maggioliFromSend([send({ protocol: '7/2026', sendStatusHistory: [ACC, { status: 'RETURNED_TO_SENDER', activeFrom: '2026-05-10T08:00:00Z' }] })]);
     const [line] = buildMaggioliMancateTxt(exp.mancate).split('\n');
-    expect(line.slice(64, 80)).toBe('SEND RACC'.padEnd(16));
+    expect(line.slice(2, 14)).toBe('SEND RACC   ');
+    expect(line.slice(14, 26)).toBe('7/2026      ');
+    expect(line.slice(64, 80)).toBe(' '.repeat(16));
     expect(line).toHaveLength(150);
+    const pec = maggioliFromPostal([postal({ legalOutcomeReason: 'Via PEC', postalAcceptanceId: null, protocol: '99/2026' })]);
+    expect(pec.notifiche[0]).toMatchObject({ raccomandata: 'PEC', raccomandata2: '99/2026' });
   });
 });
