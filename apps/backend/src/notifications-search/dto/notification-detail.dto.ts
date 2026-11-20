@@ -51,6 +51,8 @@ export interface NotificationDetailDto {
     pec: string | null;
     status: string;
     physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null;
+    /** External ID (es. OCR Maggioli) dalla colonna mappata, null se assente. */
+    externalId: string | null;
   };
   campaign: {
     id: string;

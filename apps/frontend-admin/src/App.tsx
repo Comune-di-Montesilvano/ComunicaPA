@@ -45,6 +45,7 @@ const ADMIN_API_BASE = `${API_BASE}/admin`;
 const CAMPAIGN_NOT_ACCESSIBLE_MESSAGE = 'Campagna non trovata o non accessibile';
 
 import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from './data/channels';
+import { guessOcrColumns, ocrPairs, parseOcrCsv, type OcrCsv } from './ocr-csv';
 import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, GUIDA_DATE_TERMINI, guidaSections } from './guida';
 import { pickWizardMailConfigId, coDeliveryModeWithServices } from './wizard-defaults';
 import { errorMessage } from './error-message';
@@ -1702,7 +1703,7 @@ export function App(): React.JSX.Element {
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [notifDetail, setNotifDetail] = useState<{
-    recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
+    recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null; externalId?: string | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
     attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; sendStatusHistory?: Array<{ status: string; activeFrom: string }> | null; sendTimeline?: SendTimelineEvent[] | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; trackingUntil?: string | null; summary?: string | null; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; posteVerifications?: Array<{ status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; trackingUntil?: string | null; summary?: string | null; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> }>; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
@@ -3101,6 +3102,17 @@ export function App(): React.JSX.Element {
   const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   // Export esiti per Sicr@Web (tracciati Service Maggioli): solo SEND/POSTAL con OCR in external ID.
+  // Abbinamento OCR a posteriori da CSV (campagne SEND/POSTAL).
+  const [ocrImportOpen, setOcrImportOpen] = useState(false);
+  const [ocrImportCsv, setOcrImportCsv] = useState<OcrCsv | null>(null);
+  const [ocrImportCols, setOcrImportCols] = useState<{ cf: number; ocr: number }>({ cf: -1, ocr: -1 });
+  const [ocrImportPreview, setOcrImportPreview] = useState<Record<string, number> | null>(null);
+  const [ocrImportBusy, setOcrImportBusy] = useState(false);
+  const [ocrImportDone, setOcrImportDone] = useState(false);
+  // External ID impostabile dal dettaglio notifica quando manca.
+  const [notifExternalIdDraft, setNotifExternalIdDraft] = useState('');
+  const [notifExternalIdSaving, setNotifExternalIdSaving] = useState(false);
+  useEffect(() => { setNotifExternalIdDraft(''); }, [notifDetail?.recipient.id]);
   const [maggioliSummary, setMaggioliSummary] = useState<{ notifiche: number; mancate: number; senzaOcr: number; nonEsportabili: number } | null>(null);
   const [postalDeliveryStatusBreakdown, setPostalDeliveryStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
@@ -6933,6 +6945,70 @@ export function App(): React.JSX.Element {
       URL.revokeObjectURL(url);
     } catch {
       alert('Errore durante il download del report');
+    }
+  };
+
+  const resetOcrImport = () => {
+    setOcrImportCsv(null);
+    setOcrImportCols({ cf: -1, ocr: -1 });
+    setOcrImportPreview(null);
+    setOcrImportDone(false);
+  };
+
+  const handleOcrImportFile = async (file: File | undefined) => {
+    resetOcrImport();
+    if (!file) return;
+    const csv = parseOcrCsv(await file.text());
+    setOcrImportCsv(csv);
+    setOcrImportCols(guessOcrColumns(csv.headers));
+  };
+
+  const handleOcrImportRun = async (dryRun: boolean) => {
+    if (!campaign || !ocrImportCsv || ocrImportCols.cf < 0 || ocrImportCols.ocr < 0) return;
+    setOcrImportBusy(true);
+    try {
+      const res = await apiFetch(`/campaigns/${campaign.id}/maggioli-ocr-import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pairs: ocrPairs(ocrImportCsv, ocrImportCols.cf, ocrImportCols.ocr), dryRun }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        alert(data?.message || 'Errore durante l\'abbinamento OCR');
+        return;
+      }
+      setOcrImportPreview(data);
+      if (!dryRun) {
+        setOcrImportDone(true);
+        fetchMaggioliSummary(campaign.id);
+      }
+    } catch {
+      alert('Errore durante l\'abbinamento OCR');
+    } finally {
+      setOcrImportBusy(false);
+    }
+  };
+
+  const handleNotifExternalIdSave = async () => {
+    if (!notifDetail || !notifExternalIdDraft.trim()) return;
+    setNotifExternalIdSaving(true);
+    try {
+      const res = await apiFetch(`/campaigns/${notifDetail.campaign.id}/recipients/${notifDetail.recipient.id}/external-id`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ externalId: notifExternalIdDraft.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        alert(data?.message || 'Errore durante il salvataggio dell\'External ID');
+        return;
+      }
+      setNotifDetail({ ...notifDetail, recipient: { ...notifDetail.recipient, externalId: data.externalId } });
+      setNotifExternalIdDraft('');
+    } catch {
+      alert('Errore durante il salvataggio dell\'External ID');
+    } finally {
+      setNotifExternalIdSaving(false);
     }
   };
 
@@ -13681,6 +13757,30 @@ export function App(): React.JSX.Element {
                             {notifDetail.campaign.name}
                           </a>
                         </p>
+                        {notifDetail.recipient.externalId ? (
+                          <p className="nd-who-meta small mb-0">
+                            <span className="text-muted me-1">External ID:</span><code>{notifDetail.recipient.externalId}</code>
+                          </p>
+                        ) : (
+                          <form
+                            className="d-flex align-items-center gap-1 mt-1"
+                            onSubmit={(e) => { e.preventDefault(); handleNotifExternalIdSave(); }}
+                          >
+                            <label className="small text-muted text-nowrap mb-0" htmlFor="nd_external_id">External ID:</label>
+                            <input
+                              id="nd_external_id"
+                              className="form-control form-control-sm"
+                              style={{ maxWidth: '16rem' }}
+                              placeholder="es. codice OCR Maggioli"
+                              maxLength={64}
+                              value={notifExternalIdDraft}
+                              onChange={(e) => setNotifExternalIdDraft(e.target.value)}
+                            />
+                            <button type="submit" className="btn btn-sm btn-outline-primary" disabled={notifExternalIdSaving || !notifExternalIdDraft.trim()}>
+                              {notifExternalIdSaving ? <Loader2 className="icon-spin" size={14} /> : 'Salva'}
+                            </button>
+                          </form>
+                        )}
                       </div>
                     ) : (
                       <h5 className="modal-title mb-0">Dettaglio Notifica</h5>
@@ -14626,6 +14726,73 @@ export function App(): React.JSX.Element {
                     </table>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {ocrImportOpen && campaign && (
+            <div className="modal d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={(e) => { if (e.target === e.currentTarget && !ocrImportBusy) setOcrImportOpen(false); }}>
+              <div className="modal-dialog modal-lg">
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h5 className="modal-title">Abbina OCR da CSV</h5>
+                    <button type="button" className="btn-close" aria-label="Chiudi" disabled={ocrImportBusy} onClick={() => setOcrImportOpen(false)} />
+                  </div>
+                  <div className="modal-body">
+                    <p className="small text-muted">
+                      Carica un CSV con il codice fiscale / partita IVA e il codice OCR dell'atto. L'OCR viene scritto come External ID solo sui destinatari che non lo hanno; i valori già presenti non vengono toccati. Un codice fiscale presente più volte nella campagna, o con OCR diversi nel CSV, viene saltato.
+                    </p>
+                    <input type="file" accept=".csv,text/csv" className="form-control mb-3" disabled={ocrImportBusy} onChange={(e) => handleOcrImportFile(e.target.files?.[0])} />
+                    {ocrImportCsv && (
+                      <>
+                        <div className="row g-2 mb-3">
+                          <div className="col-md-6">
+                            <label className="form-label small fw-semibold" htmlFor="ocr_col_cf">Colonna codice fiscale / P.IVA</label>
+                            <select id="ocr_col_cf" className="form-select form-select-sm" value={ocrImportCols.cf} disabled={ocrImportBusy || ocrImportDone} onChange={(e) => { setOcrImportCols({ ...ocrImportCols, cf: Number(e.target.value) }); setOcrImportPreview(null); }}>
+                              <option value={-1}>— scegli —</option>
+                              {ocrImportCsv.headers.map((h, i) => <option key={i} value={i}>{h || `Colonna ${i + 1}`}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small fw-semibold" htmlFor="ocr_col_ocr">Colonna OCR</label>
+                            <select id="ocr_col_ocr" className="form-select form-select-sm" value={ocrImportCols.ocr} disabled={ocrImportBusy || ocrImportDone} onChange={(e) => { setOcrImportCols({ ...ocrImportCols, ocr: Number(e.target.value) }); setOcrImportPreview(null); }}>
+                              <option value={-1}>— scegli —</option>
+                              {ocrImportCsv.headers.map((h, i) => <option key={i} value={i}>{h || `Colonna ${i + 1}`}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <p className="small text-muted mb-2">{ocrImportCsv.rows.length} righe nel file.</p>
+                      </>
+                    )}
+                    {ocrImportPreview && (
+                      <div className={`alert ${ocrImportDone ? 'alert-success' : 'alert-info'} small mb-0`}>
+                        <strong>{ocrImportDone ? `OCR scritto su ${ocrImportPreview.daScrivere} destinatari.` : `Da scrivere: ${ocrImportPreview.daScrivere} destinatari.`}</strong>
+                        <ul className="mb-0 mt-1">
+                          <li>Già presenti (uguali): {ocrImportPreview.giaPresenti}</li>
+                          <li>Già presenti con OCR diverso (non toccati): {ocrImportPreview.diversi}</li>
+                          <li>Codice fiscale non presente nella campagna: {ocrImportPreview.nonTrovati}</li>
+                          <li>Codice fiscale ripetuto nella campagna: {ocrImportPreview.ambiguiCampagna}</li>
+                          <li>Codice fiscale con OCR diversi nel CSV: {ocrImportPreview.ambiguiCsv}</li>
+                          <li>Righe senza CF o con OCR non valido (meno di 16 caratteri): {ocrImportPreview.nonValidi}</li>
+                          <li>Destinatari della campagna ancora senza OCR {ocrImportDone ? '' : 'dopo l\'abbinamento'}: {ocrImportPreview.senzaOcrDopo}</li>
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn btn-outline-secondary" disabled={ocrImportBusy} onClick={() => setOcrImportOpen(false)}>Chiudi</button>
+                    {!ocrImportDone && (
+                      <>
+                        <button type="button" className="btn btn-outline-primary" disabled={ocrImportBusy || !ocrImportCsv || ocrImportCols.cf < 0 || ocrImportCols.ocr < 0} onClick={() => handleOcrImportRun(true)}>
+                          Anteprima
+                        </button>
+                        <button type="button" className="btn btn-primary" disabled={ocrImportBusy || !ocrImportPreview || ocrImportPreview.daScrivere === 0} onClick={() => handleOcrImportRun(false)}>
+                          {ocrImportBusy ? <Loader2 className="icon-spin me-1" size={14} /> : null}Scrivi OCR
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -18535,6 +18702,15 @@ export function App(): React.JSX.Element {
                                     <History className="me-1" size={14} />Storico
                                   </button>
                                 </div>
+                              )}
+                              {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (campaign?.totalRecipients ?? 0) > 0 && (
+                                <button
+                                  className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-secondary"
+                                  onClick={() => { resetOcrImport(); setOcrImportOpen(true); }}
+                                  title="Abbina il codice OCR (External ID) ai destinatari che non ce l'hanno, da un CSV con codice fiscale/P.IVA e OCR"
+                                >
+                                  <Upload className="me-1" size={14} />Abbina OCR da CSV
+                                </button>
                               )}
                               {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && maggioliSummary && (maggioliSummary.notifiche + maggioliSummary.mancate) > 0 && (
                                 <div

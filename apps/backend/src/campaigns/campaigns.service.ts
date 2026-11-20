@@ -27,6 +27,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service.
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
 import { reportPhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
 import { maggioliFromPostal, maggioliFromSend, type MaggioliExport } from './maggioli-export.util.js';
+import { matchOcrImport, type OcrImportResult } from './maggioli-ocr-import.util.js';
 import type { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto.js';
 import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto.js';
@@ -3768,6 +3769,69 @@ export class CampaignsService {
     if (campaign.channelType === 'POSTAL') return maggioliFromPostal((await this.getPostalReportRows(campaignId)).rows);
     if (campaign.channelType === 'SEND') return maggioliFromSend((await this.getSendReportRows(campaignId)).rows);
     throw new BadRequestException('Esportazione Maggioli disponibile solo per campagne SEND e Postalizzazione');
+  }
+
+  /**
+   * Abbina a posteriori l'OCR Maggioli (External ID) per CF/P.IVA, solo
+   * dove manca. Scrive nella colonna External ID mappata della campagna
+   * (default `external_id`), così export e report lo leggono come se fosse
+   * arrivato nel tracciato originale.
+   */
+  /**
+   * Imposta l'External ID di un destinatario che non ce l'ha (dettaglio
+   * notifica). Mai sovrascrive: un valore già presente resta.
+   */
+  async setRecipientExternalId(campaignId: string, recipientId: string, rawValue: string): Promise<{ externalId: string }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    const recipient = await this.recipientRepo.findOne({
+      where: { id: recipientId, campaignId },
+      select: { id: true, extraData: true },
+    });
+    if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
+    if (resolveExternalId(campaign, recipient)) throw new BadRequestException('External ID già presente: non modificabile');
+    const value = rawValue.trim();
+    if (!value) throw new BadRequestException('External ID vuoto');
+    const csvMapping = campaign.channelConfig?.['csvMapping'] as Record<string, unknown> | undefined;
+    const column = (csvMapping?.['externalId'] as string | undefined) || 'external_id';
+    await this.recipientRepo.query(
+      `UPDATE recipients SET extra_data = COALESCE(extra_data, '{}'::jsonb) || jsonb_build_object($1::text, $2::text) WHERE id = $3 AND campaign_id = $4`,
+      [column, value, recipientId, campaignId],
+    );
+    return { externalId: value };
+  }
+
+  async importMaggioliOcr(campaignId: string, pairs: unknown[], dryRun: boolean): Promise<OcrImportResult['summary']> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.channelType !== 'POSTAL' && campaign.channelType !== 'SEND') {
+      throw new BadRequestException('Abbinamento OCR disponibile solo per campagne SEND e Postalizzazione');
+    }
+    const clean = pairs.filter((p): p is [string, string] =>
+      Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && typeof p[1] === 'string' && p[0].length <= 32 && p[1].length <= 64);
+    if (clean.length !== pairs.length) throw new BadRequestException('Formato coppie CF/OCR non valido');
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId },
+      select: { id: true, codiceFiscale: true, extraData: true },
+    });
+    const { toWrite, summary } = matchOcrImport(clean, recipients.map((r) => ({
+      id: r.id, codiceFiscale: r.codiceFiscale, externalId: resolveExternalId(campaign, r),
+    })));
+    if (dryRun || toWrite.length === 0) return summary;
+
+    const csvMapping = campaign.channelConfig?.['csvMapping'] as Record<string, unknown> | undefined;
+    const column = (csvMapping?.['externalId'] as string | undefined) || 'external_id';
+    for (let i = 0; i < toWrite.length; i += 1000) {
+      const chunk = toWrite.slice(i, i + 1000);
+      await this.recipientRepo.query(
+        `UPDATE recipients r SET extra_data = COALESCE(r.extra_data, '{}'::jsonb) || jsonb_build_object($1::text, v.ocr)
+         FROM unnest($2::uuid[], $3::text[]) AS v(id, ocr)
+         WHERE r.id = v.id AND r.campaign_id = $4`,
+        [column, chunk.map((w) => w.recipientId), chunk.map((w) => w.ocr), campaignId],
+      );
+    }
+    return summary;
   }
 
   async getPostalReportRows(campaignId: string): Promise<PostalReportDto> {

@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -38,6 +39,8 @@ import { TestSendDto } from './dto/test-send.dto.js';
 import { SetSignerDto } from './dto/set-signer.dto.js';
 import { LaunchCampaignDto } from './dto/launch-campaign.dto.js';
 import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto.js';
+import { ImportMaggioliOcrDto } from './dto/import-maggioli-ocr.dto.js';
+import { SetRecipientExternalIdDto } from './dto/set-recipient-external-id.dto.js';
 import { AttachPostalTrackingIdDto } from './dto/attach-postal-tracking-id.dto.js';
 import { UpdateCampaignContentDto } from './dto/update-campaign-content.dto.js';
 import { getUploadsDir, safeGetUploadsDir } from '../attachments/attachment-paths.js';
@@ -770,6 +773,25 @@ export class CampaignsController {
     return result;
   }
 
+  @Patch(':id/recipients/:recipientId/external-id')
+  async setRecipientExternalId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    @Body() dto: SetRecipientExternalIdDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const result = await this.campaignsService.setRecipientExternalId(id, recipientId, dto.externalId);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'SET_EXTERNAL_ID',
+      details: { recipientId, externalId: result.externalId },
+    });
+    return result;
+  }
+
   @Post(':id/recipients/:recipientId/postal/refresh-status')
   async refreshPostalStatus(
     @Param('id', ParseUUIDPipe) id: string,
@@ -950,6 +972,28 @@ export class CampaignsController {
   async getMaggioliExportSummary(@Param('id', ParseUUIDPipe) id: string) {
     const exp = await this.campaignsService.getMaggioliExport(id);
     return { notifiche: exp.notifiche.length, mancate: exp.mancate.length, senzaOcr: exp.senzaOcr, nonEsportabili: exp.nonEsportabili };
+  }
+
+  @Post(':id/maggioli-ocr-import')
+  @HttpCode(200)
+  async importMaggioliOcr(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ImportMaggioliOcrDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const dryRun = dto.dryRun ?? false;
+    const summary = await this.campaignsService.importMaggioliOcr(id, dto.pairs, dryRun);
+    if (!dryRun && summary.daScrivere > 0) {
+      const campaign = await this.campaignsService.findOne(id).catch(() => null);
+      await this.auditLogsService.log({
+        campaignId: id,
+        campaignName: campaign ? campaign.name : null,
+        operator: req.user.username,
+        action: 'MAGGIOLI_OCR_IMPORT',
+        details: { ...summary },
+      });
+    }
+    return summary;
   }
 
   @Get(':id/export-maggioli-notifiche.txt')

@@ -120,6 +120,11 @@ Per le campagne SEND e Posta con l'**External ID** valorizzato con il codice OCR
 - **Mancate**: raccomandate restituite, con il motivo (sconosciuto, trasferito, irreperibile, deceduto, indirizzo insufficiente/inesatto/inesistente), e notifiche SEND con destinatario irreperibile.
 
 La chiave è il riferimento verbale: i primi 16 caratteri dell'OCR, senza i 2 caratteri di controllo. Gli invii ancora senza esito definitivo e quelli senza OCR non compaiono nei file: il numero è indicato passando il mouse sui bottoni.
+
+Se la campagna è stata caricata senza OCR, puoi aggiungerlo dopo:
+
+- **Abbina OCR da CSV** (dettaglio campagna): carichi un CSV con codice fiscale / partita IVA e OCR (ad esempio estratto da Sicr@Web) e scegli le due colonne. **Anteprima** mostra quanti destinatari verranno aggiornati, poi **Scrivi OCR** salva. L'OCR viene scritto solo dove manca: i valori già presenti non cambiano. Un codice fiscale presente più volte nella campagna, o con OCR diversi nel CSV, viene saltato. Le partite IVA a cui Excel ha tolto gli zeri iniziali vengono riconosciute comunque.
+- **Dettaglio notifica**: sotto il nome del destinatario c'è l'**External ID**; se manca, puoi inserirlo e salvarlo. Una volta salvato non è più modificabile.
 5. Nelle campagne SEND non compaiono i dati sui documenti scaricati: il destinatario apre la notifica su SEND (app IO, sito di SEND o punto di ritiro), non da ComunicaPA. Per sapere se l'ha letta guarda lo stato SEND **Letta dal destinatario**.
 6. Con **Torna a Campagne** l'elenco riporta in vista la campagna appena consultata e la evidenzia per qualche secondo.
 
