@@ -6,6 +6,8 @@ import { DomicileVerificationJob, DomicileVerificationJobStatus } from '../../en
 import { InadService, InadQuotaExceededError, resolveInadDigitalAddress } from '../inad/inad.service.js';
 import { buildDomicileVerificationCsvs } from './domicile-verification-csv.util.js';
 import { DomicileVerificationEventsService } from './domicile-verification-events.service.js';
+import { AnprMassivoService } from '../anpr/anpr-massivo.service.js';
+import { errorMessage } from '../../common/error-message.js';
 
 /** Rete di sicurezza: un job bloccato oltre questa soglia (una fonte mai
  * completa per un bug non ancora scoperto) va chiuso esplicitamente FAILED
@@ -15,6 +17,12 @@ import { DomicileVerificationEventsService } from './domicile-verification-event
  * mai soggetta a questo timeout, vedi sotto) — margine di sicurezza più
  * ampio per i casi genuinamente bloccati (bug, non quota). */
 const STALE_AFTER_HOURS = 48;
+
+/** Elaborazioni massive ANPR: fino a 3 giorni per doc ufficiale, più margine. */
+const ANPR_STALE_AFTER_HOURS = 96;
+
+/** Download ANPR riprovato al massimo ogni 10 minuti (esito in ore/giorni). */
+const ANPR_POLL_INTERVAL_MS = 10 * 60_000;
 
 /**
  * Poll periodico dei job PROCESSING — un job è completo solo quando TUTTE e
@@ -32,6 +40,7 @@ export class DomicileVerificationSyncService {
     private readonly jobRepo: Repository<DomicileVerificationJob>,
     private readonly inadService: InadService,
     private readonly domicileEvents: DomicileVerificationEventsService,
+    private readonly anprMassivo: AnprMassivoService,
   ) {
     // Trigger immediato quando App IO/Registro Imprese completano — senza
     // questo l'ultima fonte a chiudersi resta invisibile fino al prossimo
@@ -127,18 +136,27 @@ export class DomicileVerificationSyncService {
     // non cambia più dopo la creazione.
     const appIoReady = job.cfFisicoTotal === 0 || job.appIoDone;
     const registroImpreseReady = job.registroImpreseDone >= job.registroImpreseTotal;
-    const complete = inadAllReady && inadFetched && appIoReady && registroImpreseReady;
+    const anpr = await this.syncAnpr(job);
+    if (anpr.changed) {
+      patch.anprRequests = anpr.requests;
+      patch.anprResults = anpr.results;
+      patch.anprVitaResults = anpr.vitaResults;
+    }
+    const complete = inadAllReady && inadFetched && appIoReady && registroImpreseReady && anpr.ready;
 
     if (!complete) {
       const ageHours = (Date.now() - new Date(job.createdAt).getTime()) / 3_600_000;
-      if (!quotaBlocked && ageHours > STALE_AFTER_HOURS) {
+      // Con ANPR ancora pendente vale la soglia lunga: l'elaborazione massiva
+      // può legittimamente durare fino a 3 giorni.
+      const staleAfter = anpr.ready ? STALE_AFTER_HOURS : ANPR_STALE_AFTER_HOURS;
+      if (!quotaBlocked && ageHours > staleAfter) {
         await this.jobRepo.update(job.id, {
           ...patch,
           status: DomicileVerificationJobStatus.FAILED,
-          errorMessage: `Verifica interrotta: non completata entro ${STALE_AFTER_HOURS}h (INAD pronto: ${inadAllReady}, App IO pronto: ${appIoReady}, Registro Imprese ${job.registroImpreseDone}/${job.registroImpreseTotal}).`,
+          errorMessage: `Verifica interrotta: non completata entro ${staleAfter}h (INAD pronto: ${inadAllReady}, App IO pronto: ${appIoReady}, Registro Imprese ${job.registroImpreseDone}/${job.registroImpreseTotal}, ANPR pronto: ${anpr.ready}${anpr.lastResponse ? ` — ultima risposta ANPR: ${anpr.lastResponse}` : ''}).`,
           completedAt: new Date(),
         });
-        this.logger.warn(`DomicileVerificationJob ${job.id} marcato FAILED per stallo (>${STALE_AFTER_HOURS}h in PROCESSING).`);
+        this.logger.warn(`DomicileVerificationJob ${job.id} marcato FAILED per stallo (>${staleAfter}h in PROCESSING).`);
         return;
       }
       await this.jobRepo.update(job.id, patch);
@@ -152,6 +170,9 @@ export class DomicileVerificationSyncService {
       inadFoundMap,
       appIoResults: job.appIoResults,
       registroImpreseResults: job.registroImpreseResults,
+      registroImpreseFoundMap: job.registroImpreseFoundMap ?? {},
+      anprResults: anpr.results,
+      anprVitaResults: anpr.vitaResults,
     });
 
     await this.jobRepo.update(job.id, {
@@ -165,5 +186,63 @@ export class DomicileVerificationSyncService {
       completedAt: new Date(),
     });
     this.logger.log(`DomicileVerificationJob ${job.id} completato`);
+  }
+
+  /**
+   * Prova a scaricare gli esiti ANPR ancora pendenti (al massimo ogni
+   * ANPR_POLL_INTERVAL_MS per richiesta). Un errore ANPR non fa mai fallire
+   * il job: resta pendente, con l'ultima risposta salvata per la diagnosi,
+   * fino all'esito, allo "Salta ANPR" dell'admin o alla soglia di stallo.
+   */
+  private async syncAnpr(job: DomicileVerificationJob): Promise<{
+    ready: boolean;
+    changed: boolean;
+    requests: DomicileVerificationJob['anprRequests'];
+    results: Record<string, boolean>;
+    vitaResults: Record<string, 'S' | 'N' | null>;
+    lastResponse?: string;
+  }> {
+    const requests = (job.anprRequests ?? []).map((r) => ({ ...r }));
+    const results = { ...(job.anprResults ?? {}) };
+    const vitaResults = { ...(job.anprVitaResults ?? {}) };
+    let changed = false;
+    let lastResponse: string | undefined;
+    const now = Date.now();
+
+    for (const req of requests) {
+      if (req.done) continue;
+      if (req.lastPolledAt && now - new Date(req.lastPolledAt).getTime() < ANPR_POLL_INTERVAL_MS) {
+        lastResponse = req.lastResponse;
+        continue;
+      }
+      changed = true;
+      req.lastPolledAt = new Date(now).toISOString();
+      try {
+        const res = await this.anprMassivo.download(req.kind, req.id, job.createdBy ?? 'comunicapa');
+        if (!res.ready) {
+          req.lastResponse = res.detail;
+          lastResponse = res.detail;
+          continue;
+        }
+        for (const cf of req.cfs) {
+          const esito = res.esiti.get(cf);
+          if (req.kind === 'id') {
+            results[cf] = !!esito;
+          } else if (!esito) {
+            vitaResults[cf] = null;
+          } else if (esito.esistenzaInVita) {
+            vitaResults[cf] = esito.esistenzaInVita;
+          }
+          // presente ma senza S/N: esito sconosciuto, nessuna voce
+        }
+        req.done = true;
+        req.lastResponse = undefined;
+      } catch (err) {
+        req.lastResponse = errorMessage(err);
+        lastResponse = req.lastResponse;
+        this.logger.warn(`DomicileVerificationJob ${job.id}: download ANPR ${req.kind} ${req.id} fallito: ${req.lastResponse}`);
+      }
+    }
+    return { ready: requests.every((r) => r.done), changed, requests, results, vitaResults, lastResponse };
   }
 }

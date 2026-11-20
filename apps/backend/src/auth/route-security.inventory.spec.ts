@@ -184,7 +184,9 @@ describe('Inventario sicurezza route', () => {
       GET /admin/domicile-verification/jobs/:id/assenti.csv | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs/:id/inad.csv | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs/:id/registro-imprese.csv | auth | roles=user,admin | guards=-
+      POST /admin/domicile-verification/jobs/:id/skip-anpr | auth | roles=admin | guards=-
       POST /admin/domicile-verification/jobs/:id/skip-inad | auth | roles=admin | guards=-
+      GET /admin/domicile-verification/options | auth | roles=user,admin | guards=-
       POST /admin/domicile-verification/verify/upload/chunk/:uploadId/:index | auth | roles=user,admin | guards=-
       POST /admin/domicile-verification/verify/upload/complete/:uploadId | auth | roles=user,admin | guards=-
       POST /admin/domicile-verification/verify/upload/init | auth | roles=user,admin | guards=-
@@ -268,6 +270,8 @@ describe('Inventario sicurezza route', () => {
       PUT /admin/settings | auth | roles=admin | guards=-
       POST /admin/settings/anpr/c002/test-connection | auth | roles=admin | guards=-
       POST /admin/settings/anpr/c019/test-connection | auth | roles=admin | guards=-
+      POST /admin/settings/anpr/massivo-id/test-connection | auth | roles=admin | guards=-
+      POST /admin/settings/anpr/massivo-vita/test-connection | auth | roles=admin | guards=-
       POST /admin/settings/branding/favicon | auth | roles=admin | guards=-
       POST /admin/settings/branding/logo | auth | roles=admin | guards=-
       POST /admin/settings/inad/:env/test-connection | auth | roles=admin | guards=-

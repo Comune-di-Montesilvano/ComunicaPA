@@ -13,7 +13,7 @@ export interface ParsedCsv {
  * riga — l'ultima colonna del file usciva fuori dai bound header.length
  * e spariva silenziosamente, senza errore).
  */
-function detectDelimiter(headerLine: string): ',' | ';' {
+export function detectDelimiter(headerLine: string): ',' | ';' {
   let inQuotes = false;
   let commas = 0;
   let semicolons = 0;
@@ -25,7 +25,7 @@ function detectDelimiter(headerLine: string): ',' | ';' {
   return semicolons > commas ? ';' : ',';
 }
 
-function parseCsvLine(line: string, delimiter: string): string[] {
+export function parseCsvLine(line: string, delimiter: string): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;

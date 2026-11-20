@@ -61,12 +61,20 @@ export class DomicileVerificationController {
         cfColumn: body.cfColumn,
         ioServiceId: body.ioServiceId,
         createdBy: req.user.username,
+        anprId: body.anprId,
+        anprVita: body.anprVita,
       });
     } catch (err) {
       return { blocked: true, message: errorMessage(err, 'Errore durante il riassemblaggio del CSV') };
     } finally {
       cleanupChunkedUpload(uploadId);
     }
+  }
+
+  @Get('options')
+  @Roles('user', 'admin')
+  getOptions() {
+    return this.svc.getOptions();
   }
 
   @Get('jobs')
@@ -92,6 +100,13 @@ export class DomicileVerificationController {
   @Roles('admin')
   async skipInad(@Param('id', ParseUUIDPipe) id: string): Promise<{ ok: true }> {
     await this.svc.skipInad(id);
+    return { ok: true };
+  }
+
+  @Post('jobs/:id/skip-anpr')
+  @Roles('admin')
+  async skipAnpr(@Param('id', ParseUUIDPipe) id: string): Promise<{ ok: true }> {
+    await this.svc.skipAnpr(id);
     return { ok: true };
   }
 

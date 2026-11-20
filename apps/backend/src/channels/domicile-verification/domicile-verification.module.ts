@@ -5,6 +5,7 @@ import { DomicileVerificationJob } from '../../entities/domicile-verification-jo
 import { IoServiceConfig } from '../../entities/io-service-config.entity.js';
 import { InadModule } from '../inad/inad.module.js';
 import { RegistroImpreseModule } from '../registro-imprese/registro-imprese.module.js';
+import { AnprModule } from '../anpr/anpr.module.js';
 import { DomicileVerificationEventsModule } from './domicile-verification-events.module.js';
 import { DomicileVerificationService } from './domicile-verification.service.js';
 import { DomicileVerificationSyncService } from './domicile-verification-sync.service.js';
@@ -17,6 +18,7 @@ import { APP_IO_VERIFY_BULK_QUEUE } from '../../io-services/app-io-verify-bulk-j
   imports: [
     InadModule,
     RegistroImpreseModule,
+    AnprModule,
     DomicileVerificationEventsModule,
     // IoServicesService è @Global() (IoServicesModule) — non serve importare
     // quel modulo esplicitamente, stesso pattern già in uso per AppIoStrategy.

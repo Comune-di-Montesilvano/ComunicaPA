@@ -54,6 +54,7 @@ import { errorMessage } from './error-message';
 // Le voci canale leggono icona, logo e label direttamente da CHANNELS_REGISTRY.
 // ---------------------------------------------------------------------------
 type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'anpr' | 'protocollo' | 'postalizzazione' | 'firma-remota' | 'external-api' | 'oidc' | 'motori';
+type AnprPurposeKey = 'c002' | 'c019' | 'massivo-id' | 'massivo-vita';
 type SettingsNavSection = { section: string };
 type SettingsNavItem = {
   tab: SettingsTab;
@@ -1755,6 +1756,12 @@ export function App(): React.JSX.Element {
     registroImpreseTotal: number;
     registroImpreseDone: number;
     registroImpreseFoundCount: number;
+    anprIdRequested?: boolean;
+    anprVitaRequested?: boolean;
+    anprRequestsTotal?: number;
+    anprRequestsDone?: number;
+    anprNotFoundCount?: number;
+    anprDeceasedCount?: number;
     errorMessage: string | null;
   }
   interface DomicileVerificationJobSummary {
@@ -1776,6 +1783,9 @@ export function App(): React.JSX.Element {
   const [domicileVerifStatus, setDomicileVerifStatus] = useState<DomicileVerificationStatus | null>(null);
   const [domicileVerifSubmitting, setDomicileVerifSubmitting] = useState(false);
   const [domicileVerifSkipping, setDomicileVerifSkipping] = useState(false);
+  const [domicileVerifOptions, setDomicileVerifOptions] = useState<{ anprIdAvailable: boolean; anprVitaAvailable: boolean }>({ anprIdAvailable: false, anprVitaAvailable: false });
+  const [domicileVerifAnprId, setDomicileVerifAnprId] = useState(false);
+  const [domicileVerifAnprVita, setDomicileVerifAnprVita] = useState(false);
   const [domicileVerifSubmitError, setDomicileVerifSubmitError] = useState<string | null>(null);
   const [domicileVerifJobs, setDomicileVerifJobs] = useState<DomicileVerificationJobSummary[]>([]);
   const [domicileVerifJobsLoading, setDomicileVerifJobsLoading] = useState(false);
@@ -2925,10 +2935,12 @@ export function App(): React.JSX.Element {
   const [settRegistroImpreseProdPurposeId, setSettRegistroImpreseProdPurposeId] = useState('');
   const [settAnprC002PurposeId, setSettAnprC002PurposeId] = useState('');
   const [settAnprC019PurposeId, setSettAnprC019PurposeId] = useState('');
+  const [settAnprMassivoIdPurposeId, setSettAnprMassivoIdPurposeId] = useState('');
+  const [settAnprMassivoVitaPurposeId, setSettAnprMassivoVitaPurposeId] = useState('');
   const [settAnprTracingUserLocation, setSettAnprTracingUserLocation] = useState('');
   const [settAnprTracingLoA, setSettAnprTracingLoA] = useState('');
-  const [settAnprTesting, setSettAnprTesting] = useState<'c002' | 'c019' | null>(null);
-  const [settAnprTestResult, setSettAnprTestResult] = useState<{ key: 'c002' | 'c019'; ok: boolean; message: string } | null>(null);
+  const [settAnprTesting, setSettAnprTesting] = useState<AnprPurposeKey | null>(null);
+  const [settAnprTestResult, setSettAnprTestResult] = useState<{ key: AnprPurposeKey; ok: boolean; message: string } | null>(null);
   const [settRegistroImpreseTesting, setSettRegistroImpreseTesting] = useState<'test' | 'prod' | null>(null);
   const [settRegistroImpreseTestResult, setSettRegistroImpreseTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settRegistroImpreseDettaglioPiva, setSettRegistroImpreseDettaglioPiva] = useState('');
@@ -3401,6 +3413,8 @@ export function App(): React.JSX.Element {
         setSettRegistroImpreseProdPurposeId(String(s['registroImprese.prod.purposeId'] ?? ''));
         setSettAnprC002PurposeId(String(s['anpr.c002.purposeId'] ?? ''));
         setSettAnprC019PurposeId(String(s['anpr.c019.purposeId'] ?? ''));
+        setSettAnprMassivoIdPurposeId(String(s['anpr.massivoId.purposeId'] ?? ''));
+        setSettAnprMassivoVitaPurposeId(String(s['anpr.massivoVita.purposeId'] ?? ''));
         setSettAnprTracingUserLocation(String(s['anpr.trackingUserLocation'] ?? 'comunicapa-backend'));
         setSettAnprTracingLoA(String(s['anpr.trackingLoA'] ?? 'https://www.spid.gov.it/SpidL2'));
         setSettProtoProvider(String(s['protocollo.provider'] ?? 'tinn'));
@@ -3654,6 +3668,15 @@ export function App(): React.JSX.Element {
     parseDomicileVerifHeaders(file, domicileVerifHasHeaders);
   };
 
+  const fetchDomicileVerifOptions = async () => {
+    try {
+      const res = await apiFetch('/domicile-verification/options');
+      if (res.ok) setDomicileVerifOptions(await res.json());
+    } catch {
+      // opzioni ANPR non critiche: senza risposta restano nascoste
+    }
+  };
+
   const fetchDomicileVerifJobs = async () => {
     setDomicileVerifJobsLoading(true);
     try {
@@ -3683,6 +3706,8 @@ export function App(): React.JSX.Element {
           hasHeaders: domicileVerifHasHeaders,
           cfColumn: domicileVerifCfColumn,
           ioServiceId: domicileVerifServiceId,
+          anprId: domicileVerifOptions.anprIdAvailable && domicileVerifAnprId,
+          anprVita: domicileVerifOptions.anprVitaAvailable && domicileVerifAnprVita,
         },
       );
       if (data.blocked) {
@@ -3763,6 +3788,21 @@ export function App(): React.JSX.Element {
       await handleDomicileVerifOpenJob(domicileVerifJobId);
     } catch {
       alert('Errore durante lo skip della verifica INAD');
+    } finally {
+      setDomicileVerifSkipping(false);
+    }
+  };
+
+  const handleDomicileVerifSkipAnpr = async () => {
+    if (!domicileVerifJobId) return;
+    if (!confirm('Abbandonare la verifica ANPR ancora in corso? I codici fiscali non ancora verificati non avranno l\'esito ANPR nel report — le altre verifiche proseguono normalmente.')) return;
+    setDomicileVerifSkipping(true);
+    try {
+      const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}/skip-anpr`, { method: 'POST' });
+      if (!res.ok) { alert('Errore durante lo skip della verifica ANPR'); return; }
+      await handleDomicileVerifOpenJob(domicileVerifJobId);
+    } catch {
+      alert('Errore durante lo skip della verifica ANPR');
     } finally {
       setDomicileVerifSkipping(false);
     }
@@ -4810,6 +4850,8 @@ export function App(): React.JSX.Element {
     'registroImprese.prod.purposeId': settRegistroImpreseProdPurposeId,
     'anpr.c002.purposeId': settAnprC002PurposeId,
     'anpr.c019.purposeId': settAnprC019PurposeId,
+    'anpr.massivoId.purposeId': settAnprMassivoIdPurposeId,
+    'anpr.massivoVita.purposeId': settAnprMassivoVitaPurposeId,
     'anpr.trackingUserLocation': settAnprTracingUserLocation,
     'anpr.trackingLoA': settAnprTracingLoA,
     'protocollo.provider': settProtoProvider,
@@ -4951,7 +4993,7 @@ export function App(): React.JSX.Element {
   const handleTestInadConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/inad/${env}/test-connection`, env, setSettInadTesting, setSettInadTestResult);
 
-  const handleTestAnprConnection = async (key: 'c002' | 'c019') => {
+  const handleTestAnprConnection = async (key: AnprPurposeKey) => {
     setSettAnprTesting(key);
     setSettAnprTestResult(null);
     try {
@@ -9870,7 +9912,7 @@ export function App(): React.JSX.Element {
           <a
             className={`bo-nav-item ${view === 'verifica-domicili' ? 'is-active' : ''}`}
             href="#"
-            onClick={(e) => { e.preventDefault(); setView('verifica-domicili'); fetchDomicileVerifJobs(); }}
+            onClick={(e) => { e.preventDefault(); setView('verifica-domicili'); fetchDomicileVerifJobs(); fetchDomicileVerifOptions(); }}
           >
             <UserCheck />
             <span>Verifica Domicili Digitali</span>
@@ -14257,7 +14299,7 @@ export function App(): React.JSX.Element {
 
               <div className="card shadow-sm p-4 mb-4">
                 <p className="small text-muted mb-3">
-                  Carica un CSV con un elenco di codici fiscali e/o partite IVA: la verifica gira in background (può richiedere diversi minuti su elenchi ampi — INAD batcha fino a 10 minuti) e resta in coda fino a 7 giorni, ritrovabile dallo storico qui sotto anche dopo aver chiuso la pagina. Verifica CF fisici su INAD e App IO; Registro Imprese subito per le Partite IVA e come fallback sui CF fisici che INAD non trova. Per una verifica puntuale su un singolo codice fiscale, usa "Verifica Anagrafica" nel menu.
+                  Carica un CSV con un elenco di codici fiscali e/o partite IVA: la verifica gira in background (può richiedere diversi minuti su elenchi ampi — INAD batcha fino a 10 minuti) e resta in coda fino a 7 giorni, ritrovabile dallo storico qui sotto anche dopo aver chiuso la pagina. Verifica CF fisici su INAD e App IO; Registro Imprese subito per le Partite IVA e come fallback sui CF fisici che INAD non trova. Codici fiscali e partite IVA con carattere di controllo errato non vengono interrogati: l'errore compare nella colonna "errori" del report aggregato. Per una verifica puntuale su un singolo codice fiscale, usa "Verifica Anagrafica" nel menu.
                 </p>
 
                 {!domicileVerifJobId && (
@@ -14299,6 +14341,31 @@ export function App(): React.JSX.Element {
                           <option value="">— seleziona —</option>
                           {domicileVerifHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                         </select>
+                      </div>
+                    )}
+
+                    {(domicileVerifOptions.anprIdAvailable || domicileVerifOptions.anprVitaAvailable) && (
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold d-block">Verifiche ANPR facoltative</label>
+                        {domicileVerifOptions.anprIdAvailable && (
+                          <div className="form-check">
+                            <input className="form-check-input" type="checkbox" id="domicileVerifAnprId"
+                              checked={domicileVerifAnprId || (domicileVerifOptions.anprVitaAvailable && domicileVerifAnprVita)}
+                              disabled={domicileVerifOptions.anprVitaAvailable && domicileVerifAnprVita}
+                              onChange={e => setDomicileVerifAnprId(e.target.checked)} />
+                            <label className="form-check-label small" htmlFor="domicileVerifAnprId">Verifica che i codici fiscali siano presenti in ANPR</label>
+                          </div>
+                        )}
+                        {domicileVerifOptions.anprVitaAvailable && (
+                          <div className="form-check">
+                            <input className="form-check-input" type="checkbox" id="domicileVerifAnprVita" checked={domicileVerifAnprVita}
+                              onChange={e => setDomicileVerifAnprVita(e.target.checked)} />
+                            <label className="form-check-label small" htmlFor="domicileVerifAnprVita">Verifica esistenza in vita (segnala anche i codici fiscali non presenti in ANPR)</label>
+                          </div>
+                        )}
+                        <div className="form-text small text-muted">
+                          Elaborazione massiva ANPR: può richiedere fino a 3 giorni, il risultato è disponibile solo al termine. Riguarda solo i codici fiscali di persone fisiche.
+                        </div>
                       </div>
                     )}
 
@@ -14352,6 +14419,25 @@ export function App(): React.JSX.Element {
                             </div>
                           </>
                         )}
+                        {(domicileVerifStatus.anprRequestsTotal ?? 0) > 0 && (
+                          <>
+                            <p className="small text-muted mb-1">
+                              ANPR ({domicileVerifStatus.anprVitaRequested ? 'esistenza in vita' : 'presenza in ANPR'}): {domicileVerifStatus.anprRequestsDone ?? 0} / {domicileVerifStatus.anprRequestsTotal} elaborazioni concluse — può richiedere fino a 3 giorni
+                            </p>
+                            <div className="progress mb-2" style={{ height: '8px' }}>
+                              <div className="progress-bar" style={{ width: `${Math.max(5, Math.round(((domicileVerifStatus.anprRequestsDone ?? 0) / (domicileVerifStatus.anprRequestsTotal ?? 1)) * 100))}%` }} />
+                            </div>
+                          </>
+                        )}
+                        {(domicileVerifStatus.anprRequestsDone ?? 0) < (domicileVerifStatus.anprRequestsTotal ?? 0) && (
+                          <button
+                            className="btn btn-sm btn-outline-danger mt-1 me-2"
+                            disabled={domicileVerifSkipping}
+                            onClick={handleDomicileVerifSkipAnpr}
+                          >
+                            {domicileVerifSkipping ? 'Salto in corso…' : 'Salta verifica ANPR'}
+                          </button>
+                        )}
                         {domicileVerifStatus.cfFisicoTotal > 0 && domicileVerifStatus.inadBatchesDone < domicileVerifStatus.inadBatchesTotal && (
                           <button
                             className="btn btn-sm btn-outline-danger mt-1"
@@ -14368,6 +14454,10 @@ export function App(): React.JSX.Element {
                       <>
                         <div className="alert alert-success small">
                           Verifica completata: <strong>{domicileVerifStatus.inadFoundCount}</strong> trovati su INAD, <strong>{domicileVerifStatus.appIoPresentCount}</strong> presenti su App IO, <strong>{domicileVerifStatus.registroImpreseFoundCount}</strong> trovati su Registro Imprese.
+                          {domicileVerifStatus.anprIdRequested && (
+                            <> ANPR: <strong>{domicileVerifStatus.anprNotFoundCount ?? 0}</strong> codici fiscali non presenti{domicileVerifStatus.anprVitaRequested && <>, <strong>{domicileVerifStatus.anprDeceasedCount ?? 0}</strong> soggetti deceduti</>}.</>
+                          )}
+                          {' '}L'aggregato è il file caricato con in più le colonne domicilio_digitale, app_io ed errori.
                         </div>
                         <div className="d-flex gap-2 mb-3 flex-wrap">
                           <button className="btn btn-sm btn-outline-primary" onClick={() => handleDomicileVerifDownload('aggregato')}>
@@ -16794,14 +16884,21 @@ export function App(): React.JSX.Element {
                             <div className="alert alert-warning small mb-3">
                               Interrogazione disponibile solo in ambiente Produzione. Richiede lo stesso
                               client PDND già configurato nella tab "Client PDND" (kid/chiave privata) —
-                              qui vanno impostati i due Purpose ID: C002 (Servizio di Comunicazione) e
-                              C019 (Accertamento Esistenza in Vita), finalità PDND distinte.
+                              qui vanno impostati i Purpose ID: C002 (Servizio di Comunicazione),
+                              C019 (Accertamento Esistenza in Vita) e le due elaborazioni massive usate da
+                              Verifica Domicili (accertamento ID unico nazionale ed esistenza in vita),
+                              finalità PDND distinte. Le opzioni ANPR della Verifica Domicili compaiono
+                              solo se il relativo Purpose ID è impostato.
                             </div>
                             {([
                               { label: 'C002 - Servizio di Comunicazione', key: 'c002' as const,
                                 purposeId: settAnprC002PurposeId, setPurposeId: setSettAnprC002PurposeId },
                               { label: 'C019 - Accertamento Esistenza in Vita', key: 'c019' as const,
                                 purposeId: settAnprC019PurposeId, setPurposeId: setSettAnprC019PurposeId },
+                              { label: 'Elaborazione massiva - Accertamento ID unico nazionale (C030)', key: 'massivo-id' as const,
+                                purposeId: settAnprMassivoIdPurposeId, setPurposeId: setSettAnprMassivoIdPurposeId },
+                              { label: 'Elaborazione massiva - Verifica esistenza in vita (C007)', key: 'massivo-vita' as const,
+                                purposeId: settAnprMassivoVitaPurposeId, setPurposeId: setSettAnprMassivoVitaPurposeId },
                             ]).map((e) => (
                               <fieldset key={e.key} className="border rounded p-3 mb-3">
                                 <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>

@@ -16,6 +16,7 @@ import { DomicileVerificationJob, DomicileVerificationJobStatus } from '../../en
 import { IoServiceConfig } from '../../entities/io-service-config.entity.js';
 import { InadService } from '../inad/inad.service.js';
 import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
+import { AnprMassivoService } from '../anpr/anpr-massivo.service.js';
 import { APP_IO_VERIFY_BULK_QUEUE } from '../../io-services/app-io-verify-bulk-job.types.js';
 import { CHUNK_ROOT, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../../campaigns/chunked-upload.util.js';
 
@@ -105,6 +106,7 @@ describe('DomicileVerificationController (integration: path traversal, limiti up
         { provide: getRepositoryToken(IoServiceConfig), useValue: { findOneBy: jest.fn() } },
         { provide: InadService, useValue: {} },
         { provide: RegistroImpreseVerifyQueueService, useValue: {} },
+        { provide: AnprMassivoService, useValue: { isConfigured: jest.fn(async () => false) } },
         { provide: getQueueToken(APP_IO_VERIFY_BULK_QUEUE), useValue: { add: jest.fn() } },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
