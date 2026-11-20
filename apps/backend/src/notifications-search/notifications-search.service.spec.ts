@@ -11,6 +11,9 @@ import { AttachmentService } from '../attachments/attachment.service.js';
 import { fromUtcWallClock } from '../legal-attention/legal-attention.util.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { visibleCampaignSql } from '../campaigns/campaign-access.util.js';
+import { externalIdColumnOfCampaignSql, identifierSearchSql } from '../campaigns/recipient-identifier-search.util.js';
+
+const ID_SQL = identifierSearchSql('recipient', externalIdColumnOfCampaignSql('campaign'), 'q');
 
 const ADMIN = { username: 'admin', role: 'admin' as const };
 
@@ -67,7 +70,7 @@ describe('NotificationsSearchService.search', () => {
     await service.search({ codiceFiscale: 'rssmra80a01h501x', page: 1, pageSize: 20 }, ADMIN);
 
     expect(qbMock.andWhere).toHaveBeenCalledWith(
-      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR ' + ID_SQL + ')',
       { q: '%rssmra80a01h501x%' },
     );
   });
@@ -77,7 +80,7 @@ describe('NotificationsSearchService.search', () => {
     await service.search({ query: 'mario', page: 1, pageSize: 20 }, ADMIN);
 
     expect(qbMock.andWhere).toHaveBeenCalledWith(
-      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR ' + ID_SQL + ')',
       { q: '%mario%' },
     );
   });
@@ -87,7 +90,7 @@ describe('NotificationsSearchService.search', () => {
     await service.search({ query: ' 12345 / 2026 ', page: 1, pageSize: 20 }, ADMIN);
 
     expect(qbMock.andWhere).toHaveBeenCalledWith(
-      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber AND p.protocol_year = :protocolYear))',
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR ' + ID_SQL + ' OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber AND p.protocol_year = :protocolYear))',
       { q: '%12345 / 2026%', protocolNumber: 12345, protocolYear: 2026 },
     );
   });
@@ -97,7 +100,7 @@ describe('NotificationsSearchService.search', () => {
     await service.search({ query: '12345', page: 1, pageSize: 20 }, ADMIN);
 
     expect(qbMock.andWhere).toHaveBeenCalledWith(
-      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber))',
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR ' + ID_SQL + ' OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber))',
       { q: '%12345%', protocolNumber: 12345 },
     );
   });

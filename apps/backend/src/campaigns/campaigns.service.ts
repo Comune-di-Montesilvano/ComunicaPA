@@ -18,6 +18,7 @@ import { getUploadsDir, getUnsignedBackupDir } from '../attachments/attachment-p
 import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { resolveSubjectTemplate } from '../channels/subject-mapping.util.js';
 import { resolveExternalId } from '../channels/external-id-mapping.util.js';
+import { externalIdColumnOf, identifierSearchSql } from './recipient-identifier-search.util.js';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
@@ -2851,7 +2852,11 @@ export class CampaignsService {
       .where('r.campaignId = :campaignId', { campaignId });
 
     if (search && search.trim()) {
-      qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
+      // Anche OCR / External ID e numero raccomandata.
+      qb.andWhere(`(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search OR ${identifierSearchSql('r', 'CAST(:searchExtCol AS text)', 'search')})`, {
+        search: `%${search.trim()}%`,
+        searchExtCol: externalIdColumnOf(campaign),
+      });
     }
     const tracksRead = READ_STATUS_CHANNELS.includes(campaign.channelType);
     const isPostal = campaign.channelType === 'POSTAL';
