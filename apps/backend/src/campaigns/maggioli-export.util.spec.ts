@@ -6,6 +6,7 @@ import {
   sendDeliveryKind,
   sendRegisteredLetterOf,
   protocolOf,
+  fitProtocol,
   maggioliOcr,
 } from './maggioli-export.util.js';
 import type { PostalReportRowDto, SendReportRowDto } from './dto/campaign-stats.dto.js';
@@ -164,6 +165,16 @@ describe('canale SEND nei campi note', () => {
       { category: 'SEND_ANALOG_PROGRESS', at: '2026-05-08T09:00:00Z', registeredLetterCode: '614451234567' },
     ])).toBe('614451234567');
     expect(sendRegisteredLetterOf(null)).toBeNull();
+  });
+
+  it('protocollo troppo lungo: anno a 2 cifre', () => {
+    expect(fitProtocol('123456/2026', 12)).toBe('123456/2026');
+    expect(fitProtocol('1234567/2026', 12)).toBe('1234567/2026');
+    expect(fitProtocol('12345678/2026', 12)).toBe('12345678/26');
+    expect(fitProtocol(null, 12)).toBeNull();
+    const [line] = buildMaggioliNotificheTxt(maggioliFromSend([send({ sendDeliveryKind: 'PEC', protocol: '12345678/2026' })]).notifiche).split('
+');
+    expect(line.slice(11, 23)).toBe('12345678/26 ');
   });
 
   it('protocollo n/anno del tentativo protocollato più recente', () => {
