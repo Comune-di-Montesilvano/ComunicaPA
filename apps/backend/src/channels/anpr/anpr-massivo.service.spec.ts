@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { AnprMassivoService, parseRispostaMassiva, sanitizeForProbe } from './anpr-massivo.service.js';
+import { AnprMassivoService, parseRispostaMassiva, sanitizeForLog } from './anpr-massivo.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
@@ -71,8 +71,18 @@ describe('parseRispostaMassiva', () => {
     expect(esiti.has('VRDLGI80A01H501E')).toBe(true);
   });
 
-  it('sanitizeForProbe: chiavi intatte, CF mascherati, anagrafiche ridotte, valori tecnici in chiaro', () => {
-    const out = JSON.stringify(sanitizeForProbe([{ cf: 'RSSMRA80A01H501U', RispostaE002OK: { listaSoggetti: { datiSoggetto: [{
+  it('formato reale di esercizio: CF in "input", chiave "rispostaE002OK" minuscola (C007, struttura dalla sonda GlitchTip)', () => {
+    const data = { risposteMassive: [
+      { input: 'RSSMRA80A01H501U', rispostaE002OK: { listaSoggetti: { datiSoggetto: [{ infoSoggettoEnte: [{ id: '1003', chiave: 'Verifica esistenza in vita', valore: 'S' }] }] }, idOperazioneANPR: '0' } },
+      { input: 'RSSMRA85M01H501Q', rispostaE002OK: { listaSoggetti: { datiSoggetto: [{ infoSoggettoEnte: [{ id: '1003', chiave: 'Verifica esistenza in vita', valore: 'N' }] }] }, idOperazioneANPR: '0' } },
+    ] };
+    const { esiti } = parseRispostaMassiva(gzipSync(Buffer.from(JSON.stringify(data))));
+    expect(esiti.get('RSSMRA80A01H501U')).toEqual({ esistenzaInVita: 'S' });
+    expect(esiti.get('RSSMRA85M01H501Q')).toEqual({ esistenzaInVita: 'N' });
+  });
+
+  it('sanitizeForLog: chiavi intatte, CF mascherati, anagrafiche ridotte, valori tecnici in chiaro', () => {
+    const out = JSON.stringify(sanitizeForLog([{ cf: 'RSSMRA80A01H501U', RispostaE002OK: { listaSoggetti: { datiSoggetto: [{
       generalita: { cognome: 'ROSSI', nome: 'MARIO' },
       infoSoggettoEnte: [{ id: '1003', chiave: 'Verifica esistenza in vita', valore: 'S' }],
     }] } } }]));

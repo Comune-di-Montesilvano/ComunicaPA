@@ -166,9 +166,13 @@ aggregato con 204/204 "non presente in ANPR", impossibile. ANPR risponde
 `{"risposteMassive":[]}` quando non abbina nulla (input o tipoRicerca errati,
 italia/anpr#5303, #4983): un lotto con zero CF riconosciuti ora finisce in
 `DomicileAnprRequest.failed` e nel report come "verifica ANPR non riuscita".
-Ogni download riuscito manda una sonda GlitchTip (`reportEsito`: conteggi +
-prime 5 voci sanificate con `sanitizeForProbe`, CF → `***` + ultime 4) per
-vedere la risposta reale. Causa del vuoto ancora da capire dalla sonda.
+Causa reale (sonda GlitchTip temporanea, v1.26.2-test): in esercizio ogni
+voce ha il CF in **`input`**, non in `cf` come nell'esempio della spec, e la
+chiave è `rispostaE002OK` (r minuscola). Esempio sanificato:
+`{"input":"***482I","rispostaE002OK":{"listaSoggetti":{"datiSoggetto":[{"infoSoggettoEnte":[{"id":"1003","chiave":"Verifica esistenza in vita","valore":"S"}]}]},"idOperazioneANPR":"0"}}`
+(198 voci su 202 CF: i 4 mancanti sono i non presenti). Il parser legge le
+chiavi senza distinzione di maiuscole e il CF da `input`/`cf`/`codiceFiscale`/
+`generalita`. Mai fidarsi degli esempi della spec ANPR per i nomi dei campi.
 
 **Da verificare al primo uso reale** (dedotti, non provati):
 1. GET download con `Agid-JWT-Signature` senza `signed_headers` di body
