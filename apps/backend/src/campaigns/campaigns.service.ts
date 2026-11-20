@@ -26,6 +26,7 @@ import { NOTIFICATION_JOB_SEND, type EngineName } from '../queue/notification-jo
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
 import { reportPhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
+import { maggioliFromPostal, maggioliFromSend, type MaggioliExport } from './maggioli-export.util.js';
 import type { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto.js';
 import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto.js';
@@ -3757,6 +3758,18 @@ export class CampaignsService {
     return { campaignId, enabled: true, totalAmountCents, recipientsWithPaymentCount };
   }
 
+  /**
+   * Esiti per Sicr@Web (tracciati "Service Maggioli"), chiave = OCR in
+   * external ID. Solo SEND e Postalizzazione (canali con data legale).
+   */
+  async getMaggioliExport(campaignId: string): Promise<MaggioliExport> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.channelType === 'POSTAL') return maggioliFromPostal((await this.getPostalReportRows(campaignId)).rows);
+    if (campaign.channelType === 'SEND') return maggioliFromSend((await this.getSendReportRows(campaignId)).rows);
+    throw new BadRequestException('Esportazione Maggioli disponibile solo per campagne SEND e Postalizzazione');
+  }
+
   async getPostalReportRows(campaignId: string): Promise<PostalReportDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -3824,6 +3837,7 @@ export class CampaignsService {
         postalDeliveryCode: latest?.postalDeliveryCode ?? null,
         postalDeliveryDate: latest?.postalDeliveryDate ? latest.postalDeliveryDate.toISOString() : null,
         postalAcceptanceId: latest?.postalAcceptanceId ?? null,
+        sentAt: latest?.sentAt ? latest.sentAt.toISOString() : null,
         postalStatusHistory: latest?.postalStatusHistory ?? [],
         ...reportPhysicalAddress(r, addressCfg),
         codiceErrore: (latestPayload?.['codiceErrore'] as string | undefined) ?? null,

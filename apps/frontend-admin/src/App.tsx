@@ -3100,6 +3100,8 @@ export function App(): React.JSX.Element {
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
+  // Export esiti per Sicr@Web (tracciati Service Maggioli): solo SEND/POSTAL con OCR in external ID.
+  const [maggioliSummary, setMaggioliSummary] = useState<{ notifiche: number; mancate: number; senzaOcr: number; nonEsportabili: number } | null>(null);
   const [postalDeliveryStatusBreakdown, setPostalDeliveryStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
   const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number; sendEstimatedCount?: number } | null>(null);
@@ -4632,6 +4634,7 @@ export function App(): React.JSX.Element {
       fetchSendStatusBreakdown(id),
       fetchPostalStatusBreakdown(id),
       fetchPostalDeliveryStatusBreakdown(id),
+      fetchMaggioliSummary(id),
       fetchCampaignCost(id),
       fetchCampaignCostSavings(id),
       fetchCampaignPaymentTotal(id),
@@ -6933,6 +6936,28 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const handleExportMaggioli = async (variant: 'notifiche' | 'mancate') => {
+    if (!campaign) return;
+    try {
+      const res = await apiFetch(`/campaigns/${campaign.id}/export-maggioli-${variant}.txt`);
+      if (!res.ok) {
+        alert('Errore durante l\'esportazione per Maggioli');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `maggioli_${variant === 'mancate' ? 'mancate_notifiche' : 'notifiche'}_${campaign.id.slice(0, 8)}.txt`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Errore durante l\'esportazione per Maggioli');
+    }
+  };
+
   const handlePosteCheckCampaign = async () => {
     if (!campaign) return;
     const campaignId = campaign.id;
@@ -9142,6 +9167,7 @@ export function App(): React.JSX.Element {
     setSendStatusBreakdown(null);
     setPostalStatusBreakdown(null);
     setPostalDeliveryStatusBreakdown(null);
+    setMaggioliSummary(null);
     setCampaignCost(null);
     setCampaignCostSavings(null);
     setCampaignPaymentTotal(null);
@@ -9172,6 +9198,7 @@ export function App(): React.JSX.Element {
     fetchSendStatusBreakdown(id);
     fetchPostalStatusBreakdown(id);
     fetchPostalDeliveryStatusBreakdown(id);
+    fetchMaggioliSummary(id);
     fetchCampaignCost(id);
     fetchCampaignCostSavings(id);
     fetchCampaignPaymentTotal(id);
@@ -9348,6 +9375,19 @@ export function App(): React.JSX.Element {
       setSendStatusBreakdown(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra.
+    }
+  };
+
+  // Mai nel polling da 5 s: ricalcola gli esiti di tutta la campagna.
+  const fetchMaggioliSummary = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/maggioli-export-summary`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setMaggioliSummary(data);
+    } catch {
+      // Non bloccante: senza riepilogo il bottone non compare.
     }
   };
 
@@ -18493,6 +18533,20 @@ export function App(): React.JSX.Element {
                                   </button>
                                   <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" onClick={() => handleExportPostalReport('storico')} title="Esporta storico completo">
                                     <History className="me-1" size={14} />Storico
+                                  </button>
+                                </div>
+                              )}
+                              {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && maggioliSummary && (maggioliSummary.notifiche + maggioliSummary.mancate) > 0 && (
+                                <div
+                                  className="btn-group"
+                                  role="group"
+                                  title={`Tracciati Sicr@Web (Service Maggioli), chiave = OCR nell'External ID.${maggioliSummary.senzaOcr > 0 ? ` ${maggioliSummary.senzaOcr} esiti esclusi per OCR mancante o troppo corto.` : ''}${maggioliSummary.nonEsportabili > 0 ? ` ${maggioliSummary.nonEsportabili} ancora senza esito definitivo.` : ''}`}
+                                >
+                                  <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" disabled={maggioliSummary.notifiche === 0} onClick={() => handleExportMaggioli('notifiche')}>
+                                    <FileText className="me-1" size={14} />Maggioli: Notifiche ({maggioliSummary.notifiche})
+                                  </button>
+                                  <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" disabled={maggioliSummary.mancate === 0} onClick={() => handleExportMaggioli('mancate')}>
+                                    Mancate ({maggioliSummary.mancate})
                                   </button>
                                 </div>
                               )}

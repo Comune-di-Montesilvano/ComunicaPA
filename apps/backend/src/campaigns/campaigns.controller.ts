@@ -24,6 +24,7 @@ import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { CampaignsService } from './campaigns.service.js';
+import { buildMaggioliMancateTxt, buildMaggioliNotificheTxt } from './maggioli-export.util.js';
 import { canReadCampaignAttachments } from './campaign-access.util.js';
 import { CampaignContentCorrectionService } from './campaign-content-correction.service.js';
 import { CampaignBulkRetryService } from './campaign-bulk-retry.service.js';
@@ -943,6 +944,28 @@ export class CampaignsController {
   @Get(':id/payment-total')
   getCampaignPaymentTotal(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getCampaignPaymentTotal(id);
+  }
+
+  @Get(':id/maggioli-export-summary')
+  async getMaggioliExportSummary(@Param('id', ParseUUIDPipe) id: string) {
+    const exp = await this.campaignsService.getMaggioliExport(id);
+    return { notifiche: exp.notifiche.length, mancate: exp.mancate.length, senzaOcr: exp.senzaOcr, nonEsportabili: exp.nonEsportabili };
+  }
+
+  @Get(':id/export-maggioli-notifiche.txt')
+  async exportMaggioliNotifiche(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const exp = await this.campaignsService.getMaggioliExport(id);
+    res.setHeader('Content-Type', 'text/plain; charset=us-ascii');
+    res.setHeader('Content-Disposition', `attachment; filename="maggioli_notifiche_${id.slice(0, 8)}.txt"`);
+    res.send(buildMaggioliNotificheTxt(exp.notifiche));
+  }
+
+  @Get(':id/export-maggioli-mancate.txt')
+  async exportMaggioliMancate(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const exp = await this.campaignsService.getMaggioliExport(id);
+    res.setHeader('Content-Type', 'text/plain; charset=us-ascii');
+    res.setHeader('Content-Disposition', `attachment; filename="maggioli_mancate_notifiche_${id.slice(0, 8)}.txt"`);
+    res.send(buildMaggioliMancateTxt(exp.mancate));
   }
 
   @Get(':id/export-postal-report-attuale.csv')

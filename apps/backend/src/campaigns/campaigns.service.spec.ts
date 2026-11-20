@@ -5031,6 +5031,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         postalDeliveryCode: null,
         postalDeliveryDate: null,
         postalAcceptanceId: null,
+        sentAt: null,
         postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }],
         address: '', municipality: '', foreignState: '',
         codiceErrore: '',
