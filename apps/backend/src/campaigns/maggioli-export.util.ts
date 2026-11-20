@@ -31,6 +31,8 @@ export interface MaggioliExport {
   mancate: MaggioliMancata[];
   /** Destinatari con esito ma senza OCR utilizzabile (external ID assente o < 16 caratteri). */
   senzaOcr: number;
+  /** Destinatari della campagna (con o senza esito) senza OCR utilizzabile. */
+  ocrMancanti: number;
   /** In corso, errori d'invio, annullate: nessun record. */
   nonEsportabili: number;
 }
@@ -62,8 +64,9 @@ function field(value: string | null | undefined, length: number): string {
 }
 
 export function maggioliFromPostal(rows: PostalReportRowDto[]): MaggioliExport {
-  const out: MaggioliExport = { notifiche: [], mancate: [], senzaOcr: 0, nonEsportabili: 0 };
+  const out: MaggioliExport = { notifiche: [], mancate: [], senzaOcr: 0, ocrMancanti: 0, nonEsportabili: 0 };
   for (const r of rows) {
+    if (!maggioliOcr(r.externalId)) out.ocrMancanti++;
     const reason = r.legalOutcomeReason ?? '';
     const delivered = r.legalOutcome === 'delivered' && !!r.legalOutcomeAt;
     const returned = r.legalOutcome === 'not_delivered' && LEGAL_NOT_DELIVERED_STATUSES.includes(r.postalDeliveryStatus ?? '');
@@ -95,8 +98,9 @@ export function maggioliFromPostal(rows: PostalReportRowDto[]): MaggioliExport {
 }
 
 export function maggioliFromSend(rows: SendReportRowDto[]): MaggioliExport {
-  const out: MaggioliExport = { notifiche: [], mancate: [], senzaOcr: 0, nonEsportabili: 0 };
+  const out: MaggioliExport = { notifiche: [], mancate: [], senzaOcr: 0, ocrMancanti: 0, nonEsportabili: 0 };
   for (const r of rows) {
+    if (!maggioliOcr(r.externalId)) out.ocrMancanti++;
     const legal = sendLegalDateOf(r.sendStatusHistory);
     const failure = legal ? undefined : r.sendStatusHistory.find((h) => h.status === 'UNREACHABLE' || h.status === 'RETURNED_TO_SENDER');
     if (!legal && !failure) {
