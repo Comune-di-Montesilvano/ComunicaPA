@@ -5,6 +5,6 @@ export class SetRecipientExternalIdDto {
   @MinLength(1)
   @MaxLength(64)
   // Niente caratteri di controllo: finisce in CSV e tracciati a lunghezza fissa.
-  @Matches(/^[^\x00-\x1f\x7f]+$/, { message: 'External ID non valido' })
+  @Matches(/^\P{Cc}+$/u, { message: 'External ID non valido' })
   externalId!: string;
 }
