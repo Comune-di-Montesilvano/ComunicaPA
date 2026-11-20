@@ -104,7 +104,13 @@ const SEND_KIND_LABEL: Record<SendDeliveryKind, string> = { PEC: 'SEND PEC', RAC
  * il protocollo n/anno. Il canale va nei campi note.
  */
 function maggioliFields(numero: string | null, canale: string, protocol: string | null): { raccomandata: string | null; canale: string; protocollo: string | null } {
-  return { raccomandata: numero ?? protocol, canale, protocollo: protocol };
+  return { raccomandata: numero ?? fitProtocol(protocol, 12), canale, protocollo: fitProtocol(protocol, 15) };
+}
+
+/** Protocollo n/anno in `length` caratteri: se non ci sta, anno a 2 cifre (12345678/2026 → 12345678/26). */
+export function fitProtocol(protocol: string | null, length: number): string | null {
+  if (!protocol || protocol.length <= length) return protocol;
+  return protocol.replace(/\/(?:19|20)(\d{2})$/, '/$1');
 }
 
 /** Protocollo "numero/anno" del tentativo protocollato più recente. */
