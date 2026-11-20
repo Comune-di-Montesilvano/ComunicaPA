@@ -4797,6 +4797,8 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
         address: '', municipality: '', foreignState: '',
         appIoOutcome: null,
         externalId: null,
+        sendDeliveryKind: 'PEC',
+        sendRegisteredLetterCode: null,
       }]);
     });
 

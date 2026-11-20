@@ -27,7 +27,7 @@ import { NOTIFICATION_JOB_SEND, type EngineName } from '../queue/notification-jo
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
 import { reportPhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
-import { maggioliFromPostal, maggioliFromSend, type MaggioliExport } from './maggioli-export.util.js';
+import { maggioliFromPostal, maggioliFromSend, sendDeliveryKind, sendRegisteredLetterOf, type MaggioliExport } from './maggioli-export.util.js';
 import { matchOcrImport, type OcrImportResult } from './maggioli-ocr-import.util.js';
 import type { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto.js';
@@ -3496,6 +3496,8 @@ export class CampaignsService {
         ...reportPhysicalAddress(r, addressCfg),
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
         externalId: resolveExternalId(campaign, r),
+        sendDeliveryKind: latest ? sendDeliveryKind(latest.sendStatusHistory, latest.sendTimeline, latest.sendDigitalDomicile?.type) : null,
+        sendRegisteredLetterCode: sendRegisteredLetterOf(latest?.sendTimeline),
       };
     });
 
