@@ -2,6 +2,6 @@ fastapi==0.162.5
 uvicorn==0.54.0
 python-multipart==0.0.33
 pdfplumber==0.11.10
-PyMuPDF==1.28.2
+PyMuPDF==2.1
 pyzbar==0.1.9
 sentry-sdk[fastapi]==2.75.0
