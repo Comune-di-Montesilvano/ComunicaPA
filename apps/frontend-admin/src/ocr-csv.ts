@@ -29,7 +29,7 @@ function splitLine(line: string, delimiter: string): string[] {
 }
 
 export function parseOcrCsv(text: string): OcrCsv {
-  const lines = text.replace(/^FEFF/, '').split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const lines = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) return { headers: [], rows: [] };
   const first = lines[0];
   const delimiter = (first.match(/;/g)?.length ?? 0) >= (first.match(/,/g)?.length ?? 0) ? ';' : ',';
