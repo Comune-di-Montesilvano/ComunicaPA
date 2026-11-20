@@ -131,6 +131,27 @@ export function resolvePaymentData(
 }
 
 /**
+ * Indirizzo per gli export storico SEND/POSTAL: valori grezzi delle colonne
+ * mappate in physicalAddressConfig, senza le regole di invio di
+ * resolvePhysicalAddress (lì un indirizzo incompleto diventa null; qui si
+ * mostra comunque quel che c'è). Stato estero vuoto per l'Italia; un valore
+ * non riconosciuto resta com'è nel tracciato.
+ */
+export function reportPhysicalAddress(
+  recipient: Recipient,
+  physicalAddressConfig: PhysicalAddressConfig | undefined,
+): { address: string; municipality: string; foreignState: string } {
+  if (!physicalAddressConfig) return { address: '', municipality: '', foreignState: '' };
+  const rawCountry = getColumnValue(recipient, physicalAddressConfig.countryColumn).trim();
+  const country = rawCountry ? (matchCountry(rawCountry) ?? rawCountry) : '';
+  return {
+    address: getColumnValue(recipient, physicalAddressConfig.addressColumn).trim(),
+    municipality: getColumnValue(recipient, physicalAddressConfig.municipalityColumn).trim(),
+    foreignState: country === 'Italia' ? '' : country,
+  };
+}
+
+/**
  * Risolve l'indirizzo fisico di fallback per SEND (PN richiede physicalAddress
  * quando non riesce a risolvere un domicilio digitale legale per il
  * destinatario, es. via ANPR/INAD): address e municipality sono obbligatori

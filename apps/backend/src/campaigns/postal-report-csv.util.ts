@@ -71,7 +71,7 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
 
 export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
   const headers = [
-    'Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore',
+    'Codice Fiscale', 'Nominativo', 'Indirizzo', 'Città', 'Stato Estero', 'IDPRO', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore',
     ...POSTAL_STATUS_HISTORY_COLUMNS.map((c) => c.header),
     ...POSTE_HEADERS,
   ];
@@ -88,6 +88,9 @@ export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
     const fields = [
       r.codiceFiscale,
       r.fullName ?? '',
+      r.address ?? '',
+      r.municipality ?? '',
+      r.foreignState ?? '',
       r.postalTrackingId ?? '',
       r.postalDeliveryStatus ?? '',
       r.postalDeliveryCode !== null && r.postalDeliveryCode !== undefined ? String(r.postalDeliveryCode) : '',

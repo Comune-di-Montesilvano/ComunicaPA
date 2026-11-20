@@ -1,4 +1,4 @@
-import { resolvePaymentData, resolvePhysicalAddress } from './payment-config.util.js';
+import { reportPhysicalAddress, resolvePaymentData, resolvePhysicalAddress } from './payment-config.util.js';
 import type { Recipient } from '../entities/recipient.entity.js';
 
 function makeRecipient(extraData: Record<string, unknown> = {}): Recipient {
@@ -238,5 +238,25 @@ describe('resolvePhysicalAddress', () => {
       countryColumn: 'paese',
     });
     expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma', province: 'RM' });
+  });
+});
+
+describe('reportPhysicalAddress', () => {
+  const rec = (extraData: Record<string, unknown>) => ({ codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi', extraData }) as any;
+  const cfg = { enabled: true, addressColumn: 'indirizzo', municipalityColumn: 'comune', countryColumn: 'stato' };
+
+  it('valori grezzi anche se incompleti (niente provincia), stato estero normalizzato', () => {
+    expect(reportPhysicalAddress(rec({ indirizzo: ' Rue X 2 ', comune: 'Parigi', stato: 'francia' }), cfg))
+      .toEqual({ address: 'Rue X 2', municipality: 'Parigi', foreignState: 'Francia' });
+  });
+
+  it('Italia e stato assente → stato estero vuoto; valore non riconosciuto resta com\'è', () => {
+    expect(reportPhysicalAddress(rec({ indirizzo: 'Via Roma 1', comune: 'Pescara', stato: 'Italia' }), cfg).foreignState).toBe('');
+    expect(reportPhysicalAddress(rec({ indirizzo: 'Via Roma 1', comune: 'Pescara' }), cfg).foreignState).toBe('');
+    expect(reportPhysicalAddress(rec({ stato: 'Atlantide' }), cfg).foreignState).toBe('Atlantide');
+  });
+
+  it('nessuna mappatura → tutto vuoto', () => {
+    expect(reportPhysicalAddress(rec({ indirizzo: 'Via Roma 1' }), undefined)).toEqual({ address: '', municipality: '', foreignState: '' });
   });
 });

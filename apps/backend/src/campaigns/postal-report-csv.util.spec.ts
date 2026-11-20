@@ -16,6 +16,9 @@ const baseReport: PostalReportDto = {
       { stato: 'Rimandato', rilevatoIl: '2026-01-13T10:00:00Z' },
       { stato: 'Consegnato', rilevatoIl: '2026-01-14T09:00:00Z' },
     ],
+    address: 'Via Roma 1',
+    municipality: 'Pescara',
+    foreignState: '',
     codiceErrore: null,
     descrizioneErrore: null,
     appIoOutcome: null,
@@ -82,10 +85,16 @@ describe('buildPostalReportAttualeCsv', () => {
 });
 
 describe('buildPostalReportStoricoCsv', () => {
+  it('indirizzo, città e stato estero (vuoto per l\'Italia) dopo il nominativo', () => {
+    const [header, line] = buildPostalReportStoricoCsv(baseReport).split('\n');
+    expect(header.startsWith('"Codice Fiscale";"Nominativo";"Indirizzo";"Città";"Stato Estero";"IDPRO"')).toBe(true);
+    expect(line).toContain('"Mario Rossi";"Via Roma 1";"Pescara";"";"IDPRO1"');
+  });
+
   it('include una colonna data per ciascuno dei 14 stati, vuota se mai raggiunto', () => {
     const csv = buildPostalReportStoricoCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0].split(';')).toHaveLength(9 + 14 + 5);
+    expect(lines[0].split(';')).toHaveLength(12 + 14 + 5);
     const headers = lines[0].split(';');
     const sospesoIndex = headers.findIndex((h: string) => h === '"Data Sospeso"');
     expect(lines[1].split(';')[sospesoIndex]).toBe('""');

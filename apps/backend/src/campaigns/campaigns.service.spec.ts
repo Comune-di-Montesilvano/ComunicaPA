@@ -4793,6 +4793,7 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
         digitalDomicileAddress: 'x@pec.it',
         sendStatus: 'DELIVERED',
         sendStatusHistory: [{ status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' }],
+        address: '', municipality: '', foreignState: '',
         appIoOutcome: null,
         externalId: null,
       }]);
@@ -5031,6 +5032,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         postalDeliveryDate: null,
         postalAcceptanceId: null,
         postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }],
+        address: '', municipality: '', foreignState: '',
         codiceErrore: '',
         descrizioneErrore: '',
         appIoOutcome: null,
