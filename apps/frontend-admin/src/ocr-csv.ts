@@ -21,11 +21,13 @@ function splitLine(line: string, delimiter: string): string[] {
       else if (c === '"') quoted = false;
       else cur += c;
     } else if (c === '"') quoted = true;
-    else if (c === delimiter) { out.push(cur.trim()); cur = ''; }
+    else if (c === delimiter) { out.push(cur); cur = ''; }
     else cur += c;
   }
-  out.push(cur.trim());
-  return out;
+  out.push(cur);
+  // Export Maggioli (pag_indice.csv): ogni cella e intestazione ha un
+  // apostrofo iniziale per forzare il testo in Excel.
+  return out.map((v) => v.trim().replace(/^'+/, '').trim());
 }
 
 export function parseOcrCsv(text: string): OcrCsv {
@@ -47,7 +49,8 @@ export function guessOcrColumns(headers: string[]): { cf: number; ocr: number } 
     return -1;
   };
   return {
-    cf: find([/^codicefiscale/, /^cf$/, /codicefiscale|cfpiva|partitaiva|piva/, /fiscale/]),
+    // pag_indice.csv: "cod. fisc. dest" (destinatario) prima di "cod. fisc. contrib".
+    cf: find([/^codicefiscale/, /^cf$/, /^codfiscdest/, /codicefiscale|cfpiva|partitaiva|piva/, /fiscale|codfisc/]),
     ocr: find([/^ocr/, /ocr/, /quintocampo/, /externalid/, /riferimento/]),
   };
 }

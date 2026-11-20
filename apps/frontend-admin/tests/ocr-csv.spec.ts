@@ -20,6 +20,12 @@ describe('guessOcrColumns', () => {
     expect(guessOcrColumns(['Partita IVA', 'external_id'])).toEqual({ cf: 0, ocr: 1 });
     expect(guessOcrColumns(['a', 'b'])).toEqual({ cf: -1, ocr: -1 });
   });
+
+  it('pag_indice.csv Maggioli: apostrofi iniziali tolti, CF del destinatario e "ocr notifica"', () => {
+    const csv = parseOcrCsv("'nome file;'contribuente;'cod. fisc. contrib;'destinatario;'cod. fisc. dest;'ocr notifica;\n'DOC_X.pdf;'ROSSI MARIO;'RSSMRA80A01H501U;'ACME SRL;'12345678903;'1234567890123456;");
+    expect(guessOcrColumns(csv.headers)).toEqual({ cf: 4, ocr: 5 });
+    expect(ocrPairs(csv, 4, 5)).toEqual([['12345678903', '1234567890123456']]);
+  });
 });
 
 describe('ocrPairs', () => {

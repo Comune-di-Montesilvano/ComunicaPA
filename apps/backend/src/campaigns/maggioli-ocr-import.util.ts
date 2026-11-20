@@ -38,7 +38,8 @@ export interface OcrImportResult {
 
 /** CF/P.IVA normalizzato; P.IVA numerica con zeri iniziali persi (Excel) riportata a 11 cifre. */
 export function normalizeTaxKey(raw: string): string {
-  const v = raw.replace(/\s+/g, '').toUpperCase();
+  // Apostrofo iniziale = forzatura a testo di Excel (export Maggioli).
+  const v = raw.replace(/\s+/g, '').replace(/^'+/, '').toUpperCase();
   return /^\d{1,10}$/.test(v) ? v.padStart(11, '0') : v;
 }
 
@@ -52,7 +53,7 @@ export function matchOcrImport(pairs: Array<[string, string]>, recipients: OcrIm
   const ocrByCf = new Map<string, string | null>();
   for (const [rawCf, rawOcr] of pairs) {
     const cf = normalizeTaxKey(rawCf ?? '');
-    const ocr = (rawOcr ?? '').trim();
+    const ocr = (rawOcr ?? '').trim().replace(/^'+/, '').trim();
     if (!cf || !maggioliOcr(ocr)) {
       summary.nonValidi++;
       continue;
