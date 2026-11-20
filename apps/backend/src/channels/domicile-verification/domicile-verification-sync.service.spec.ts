@@ -5,7 +5,7 @@ import { InadQuotaExceededError } from '../inad/inad.service.js';
 const mockJobRepo = { find: jest.fn(), update: jest.fn(), findOneBy: jest.fn() };
 const mockInad = { getBulkState: jest.fn(), getBulkResult: jest.fn() };
 const mockDomicileEvents = { onJobProgress: jest.fn(), notifyJobProgress: jest.fn() };
-const mockAnprMassivo = { download: jest.fn(), reportEsito: jest.fn() };
+const mockAnprMassivo = { download: jest.fn() };
 
 describe('DomicileVerificationSyncService.handleCron', () => {
   let service: DomicileVerificationSyncService;
@@ -302,7 +302,7 @@ describe('DomicileVerificationSyncService — elaborazioni massive ANPR', () => 
     mockJobRepo.find.mockResolvedValue([readyJob({
       anprRequests: [{ kind: 'vita', id: '5', cfs: ['RRANGL74M28R701D', 'VRDLGI80A01H501E'], done: false }],
     })]);
-    mockAnprMassivo.download.mockResolvedValue({ ready: true, esiti: new Map([['RRANGL74M28R701D', { esistenzaInVita: 'N' }]]), entries: 1, sample: '[]' });
+    mockAnprMassivo.download.mockResolvedValue({ ready: true, esiti: new Map([['RRANGL74M28R701D', { esistenzaInVita: 'N' }]]), entries: 1 });
 
     await service.handleCron();
 
@@ -312,15 +312,14 @@ describe('DomicileVerificationSyncService — elaborazioni massive ANPR', () => 
     expect(call![1].resultAggregatoCsv).toContain('VRDLGI80A01H501E,,,codice fiscale non presente in ANPR');
   });
 
-  it('esito senza alcun CF riconosciuto: "verifica ANPR non riuscita", mai "non presente"; sonda GlitchTip', async () => {
+  it('esito senza alcun CF riconosciuto: "verifica ANPR non riuscita", mai "non presente"', async () => {
     mockJobRepo.find.mockResolvedValue([readyJob({
       anprRequests: [{ kind: 'vita', id: '5', cfs: ['RRANGL74M28R701D', 'VRDLGI80A01H501E'], done: false }],
     })]);
-    mockAnprMassivo.download.mockResolvedValue({ ready: true, esiti: new Map(), entries: 0, sample: '[]' });
+    mockAnprMassivo.download.mockResolvedValue({ ready: true, esiti: new Map(), entries: 0 });
 
     await service.handleCron();
 
-    expect(mockAnprMassivo.reportEsito).toHaveBeenCalledWith('vita', '5', { requested: 2, matched: 0, entries: 0, sample: '[]' });
     const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.DONE);
     expect(call![1].anprVitaResults).toEqual({});
     expect(call![1].anprRequests[0]).toMatchObject({ done: true, failed: expect.stringContaining('senza alcun CF riconosciuto') });

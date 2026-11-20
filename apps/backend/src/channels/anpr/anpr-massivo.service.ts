@@ -4,7 +4,6 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
-import { captureMessage } from '../../common/sentry.util.js';
 
 /**
  * Elaborazioni massive ANPR usate dalla Verifica Domicili. Stessa API
@@ -48,7 +47,7 @@ export interface AnprMassivoEsito {
 
 export type AnprMassivoDownloadResult =
   | { ready: false; detail: string }
-  | { ready: true; esiti: Map<string, AnprMassivoEsito>; entries: number; sample: string };
+  | { ready: true; esiti: Map<string, AnprMassivoEsito>; entries: number };
 
 interface RispostaMassiva {
   risposteMassive?: Array<{
@@ -152,31 +151,9 @@ export class AnprMassivoService {
     if (response.status !== 200) {
       return { ready: false, detail: `HTTP ${response.status}: ${buf.toString('utf8').slice(0, 300)}` };
     }
-    let parsed: ParsedRispostaMassiva;
-    try {
-      parsed = parseRispostaMassiva(buf);
-    } catch (err) {
-      captureMessage(`${label}: esito ANPR illeggibile`, 'error', {
-        idOperazioneAnpr, bytes: buf.length, head: maskCfs(buf.subarray(0, 2000).toString('utf8')),
-      });
-      throw err;
-    }
+    const parsed = parseRispostaMassiva(buf);
     this.logger.log(`${label} esito ${idOperazioneAnpr}: ${buf.length} byte, ${parsed.entries} voci, ${parsed.esiti.size} CF con soggetto`);
-    return { ready: true, esiti: parsed.esiti, entries: parsed.entries, sample: parsed.sample };
-  }
-
-  /**
-   * Sonda GlitchTip sull'esito scaricato (richiesta dell'ente dopo un esito
-   * "tutti assenti" in produzione): conteggi + campione sanificato della
-   * risposta, mai CF o anagrafiche in chiaro.
-   */
-  reportEsito(kind: AnprMassivoKind, idOperazioneAnpr: string, info: { requested: number; matched: number; entries: number; sample: string }): void {
-    const anomalo = info.requested > 0 && info.matched === 0;
-    captureMessage(
-      `ANPR massivo ${KINDS[kind].casoUso}: esito ${anomalo ? 'senza alcun CF riconosciuto' : 'scaricato'} (${info.matched}/${info.requested} CF, ${info.entries} voci)`,
-      anomalo ? 'warning' : 'info',
-      { idOperazioneAnpr, ...info },
-    );
+    return { ready: true, esiti: parsed.esiti, entries: parsed.entries };
   }
 
   /**
@@ -235,8 +212,6 @@ export interface ParsedRispostaMassiva {
   esiti: Map<string, AnprMassivoEsito>;
   /** Voci in risposteMassive (anche senza soggetti). */
   entries: number;
-  /** Prime voci, sanificate (sanitizeForProbe), per la diagnosi. */
-  sample: string;
 }
 
 const CF_RE = /[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]/gi;
@@ -246,18 +221,18 @@ export function maskCfs(text: string): string {
   return text.replace(CF_RE, (cf) => `***${cf.slice(-4)}`);
 }
 
-/** Chiavi tecniche il cui valore resta in chiaro nella sonda. */
+/** Chiavi tecniche il cui valore resta in chiaro nei messaggi d'errore. */
 const PROBE_PLAIN_KEYS = new Set(['chiave', 'valore', 'id', 'idoperazioneanpr', 'stato', 'codiceerroreanomalia', 'testoerroreanomalia', 'tipoerroreanomalia', 'tiporicerca', 'casouso']);
 
 /**
- * Struttura della risposta senza dati personali: chiavi intatte, valori
- * delle chiavi tecniche in chiaro, CF mascherati, ogni altra stringa
- * ridotta a `<str:lunghezza>`.
+ * Struttura della risposta senza dati personali (per log ed errori): chiavi
+ * intatte, valori delle chiavi tecniche in chiaro, CF mascherati, ogni
+ * altra stringa ridotta a `<str:lunghezza>`.
  */
-export function sanitizeForProbe(value: unknown, key = ''): unknown {
-  if (Array.isArray(value)) return value.slice(0, 5).map((v) => sanitizeForProbe(v, key)).concat(value.length > 5 ? [`… +${value.length - 5}`] : []);
+export function sanitizeForLog(value: unknown, key = ''): unknown {
+  if (Array.isArray(value)) return value.slice(0, 5).map((v) => sanitizeForLog(v, key)).concat(value.length > 5 ? [`… +${value.length - 5}`] : []);
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, sanitizeForProbe(v, k)]));
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, sanitizeForLog(v, k)]));
   }
   if (typeof value === 'string') {
     if (PROBE_PLAIN_KEYS.has(key.toLowerCase())) return maskCfs(value);
@@ -295,15 +270,17 @@ export function parseRispostaMassiva(buf: Buffer): ParsedRispostaMassiva {
   }
   const risposte = prop(data, 'risposteMassive');
   if (!Array.isArray(risposte)) {
-    throw new Error(`ANPR massivo: esito senza "risposteMassive": ${JSON.stringify(sanitizeForProbe(data)).slice(0, 300)}`);
+    throw new Error(`ANPR massivo: esito senza "risposteMassive": ${JSON.stringify(sanitizeForLog(data)).slice(0, 300)}`);
   }
   const esiti = new Map<string, AnprMassivoEsito>();
   for (const r of risposte as NonNullable<RispostaMassiva['risposteMassive']>) {
     const lista = prop(prop(r, 'RispostaE002OK'), 'listaSoggetti');
     const rawSoggetti = prop(lista, 'datiSoggetto');
     const soggetti = (Array.isArray(rawSoggetti) ? rawSoggetti : rawSoggetti ? [rawSoggetti] : []) as Array<Record<string, unknown>>;
-    // cf della voce; in mancanza, quello del soggetto (schema E002: generalita.codiceFiscale.codFiscale).
-    const cfRaw = prop(r, 'cf') ?? prop(r, 'codiceFiscale')
+    // CF della voce: in esercizio ANPR lo manda in "input" (non "cf" come
+    // nell'esempio della spec: bug reale, 198 soggetti letti come 0 assenti →
+    // "tutti non presenti"); in mancanza, quello del soggetto (schema E002).
+    const cfRaw = prop(r, 'input') ?? prop(r, 'cf') ?? prop(r, 'codiceFiscale')
       ?? prop(prop(prop(soggetti[0], 'generalita'), 'codiceFiscale'), 'codFiscale');
     if (typeof cfRaw !== 'string' || !cfRaw.trim() || soggetti.length === 0) continue;
     const info = prop(soggetti[0], 'infoSoggettoEnte');
@@ -312,6 +289,5 @@ export function parseRispostaMassiva(buf: Buffer): ParsedRispostaMassiva {
     const v = String(prop(vita, 'valore') ?? '').trim().toUpperCase();
     esiti.set(cfRaw.trim().toUpperCase(), v === 'S' || v === 'N' ? { esistenzaInVita: v } : {});
   }
-  const sample = JSON.stringify(sanitizeForProbe(risposte.slice(0, 5))).slice(0, 8000);
-  return { esiti, entries: risposte.length, sample };
+  return { esiti, entries: risposte.length };
 }
