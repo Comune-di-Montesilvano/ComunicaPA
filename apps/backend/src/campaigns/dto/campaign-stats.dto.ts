@@ -162,6 +162,11 @@ export interface SendReportRowDto {
   digitalDomicileAddress: string | null;
   sendStatus: string | null;
   sendStatusHistory: Array<{ status: string; activeFrom: string }>;
+  /** Colonne indirizzo mappate in physicalAddressConfig (stringa vuota se non mappate). */
+  address: string;
+  municipality: string;
+  /** Vuoto per l'Italia. */
+  foreignState: string;
   /** null se la campagna non ha co-consegna App IO configurata. */
   appIoOutcome: { success: boolean; error: string | null } | null;
   externalId: string | null;
@@ -191,6 +196,11 @@ export interface PostalReportRowDto {
   postalDeliveryDate?: string | null;
   postalAcceptanceId?: string | null;
   postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }>;
+  /** Colonne indirizzo mappate in physicalAddressConfig (stringa vuota se non mappate). */
+  address: string;
+  municipality: string;
+  /** Vuoto per l'Italia. */
+  foreignState: string;
   codiceErrore: string | null;
   descrizioneErrore: string | null;
   /** null se la campagna non ha co-consegna App IO configurata. */

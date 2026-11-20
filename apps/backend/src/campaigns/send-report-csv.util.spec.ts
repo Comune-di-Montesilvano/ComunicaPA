@@ -15,6 +15,9 @@ const baseReport: SendReportDto = {
       { status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' },
       { status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' },
     ],
+    address: 'Via Roma 1',
+    municipality: 'Parigi',
+    foreignState: 'Francia',
     appIoOutcome: null,
     externalId: null,
   }],
@@ -65,6 +68,12 @@ describe('buildSendReportAttualeCsv', () => {
 });
 
 describe('buildSendReportStoricoCsv', () => {
+  it('indirizzo, città e stato estero dopo il nominativo', () => {
+    const [header, line] = buildSendReportStoricoCsv(baseReport).split('\n');
+    expect(header.startsWith('"Codice Fiscale";"Nominativo";"Indirizzo";"Città";"Stato Estero";"IUN"')).toBe(true);
+    expect(line).toContain('"Mario Rossi";"Via Roma 1";"Parigi";"Francia";"IUN-1"');
+  });
+
   it('include una colonna data per ciascuno dei 10 stati, vuota se mai raggiunto', () => {
     const csv = buildSendReportStoricoCsv(baseReport);
     const lines = csv.split('\n');
@@ -72,7 +81,7 @@ describe('buildSendReportStoricoCsv', () => {
     expect(lines[0]).toContain('"Data Restituzione al Mittente"');
     expect(lines[0]).toContain(`"Notificata per l'ente"`);
     expect(lines[0]).toContain('"Notificata per il destinatario"');
-    expect(lines[0].split(';')).toHaveLength(5 + 10 + 2);
+    expect(lines[0].split(';')).toHaveLength(8 + 10 + 2);
     // REFUSED mai raggiunto in questo fixture: colonna vuota.
     const cells = lines[1].split(';');
     const refusedIndex = lines[0].split(';').findIndex((h) => h === '"Data Rifiuto"');

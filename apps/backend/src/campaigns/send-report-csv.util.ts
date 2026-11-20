@@ -48,7 +48,7 @@ export function buildSendReportAttualeCsv(report: SendReportDto): string {
 
 export function buildSendReportStoricoCsv(report: SendReportDto): string {
   const headers = [
-    'Codice Fiscale', 'Nominativo', 'IUN', 'Tipo Domicilio Digitale', 'Indirizzo Domicilio',
+    'Codice Fiscale', 'Nominativo', 'Indirizzo', 'Città', 'Stato Estero', 'IUN', 'Tipo Domicilio Digitale', 'Indirizzo Domicilio',
     ...SEND_STATUS_HISTORY_COLUMNS.map((c) => c.header),
     ...LEGAL_HEADERS,
   ];
@@ -60,6 +60,9 @@ export function buildSendReportStoricoCsv(report: SendReportDto): string {
     const fields = [
       r.codiceFiscale,
       r.fullName ?? '',
+      r.address ?? '',
+      r.municipality ?? '',
+      r.foreignState ?? '',
       r.iun ?? '',
       digitalDomicileTypeLabel(r.digitalDomicileType),
       r.digitalDomicileAddress ?? '',

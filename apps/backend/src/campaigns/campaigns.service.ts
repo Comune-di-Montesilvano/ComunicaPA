@@ -25,7 +25,7 @@ import { DownloadEvent } from '../entities/download-event.entity.js';
 import { NOTIFICATION_JOB_SEND, type EngineName } from '../queue/notification-job.types.js';
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
-import { resolvePaymentData } from '../channels/payment-config.util.js';
+import { reportPhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
 import type { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto.js';
 import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto.js';
@@ -58,7 +58,7 @@ import { ATTACHMENT_DENIED_MESSAGE, canReadCampaignAttachments, canViewCampaign,
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
 import { errorMessage } from '../common/error-message.js';
-import type { PaymentConfig } from '../channels/payment-config.util.js';
+import type { PaymentConfig, PhysicalAddressConfig } from '../channels/payment-config.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -3470,6 +3470,7 @@ export class CampaignsService {
 
     const hasAppIoCoDelivery = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
 
+    const addressCfg = campaign.channelConfig?.['physicalAddressConfig'] as PhysicalAddressConfig | undefined;
     const rows: SendReportRowDto[] = recipients.map((r) => {
       const latest = latestByRecipient.get(r.id);
       const first = firstByRecipient.get(r.id);
@@ -3485,6 +3486,7 @@ export class CampaignsService {
         digitalDomicileAddress: latest?.sendDigitalDomicile?.address ?? null,
         sendStatus: latest?.status === AttemptStatus.FAILED ? 'FAILED' : (latest?.sendStatus ?? null),
         sendStatusHistory: latest?.sendStatusHistory ?? [],
+        ...reportPhysicalAddress(r, addressCfg),
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
         externalId: resolveExternalId(campaign, r),
       };
@@ -3795,6 +3797,7 @@ export class CampaignsService {
       }
     }
 
+    const addressCfg = campaign.channelConfig?.['physicalAddressConfig'] as PhysicalAddressConfig | undefined;
     const rows: PostalReportRowDto[] = recipients.map((r) => {
       const latest = latestByRecipient.get(r.id);
       const poste = latest ? posteByAttempt.get(latest.id) : undefined;
@@ -3822,6 +3825,7 @@ export class CampaignsService {
         postalDeliveryDate: latest?.postalDeliveryDate ? latest.postalDeliveryDate.toISOString() : null,
         postalAcceptanceId: latest?.postalAcceptanceId ?? null,
         postalStatusHistory: latest?.postalStatusHistory ?? [],
+        ...reportPhysicalAddress(r, addressCfg),
         codiceErrore: (latestPayload?.['codiceErrore'] as string | undefined) ?? null,
         descrizioneErrore: (latestPayload?.['descrizione'] as string | undefined) ?? null,
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
