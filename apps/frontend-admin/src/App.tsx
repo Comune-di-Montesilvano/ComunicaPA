@@ -1743,7 +1743,7 @@ export function App(): React.JSX.Element {
   }, [notifDetail, notifDetailLoading]);
 
   interface DomicileVerificationStatus {
-    status: 'queued' | 'processing' | 'done' | 'failed';
+    status: 'queued' | 'processing' | 'done' | 'failed' | 'cancelled';
     totalRows: number;
     cfFisicoTotal: number;
     pivaTotal: number;
@@ -1766,7 +1766,7 @@ export function App(): React.JSX.Element {
   }
   interface DomicileVerificationJobSummary {
     id: string;
-    status: 'queued' | 'processing' | 'done' | 'failed';
+    status: 'queued' | 'processing' | 'done' | 'failed' | 'cancelled';
     createdAt: string;
     totalRows: number;
     cfFisicoTotal: number;
@@ -3732,13 +3732,13 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (!domicileVerifJobId) return;
-    if (domicileVerifStatus?.status === 'done' || domicileVerifStatus?.status === 'failed') return;
+    if (domicileVerifStatus?.status === 'done' || domicileVerifStatus?.status === 'failed' || domicileVerifStatus?.status === 'cancelled') return;
     const timer = setInterval(async () => {
       try {
         const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}`);
         const data = await res.json();
         setDomicileVerifStatus(data);
-        if (data.status === 'done' || data.status === 'failed') fetchDomicileVerifJobs();
+        if (data.status === 'done' || data.status === 'failed' || data.status === 'cancelled') fetchDomicileVerifJobs();
       } catch {
         // errore transitorio di polling: riprova al giro successivo
       }
@@ -3788,6 +3788,26 @@ export function App(): React.JSX.Element {
       await handleDomicileVerifOpenJob(domicileVerifJobId);
     } catch {
       alert('Errore durante lo skip della verifica INAD');
+    } finally {
+      setDomicileVerifSkipping(false);
+    }
+  };
+
+  const handleDomicileVerifCancel = async () => {
+    if (!domicileVerifJobId) return;
+    if (!confirm('Annullare questa verifica? Le interrogazioni ancora in coda vengono fermate e non verrà prodotto nessun risultato. L\'operazione non si può annullare.')) return;
+    setDomicileVerifSkipping(true);
+    try {
+      const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}/cancel`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        alert(data?.message || 'Errore durante l\'annullamento');
+        return;
+      }
+      await handleDomicileVerifOpenJob(domicileVerifJobId);
+      fetchDomicileVerifJobs();
+    } catch {
+      alert('Errore durante l\'annullamento');
     } finally {
       setDomicileVerifSkipping(false);
     }
@@ -14390,7 +14410,7 @@ export function App(): React.JSX.Element {
 
                 {domicileVerifJobId && domicileVerifStatus && (
                   <div>
-                    {domicileVerifStatus.status !== 'failed' && domicileVerifStatus.errorMessage && (
+                    {domicileVerifStatus.status !== 'failed' && domicileVerifStatus.status !== 'cancelled' && domicileVerifStatus.errorMessage && (
                       <div className="alert alert-warning small">Attenzione: {domicileVerifStatus.errorMessage}</div>
                     )}
 
@@ -14429,6 +14449,13 @@ export function App(): React.JSX.Element {
                             </div>
                           </>
                         )}
+                        <button
+                          className="btn btn-sm btn-danger mt-1 me-2"
+                          disabled={domicileVerifSkipping}
+                          onClick={handleDomicileVerifCancel}
+                        >
+                          <XCircle className="me-1" size={14} />Annulla verifica
+                        </button>
                         {(domicileVerifStatus.anprRequestsDone ?? 0) < (domicileVerifStatus.anprRequestsTotal ?? 0) && (
                           <button
                             className="btn btn-sm btn-outline-danger mt-1 me-2"
@@ -14491,7 +14518,13 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
 
-                    {(domicileVerifStatus.status === 'done' || domicileVerifStatus.status === 'failed') && (
+                    {domicileVerifStatus.status === 'cancelled' && (
+                      <div className="alert alert-secondary small">
+                        {domicileVerifStatus.errorMessage || 'Verifica annullata'}: nessun risultato disponibile.
+                      </div>
+                    )}
+
+                    {(domicileVerifStatus.status === 'done' || domicileVerifStatus.status === 'failed' || domicileVerifStatus.status === 'cancelled') && (
                       <button className="btn btn-sm btn-outline-primary" onClick={handleDomicileVerifReset}>
                         <RotateCcw className="me-1" size={16} />Nuova verifica
                       </button>

@@ -318,7 +318,7 @@ describe('DomicileVerificationSyncService — elaborazioni massive ANPR', () => 
 
     await service.handleCron();
 
-    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+    expect(mockJobRepo.update.mock.calls.some(([, patch]: any) => patch.status === DomicileVerificationJobStatus.FAILED)).toBe(false);
   });
 
   it('con ANPR pendente la soglia di stallo è 96h, non 48h', async () => {
@@ -326,10 +326,20 @@ describe('DomicileVerificationSyncService — elaborazioni massive ANPR', () => 
     mockAnprMassivo.download.mockResolvedValue({ ready: false, detail: 'HTTP 404' });
     mockJobRepo.find.mockResolvedValue([readyJob({ createdAt: old(60), anprRequests: [{ kind: 'id', id: '9', cfs: ['RRANGL74M28R701D'], done: false }] })]);
     await service.handleCron();
-    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+    const failed = () => mockJobRepo.update.mock.calls.some(([, patch]: any) => patch.status === DomicileVerificationJobStatus.FAILED);
+    expect(failed()).toBe(false);
 
     mockJobRepo.find.mockResolvedValue([readyJob({ createdAt: old(97), anprRequests: [{ kind: 'id', id: '9', cfs: ['RRANGL74M28R701D'], done: false }] })]);
     await service.handleCron();
-    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+    expect(failed()).toBe(true);
+  });
+
+  it('scritture finali condizionate a PROCESSING: un annullamento concorrente non viene sovrascritto da DONE', async () => {
+    mockJobRepo.find.mockResolvedValue([readyJob({ anprRequests: [] })]);
+
+    await service.handleCron();
+
+    const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.DONE);
+    expect(call![0]).toEqual({ id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING });
   });
 });

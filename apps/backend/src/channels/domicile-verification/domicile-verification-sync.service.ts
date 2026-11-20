@@ -71,7 +71,7 @@ export class DomicileVerificationSyncService {
       await this.syncOne(job);
     } catch (err) {
       this.logger.warn(`Errore sync DomicileVerificationJob ${job.id}: ${err instanceof Error ? err.message : err}`);
-      await this.jobRepo.update(job.id, {
+      await this.jobRepo.update({ id: job.id, status: DomicileVerificationJobStatus.PROCESSING }, {
         status: DomicileVerificationJobStatus.FAILED,
         errorMessage: err instanceof Error ? err.message : 'Errore sconosciuto',
         completedAt: new Date(),
@@ -150,7 +150,7 @@ export class DomicileVerificationSyncService {
       // può legittimamente durare fino a 3 giorni.
       const staleAfter = anpr.ready ? STALE_AFTER_HOURS : ANPR_STALE_AFTER_HOURS;
       if (!quotaBlocked && ageHours > staleAfter) {
-        await this.jobRepo.update(job.id, {
+        await this.jobRepo.update({ id: job.id, status: DomicileVerificationJobStatus.PROCESSING }, {
           ...patch,
           status: DomicileVerificationJobStatus.FAILED,
           errorMessage: `Verifica interrotta: non completata entro ${staleAfter}h (INAD pronto: ${inadAllReady}, App IO pronto: ${appIoReady}, Registro Imprese ${job.registroImpreseDone}/${job.registroImpreseTotal}, ANPR pronto: ${anpr.ready}${anpr.lastResponse ? ` — ultima risposta ANPR: ${anpr.lastResponse}` : ''}).`,
@@ -175,7 +175,9 @@ export class DomicileVerificationSyncService {
       anprVitaResults: anpr.vitaResults,
     });
 
-    await this.jobRepo.update(job.id, {
+    // Condizionato a PROCESSING: un annullamento arrivato durante questo
+    // giro non viene sovrascritto da DONE.
+    await this.jobRepo.update({ id: job.id, status: DomicileVerificationJobStatus.PROCESSING }, {
       ...patch,
       status: DomicileVerificationJobStatus.DONE,
       resultAssentiCsv: csvs.assentiCsv,

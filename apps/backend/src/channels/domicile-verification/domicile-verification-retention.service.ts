@@ -28,7 +28,7 @@ export class DomicileVerificationRetentionService {
       where: {
         createdAt: LessThan(cutoff),
         // PROCESSING escluso: mai cancellare un job in corso
-        status: In([DomicileVerificationJobStatus.QUEUED, DomicileVerificationJobStatus.DONE, DomicileVerificationJobStatus.FAILED]),
+        status: In([DomicileVerificationJobStatus.QUEUED, DomicileVerificationJobStatus.DONE, DomicileVerificationJobStatus.FAILED, DomicileVerificationJobStatus.CANCELLED]),
       },
       take: 200,
     });

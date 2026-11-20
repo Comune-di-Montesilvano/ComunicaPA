@@ -27,10 +27,12 @@ const KINDS: Record<AnprMassivoKind, KindConfig> = {
 
 const baseUrl = (k: AnprMassivoKind) =>
   `https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/${KINDS[k].service}/v1`;
-// aud: stessa regola verificata su C002 (URL SENZA "-PDND" e senza operazione
-// in coda). Per i massivi ricavata per analogia, non ancora provata dal vivo.
-const audOf = (k: AnprMassivoKind) =>
-  `https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR/${KINDS[k].service}/v1`;
+// aud di Agid-JWT-Signature e Agid-JWT-TrackingEvidence = URL dei `servers`
+// della spec, CON "-PDND" — l'opposto di C002/C019 (lì senza "-PDND").
+// Con la regola di C002 GovWay risponde 400 InteroperabilityInvalidRequest
+// (visto in produzione; supporto ANPR: "claim 'aud' non valido",
+// italia/anpr#4662; valore confermato in collaudo in italia/anpr#5425).
+const audOf = (k: AnprMassivoKind) => baseUrl(k);
 
 /** Limite ANPR sul file di input compresso (doc ufficiale: 1.500.000 byte). */
 export const ANPR_MASSIVO_MAX_GZ_BYTES = 1_500_000;
@@ -150,6 +152,21 @@ export class AnprMassivoService {
       return { ready: false, detail: `HTTP ${response.status}: ${buf.toString('utf8').slice(0, 300)}` };
     }
     return { ready: true, esiti: parseRispostaMassiva(buf) };
+  }
+
+  /**
+   * Annulla una richiesta. ANPR lo accetta solo nello stato "inserita"
+   * (in pratica pochi istanti, italia/anpr#5425): false se rifiutato.
+   */
+  async cancel(kind: AnprMassivoKind, idOperazioneAnpr: string, operatorUsername: string): Promise<boolean> {
+    const headers = await this.securityHeaders(kind, operatorUsername, []);
+    const response = await fetch(`${baseUrl(kind)}/anpr-massivo-e002-delete/resource/${encodeURIComponent(idOperazioneAnpr)}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (response.status === 204 || response.ok) return true;
+    this.logger.debug(`ANPR massivo ${KINDS[kind].casoUso} annullamento ${idOperazioneAnpr} rifiutato: HTTP ${response.status} — ${(await response.text()).slice(0, 300)}`);
+    return false;
   }
 
   private async securityHeaders(

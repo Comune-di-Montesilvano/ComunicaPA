@@ -97,6 +97,11 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       };
 
       for (let i = 0; i < eligibleRows.length; i += CONCURRENCY) {
+        // Verifica annullata dall'operatore: stop, nessuna altra chiamata App IO.
+        if (i > 0 && i % (CONCURRENCY * PROGRESS_UPDATE_EVERY) === 0 && (await this.isCancelled(jobId))) {
+          this.logger.log(`DomicileVerificationJob ${jobId}: annullato, App IO interrotto a ${processed}/${eligibleRows.length}`);
+          return;
+        }
         const batch = eligibleRows.slice(i, i + CONCURRENCY);
         await Promise.all(batch.map(runRow));
       }
@@ -115,11 +120,16 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       this.domicileEvents.notifyJobProgress(jobId);
     } catch (err) {
       this.logger.error(`DomicileVerificationJob ${jobId}: App IO fallito, job intero marcato FAILED — ${errorMessage(err)}`);
-      await this.jobRepo.update(jobId, {
+      await this.jobRepo.update({ id: jobId, status: DomicileVerificationJobStatus.PROCESSING }, {
         status: DomicileVerificationJobStatus.FAILED,
         errorMessage: errorMessage(err),
         completedAt: new Date(),
       });
     }
+  }
+
+  private async isCancelled(jobId: string): Promise<boolean> {
+    const current = await this.jobRepo.findOneBy({ id: jobId });
+    return current?.status === DomicileVerificationJobStatus.CANCELLED;
   }
 }
