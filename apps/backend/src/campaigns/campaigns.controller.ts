@@ -971,7 +971,7 @@ export class CampaignsController {
   @Get(':id/maggioli-export-summary')
   async getMaggioliExportSummary(@Param('id', ParseUUIDPipe) id: string) {
     const exp = await this.campaignsService.getMaggioliExport(id);
-    return { notifiche: exp.notifiche.length, mancate: exp.mancate.length, senzaOcr: exp.senzaOcr, nonEsportabili: exp.nonEsportabili };
+    return { notifiche: exp.notifiche.length, mancate: exp.mancate.length, senzaOcr: exp.senzaOcr, ocrMancanti: exp.ocrMancanti, nonEsportabili: exp.nonEsportabili };
   }
 
   @Post(':id/maggioli-ocr-import')

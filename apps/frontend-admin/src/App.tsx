@@ -3113,7 +3113,7 @@ export function App(): React.JSX.Element {
   const [notifExternalIdDraft, setNotifExternalIdDraft] = useState('');
   const [notifExternalIdSaving, setNotifExternalIdSaving] = useState(false);
   useEffect(() => { setNotifExternalIdDraft(''); }, [notifDetail?.recipient.id]);
-  const [maggioliSummary, setMaggioliSummary] = useState<{ notifiche: number; mancate: number; senzaOcr: number; nonEsportabili: number } | null>(null);
+  const [maggioliSummary, setMaggioliSummary] = useState<{ notifiche: number; mancate: number; senzaOcr: number; ocrMancanti: number; nonEsportabili: number } | null>(null);
   const [postalDeliveryStatusBreakdown, setPostalDeliveryStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
   const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number; sendEstimatedCount?: number } | null>(null);
@@ -18703,11 +18703,11 @@ export function App(): React.JSX.Element {
                                   </button>
                                 </div>
                               )}
-                              {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (campaign?.totalRecipients ?? 0) > 0 && (
+                              {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (maggioliSummary?.ocrMancanti ?? 0) > 0 && (
                                 <button
                                   className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-secondary"
                                   onClick={() => { resetOcrImport(); setOcrImportOpen(true); }}
-                                  title="Abbina il codice OCR (External ID) ai destinatari che non ce l'hanno, da un CSV con codice fiscale/P.IVA e OCR"
+                                  title={`${maggioliSummary?.ocrMancanti} destinatari senza OCR: abbinalo da un CSV con codice fiscale/P.IVA e OCR`}
                                 >
                                   <Upload className="me-1" size={14} />Abbina OCR da CSV
                                 </button>

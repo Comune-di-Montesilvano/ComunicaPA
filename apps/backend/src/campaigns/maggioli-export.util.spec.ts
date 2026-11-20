@@ -121,6 +121,9 @@ describe('esclusi', () => {
       postal({ externalId: null }),
     ]);
     expect(p).toMatchObject({ notifiche: [], mancate: [], nonEsportabili: 2, senzaOcr: 1 });
+    // OCR mancante contato su tutti i destinatari, anche senza esito.
+    expect(maggioliFromPostal([postal({ externalId: null, legalOutcome: 'not_delivered', postalDeliveryStatus: null }), postal({})]).ocrMancanti).toBe(1);
+    expect(maggioliFromSend([send({ externalId: '614451234567' }), send({})]).ocrMancanti).toBe(1);
     const s = maggioliFromSend([send({ sendStatusHistory: [{ status: 'CANCELLED', activeFrom: '2026-05-01T08:00:00Z' }] })]);
     expect(s).toMatchObject({ notifiche: [], mancate: [], nonEsportabili: 1 });
   });
