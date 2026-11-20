@@ -161,6 +161,15 @@ anche uno stato `5` non documentato. L'annullamento (`DELETE
 "inserita", che dura pochi istanti: l'annullamento di una Verifica Domicili
 lo tenta comunque, best effort.
 
+**Esito vuoto ≠ tutti assenti.** Primo uso reale in produzione (C007, 204 CF):
+aggregato con 204/204 "non presente in ANPR", impossibile. ANPR risponde
+`{"risposteMassive":[]}` quando non abbina nulla (input o tipoRicerca errati,
+italia/anpr#5303, #4983): un lotto con zero CF riconosciuti ora finisce in
+`DomicileAnprRequest.failed` e nel report come "verifica ANPR non riuscita".
+Ogni download riuscito manda una sonda GlitchTip (`reportEsito`: conteggi +
+prime 5 voci sanificate con `sanitizeForProbe`, CF → `***` + ultime 4) per
+vedere la risposta reale. Causa del vuoto ancora da capire dalla sonda.
+
 **Da verificare al primo uso reale** (dedotti, non provati):
 1. GET download con `Agid-JWT-Signature` senza `signed_headers` di body
    (dichiarare `digest`/`content-type` senza inviarli → errore, #4888);

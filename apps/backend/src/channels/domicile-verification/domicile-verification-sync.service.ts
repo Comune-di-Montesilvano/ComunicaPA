@@ -173,6 +173,7 @@ export class DomicileVerificationSyncService {
       registroImpreseFoundMap: job.registroImpreseFoundMap ?? {},
       anprResults: anpr.results,
       anprVitaResults: anpr.vitaResults,
+      anprFailedCfs: anpr.requests.filter((r) => r.failed).flatMap((r) => r.cfs),
     });
 
     // Condizionato a PROCESSING: un annullamento arrivato durante questo
@@ -224,6 +225,17 @@ export class DomicileVerificationSyncService {
         if (!res.ready) {
           req.lastResponse = res.detail;
           lastResponse = res.detail;
+          continue;
+        }
+        const matched = req.cfs.filter((cf) => res.esiti.has(cf)).length;
+        this.anprMassivo.reportEsito(req.kind, req.id, { requested: req.cfs.length, matched, entries: res.entries, sample: res.sample });
+        if (req.cfs.length > 0 && matched === 0) {
+          // Nessun CF riconosciuto su un intero lotto: esito vuoto o formato
+          // inatteso, mai "tutti assenti" (bug reale: 204/204 "non presenti").
+          req.done = true;
+          req.failed = `esito ANPR senza alcun CF riconosciuto (${res.entries} voci su ${req.cfs.length} CF inviati)`;
+          req.lastResponse = undefined;
+          this.logger.warn(`DomicileVerificationJob ${job.id}: ANPR ${req.kind} ${req.id}: ${req.failed}`);
           continue;
         }
         for (const cf of req.cfs) {
