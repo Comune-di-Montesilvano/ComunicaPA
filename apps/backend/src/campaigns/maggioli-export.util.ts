@@ -100,11 +100,19 @@ export function sendRegisteredLetterOf(timeline: SendTimelineEvent[] | null | un
 const SEND_KIND_LABEL: Record<SendDeliveryKind, string> = { PEC: 'SEND PEC', RACC: 'SEND RACC', IO: 'SEND APPIO', WEB: 'SEND WEB', RADD: 'SEND RADD' };
 
 /**
- * Campi raccomandata = numero di raccomandata; senza (PEC, SEND digitale)
- * il protocollo n/anno. Il canale va nei campi note.
+ * Con il numero di raccomandata: il numero nei campi raccomandata e note
+ * vuote (per SEND la sigla del canale c'è comunque). Senza (dirottati PEC,
+ * SEND digitale): protocollo n/anno nei campi raccomandata, canale nelle
+ * note e, nelle mancate, protocollo anche nel lotto.
  */
-function maggioliFields(numero: string | null, canale: string, protocol: string | null): { raccomandata: string | null; canale: string; protocollo: string | null } {
-  return { raccomandata: numero ?? fitProtocol(protocol, 12), canale, protocollo: fitProtocol(protocol, 15) };
+function maggioliFields(
+  numero: string | null,
+  canale: string,
+  protocol: string | null,
+  canaleSempre: boolean,
+): { raccomandata: string | null; canale: string; protocollo: string | null } {
+  if (numero) return { raccomandata: numero, canale: canaleSempre ? canale : '', protocollo: null };
+  return { raccomandata: fitProtocol(protocol, 12), canale, protocollo: fitProtocol(protocol, 15) };
 }
 
 /** Protocollo n/anno in `length` caratteri: se non ci sta, anno a 2 cifre (12345678/2026 → 12345678/26). */
@@ -150,8 +158,8 @@ export function maggioliFromPostal(rows: PostalReportRowDto[]): MaggioliExport {
     }
     // Dirottato su PEC: nessuna raccomandata, sigla PEC.
     const f = reason === 'Via PEC'
-      ? maggioliFields(null, 'PEC', r.protocol)
-      : maggioliFields(r.postalAcceptanceId ?? null, 'RACC', r.protocol);
+      ? maggioliFields(null, 'PEC', r.protocol, false)
+      : maggioliFields(r.postalAcceptanceId ?? null, 'RACC', r.protocol, false);
     if (delivered) {
       out.notifiche.push({ ocr, dataNotifica: r.legalOutcomeAt!, raccomandata: f.raccomandata, canale: f.canale });
     } else {
@@ -183,7 +191,7 @@ export function maggioliFromSend(rows: SendReportRowDto[]): MaggioliExport {
       continue;
     }
     const kind = r.sendDeliveryKind ?? (legal ? null : 'RACC');
-    const f = maggioliFields(kind === 'RACC' ? r.sendRegisteredLetterCode : null, kind ? SEND_KIND_LABEL[kind] : 'SEND', r.protocol);
+    const f = maggioliFields(kind === 'RACC' ? r.sendRegisteredLetterCode : null, kind ? SEND_KIND_LABEL[kind] : 'SEND', r.protocol, true);
     if (legal) {
       out.notifiche.push({ ocr, dataNotifica: legal, raccomandata: f.raccomandata, canale: f.canale });
     } else {
