@@ -17,7 +17,7 @@ export interface MaggioliNotifica {
   dataNotifica: string;
   /** Campo "Numero raccomandata" (12-23): numero, o protocollo n/anno se non c'è raccomandata. */
   raccomandata: string | null;
-  /** Campo note "Raccomandata atto" (52-63): canale (RACC, PEC, SEND PEC, ...). */
+  /** Campo note "Numero inkjet" (42-49, sigla accorciata a 8): canale (PEC, SEND PEC, ...). */
   canale: string;
 }
 
@@ -207,6 +207,12 @@ export function maggioliFromSend(rows: SendReportRowDto[]): MaggioliExport {
   return out;
 }
 
+/** Sigla del canale negli 8 caratteri dell'inkjet delle notifiche. */
+const CANALE_8: Record<string, string> = { 'SEND RACC': 'SENDRACC', 'SEND APPIO': 'SEND IO', 'SEND RADD': 'SENDRADD' };
+export function canaleNotifiche(canale: string): string {
+  return CANALE_8[canale] ?? canale.slice(0, 8);
+}
+
 /** Tracciato Importazione Notifiche: 64 caratteri per record, fine riga LF come il file d'esempio. */
 export function buildMaggioliNotificheTxt(records: MaggioliNotifica[]): string {
   return records.map((n) => [
@@ -216,9 +222,9 @@ export function buildMaggioliNotificheTxt(records: MaggioliNotifica[]): string {
     'N',                              // 24     compiuta giacenza: notifica alla data indicata
     'A',                              // 25     indicatore tracciato
     n.ocr,                            // 26-41  riferimento verbale
-    field('', 8),                     // 42-49  numero inkjet
+    field(canaleNotifiche(n.canale), 8), // 42-49 numero inkjet (note): canale
     field('', 2),                     // 50-51  filler
-    field(n.canale, 12),              // 52-63  raccomandata atto (note): canale
+    field(n.raccomandata, 12),        // 52-63  raccomandata atto: come 12-23 (il campo note "raccomandata atto" non viene importato)
     'A',                              // 64     filler
   ].join('')).map((l) => `${l}\n`).join('');
 }

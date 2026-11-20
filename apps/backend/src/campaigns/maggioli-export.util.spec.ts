@@ -59,7 +59,7 @@ describe('tracciato Notifiche (64 caratteri)', () => {
     expect(line.slice(23, 25)).toBe('NA');
     expect(line.slice(25, 41)).toBe('1234567890123456');
     expect(line.slice(41, 51)).toBe(' '.repeat(10));
-    expect(line.slice(51, 63)).toBe(' '.repeat(12));
+    expect(line.slice(51, 63)).toBe('614451234567');
     expect(line[63]).toBe('A');
   });
 
@@ -192,16 +192,19 @@ describe('canale SEND nei campi note', () => {
     ]);
     const [racc, pec, io] = buildMaggioliNotificheTxt(exp.notifiche).split('\n');
     expect(racc.slice(11, 23)).toBe('614451234567');
-    expect(racc.slice(51, 63)).toBe('SEND RACC   ');
+    expect(racc.slice(51, 63)).toBe('614451234567');
+    expect(racc.slice(41, 49)).toBe('SENDRACC');
     expect(pec.slice(11, 23)).toBe('12345/2026  ');
-    expect(pec.slice(51, 63)).toBe('SEND PEC    ');
+    expect(pec.slice(51, 63)).toBe('12345/2026  ');
+    expect(pec.slice(41, 49)).toBe('SEND PEC');
     expect(io.slice(11, 23)).toBe(' '.repeat(12));
-    expect(io.slice(51, 63)).toBe('SEND APPIO  ');
-    expect(racc.slice(41, 49)).toBe(' '.repeat(8));
+    expect(io.slice(51, 63)).toBe(' '.repeat(12));
+    expect(io.slice(41, 49)).toBe('SEND IO ');
     expect(racc).toHaveLength(64);
     // Postalizzazione con raccomandata: note vuote; SEND: sigla comunque.
     const postale = buildMaggioliNotificheTxt(maggioliFromPostal([postal({ protocol: '1/2026' })]).notifiche);
-    expect(postale.slice(51, 63)).toBe(' '.repeat(12));
+    expect(postale.slice(41, 49)).toBe(' '.repeat(8));
+    expect(postale.slice(51, 63)).toBe('614451234567');
   });
 
   it('mancate: raccomandata o protocollo (3-26), canale (65-80), protocollo nel lotto (81-95)', () => {
