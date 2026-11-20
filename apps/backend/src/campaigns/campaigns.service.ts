@@ -27,7 +27,7 @@ import { NOTIFICATION_JOB_SEND, type EngineName } from '../queue/notification-jo
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
 import { reportPhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
-import { maggioliFromPostal, maggioliFromSend, sendDeliveryKind, sendRegisteredLetterOf, type MaggioliExport } from './maggioli-export.util.js';
+import { maggioliFromPostal, maggioliFromSend, protocolOf, sendDeliveryKind, sendRegisteredLetterOf, type MaggioliExport } from './maggioli-export.util.js';
 import { matchOcrImport, type OcrImportResult } from './maggioli-ocr-import.util.js';
 import type { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto.js';
@@ -3467,7 +3467,9 @@ export class CampaignsService {
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
     const firstByRecipient = new Map<string, NotificationAttempt>();
+    const attemptsByRecipient = new Map<string, NotificationAttempt[]>();
     for (const a of attempts) {
+      attemptsByRecipient.set(a.recipientId, [...(attemptsByRecipient.get(a.recipientId) ?? []), a]);
       const current = latestByRecipient.get(a.recipientId);
       if (!current || a.attemptNumber > current.attemptNumber) latestByRecipient.set(a.recipientId, a);
       // Segnale App IO esiste solo sul primo tentativo (mai ritentato),
@@ -3498,6 +3500,7 @@ export class CampaignsService {
         externalId: resolveExternalId(campaign, r),
         sendDeliveryKind: latest ? sendDeliveryKind(latest.sendStatusHistory, latest.sendTimeline, latest.sendDigitalDomicile?.type) : null,
         sendRegisteredLetterCode: sendRegisteredLetterOf(latest?.sendTimeline),
+        protocol: protocolOf(attemptsByRecipient.get(r.id) ?? []),
       };
     });
 
@@ -3859,7 +3862,9 @@ export class CampaignsService {
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
     const firstByRecipient = new Map<string, NotificationAttempt>();
+    const postalAttemptsByRecipient = new Map<string, NotificationAttempt[]>();
     for (const a of attempts) {
+      postalAttemptsByRecipient.set(a.recipientId, [...(postalAttemptsByRecipient.get(a.recipientId) ?? []), a]);
       const current = latestByRecipient.get(a.recipientId);
       if (!current || a.attemptNumber > current.attemptNumber) latestByRecipient.set(a.recipientId, a);
       // Segnale App IO esiste solo sul primo tentativo (mai ritentato),
@@ -3909,6 +3914,8 @@ export class CampaignsService {
         postalDeliveryDate: latest?.postalDeliveryDate ? latest.postalDeliveryDate.toISOString() : null,
         postalAcceptanceId: latest?.postalAcceptanceId ?? null,
         sentAt: latest?.sentAt ? latest.sentAt.toISOString() : null,
+        // Dirottato: protocollo della PEC.
+        protocol: diverted ? protocolOf([latestPecByRecipient.get(r.id)]) : protocolOf(postalAttemptsByRecipient.get(r.id) ?? []),
         postalStatusHistory: latest?.postalStatusHistory ?? [],
         ...reportPhysicalAddress(r, addressCfg),
         codiceErrore: (latestPayload?.['codiceErrore'] as string | undefined) ?? null,

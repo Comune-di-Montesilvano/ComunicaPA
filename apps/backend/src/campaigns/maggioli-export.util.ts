@@ -15,20 +15,22 @@ export interface MaggioliNotifica {
   ocr: string;
   /** Data legale di notifica (ISO). */
   dataNotifica: string;
+  /** Campo "Numero raccomandata" (12-23): numero, o sigla del canale se non c'è raccomandata. */
   raccomandata: string | null;
-  /** Campo note "numero inkjet" (8): canale SEND, vuoto per la postalizzazione. */
-  note?: string;
+  /** Campo "Raccomandata atto" (52-63): numero, o protocollo n/anno se non c'è raccomandata. */
+  raccomandata2: string | null;
 }
 
 export interface MaggioliMancata {
   ocr: string;
+  /** Campo "Numero raccomandata atto" (3-14): numero, o sigla del canale se non c'è raccomandata. */
   raccomandata: string | null;
+  /** Campo "Numero raccomandata A/R" (15-26): numero, o protocollo n/anno se non c'è raccomandata. */
+  raccomandata2: string | null;
   /** Codice tipo mancata notifica, 2 caratteri (cifra preceduta da spazio). */
   tipo: string;
   dataEmissione: string | null;
   dataMancata: string;
-  /** Campo note "numero inkjet" (16): canale SEND, vuoto per la postalizzazione. */
-  note?: string;
 }
 
 export interface MaggioliExport {
@@ -92,9 +94,26 @@ export function sendRegisteredLetterOf(timeline: SendTimelineEvent[] | null | un
   return [...(timeline ?? [])].reverse().find((e) => e.registeredLetterCode)?.registeredLetterCode ?? null;
 }
 
-/** Sigla del canale SEND nei campi note (inkjet): 8 caratteri nelle notifiche, 16 nelle mancate. */
-const SEND_KIND_NOTIFICHE: Record<SendDeliveryKind, string> = { PEC: 'SEND PEC', RACC: 'SEND RAC', IO: 'SEND IO', WEB: 'SEND WEB', RADD: 'SENDRADD' };
-const SEND_KIND_MANCATE: Record<SendDeliveryKind, string> = { PEC: 'SEND PEC', RACC: 'SEND RACC', IO: 'SEND APPIO', WEB: 'SEND WEB', RADD: 'SEND RADD' };
+/** Sigla del canale (max 12) nei campi raccomandata quando una raccomandata non c'è. */
+const SEND_KIND_LABEL: Record<SendDeliveryKind, string> = { PEC: 'SEND PEC', RACC: 'SEND RACC', IO: 'SEND APPIO', WEB: 'SEND WEB', RADD: 'SEND RADD' };
+
+/**
+ * Campi raccomandata: con un numero di raccomandata, il numero in entrambi
+ * (la specifica ammette la ripetizione); senza (PEC, SEND digitale), la
+ * sigla del canale nel primo e il protocollo n/anno nel secondo.
+ */
+function raccomandataFields(numero: string | null, sigla: string, protocol: string | null): { raccomandata: string | null; raccomandata2: string | null } {
+  return numero ? { raccomandata: numero, raccomandata2: numero } : { raccomandata: sigla, raccomandata2: protocol };
+}
+
+/** Protocollo "numero/anno" del tentativo protocollato più recente. */
+export function protocolOf(attempts: Array<{ attemptNumber: number; protocolNumber?: number | null; protocolYear?: number | null } | null | undefined>): string | null {
+  const best = attempts
+    .filter((a): a is { attemptNumber: number; protocolNumber: number; protocolYear?: number | null } => !!a && a.protocolNumber !== null && a.protocolNumber !== undefined)
+    .sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+  if (!best) return null;
+  return best.protocolYear ? `${best.protocolNumber}/${best.protocolYear}` : String(best.protocolNumber);
+}
 
 /** gg/mm/aaaa nel fuso italiano. */
 export function maggioliDate(iso: string): string {
@@ -122,14 +141,14 @@ export function maggioliFromPostal(rows: PostalReportRowDto[]): MaggioliExport {
       out.senzaOcr++;
       continue;
     }
-    // Dirottato su PEC: nessuna raccomandata.
-    const raccomandata = reason === 'Via PEC' ? null : (r.postalAcceptanceId ?? null);
+    // Dirottato su PEC: nessuna raccomandata, sigla PEC.
+    const racc = raccomandataFields(reason === 'Via PEC' ? null : (r.postalAcceptanceId ?? null), reason === 'Via PEC' ? 'PEC' : '', r.protocol);
     if (delivered) {
-      out.notifiche.push({ ocr, dataNotifica: r.legalOutcomeAt!, raccomandata });
+      out.notifiche.push({ ocr, dataNotifica: r.legalOutcomeAt!, ...racc });
     } else {
       out.mancate.push({
         ocr,
-        raccomandata,
+        ...racc,
         tipo: POSTAL_MANCATA_TIPO[r.postalDeliveryStatus ?? ''] ?? ' N',
         dataEmissione: r.sentAt ?? r.postalStatusHistory[0]?.rilevatoIl ?? null,
         dataMancata: dataMancata!,
@@ -154,15 +173,14 @@ export function maggioliFromSend(rows: SendReportRowDto[]): MaggioliExport {
       out.senzaOcr++;
       continue;
     }
-    const kind = r.sendDeliveryKind;
-    const raccomandata = kind === 'RACC' ? r.sendRegisteredLetterCode : null;
+    const kind = r.sendDeliveryKind ?? (legal ? null : 'RACC');
+    const racc = raccomandataFields(kind === 'RACC' ? r.sendRegisteredLetterCode : null, kind ? SEND_KIND_LABEL[kind] : 'SEND', r.protocol);
     if (legal) {
-      out.notifiche.push({ ocr, dataNotifica: legal, raccomandata, note: kind ? SEND_KIND_NOTIFICHE[kind] : 'SEND' });
+      out.notifiche.push({ ocr, dataNotifica: legal, ...racc });
     } else {
       out.mancate.push({
         ocr,
-        raccomandata,
-        note: SEND_KIND_MANCATE[kind ?? 'RACC'],
+        ...racc,
         tipo: failure!.status === 'UNREACHABLE' ? ' 4' : ' N',
         dataEmissione: sendEntityLegalDateOf(r.sendStatusHistory),
         dataMancata: failure!.activeFrom,
@@ -181,9 +199,9 @@ export function buildMaggioliNotificheTxt(records: MaggioliNotifica[]): string {
     'N',                              // 24     compiuta giacenza: notifica alla data indicata
     'A',                              // 25     indicatore tracciato
     n.ocr,                            // 26-41  riferimento verbale
-    field(n.note, 8),                 // 42-49  numero inkjet (note: canale SEND)
+    field('', 8),                     // 42-49  numero inkjet
     field('', 2),                     // 50-51  filler
-    field(n.raccomandata, 12),        // 52-63  raccomandata atto (note)
+    field(n.raccomandata2, 12),       // 52-63  raccomandata atto (note): numero o protocollo
     'A',                              // 64     filler
   ].join('')).map((l) => `${l}\n`).join('');
 }
@@ -193,12 +211,12 @@ export function buildMaggioliMancateTxt(records: MaggioliMancata[]): string {
   return records.map((m) => [
     '01',                                                 // 1-2     flag nuovo tracciato
     field(m.raccomandata, 12),                            // 3-14    raccomandata atto
-    field(m.raccomandata, 12),                            // 15-26   raccomandata A/R (si può ripetere)
+    field(m.raccomandata2, 12),                           // 15-26   raccomandata A/R: numero o protocollo
     m.ocr,                                                // 27-42   riferimento verbale
     m.tipo,                                               // 43-44   tipo mancata notifica
     field(m.dataEmissione ? maggioliDate(m.dataEmissione) : maggioliDate(m.dataMancata), 10), // 45-54 data emissione atto
     maggioliDate(m.dataMancata),                          // 55-64   data mancata notifica
-    field(m.note, 16),                                    // 65-80   numero inkjet (note: canale SEND)
+    field('', 16),                                        // 65-80   numero inkjet
     field('', 15),                                        // 81-95   lotto
     field('', 55),                                        // 96-150  filler
   ].join('')).map((l) => `${l}\n`).join('');

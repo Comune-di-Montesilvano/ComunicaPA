@@ -174,6 +174,8 @@ export interface SendReportRowDto {
   sendDeliveryKind: SendDeliveryKind | null;
   /** Ultima raccomandata del recapitista SEND (timeline), null se nessuna. */
   sendRegisteredLetterCode: string | null;
+  /** Protocollo "numero/anno" dell'ultimo tentativo protocollato, null se nessuno. */
+  protocol: string | null;
 }
 
 export type SendDeliveryKind = 'PEC' | 'RACC' | 'IO' | 'WEB' | 'RADD';
@@ -203,6 +205,8 @@ export interface PostalReportRowDto {
   postalAcceptanceId?: string | null;
   /** Invio dell'ultimo tentativo (ISO): data emissione atto nell'export Maggioli. */
   sentAt?: string | null;
+  /** Protocollo "numero/anno" dell'ultimo tentativo protocollato (PEC per i dirottati), null se nessuno. */
+  protocol: string | null;
   postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }>;
   /** Colonne indirizzo mappate in physicalAddressConfig (stringa vuota se non mappate). */
   address: string;

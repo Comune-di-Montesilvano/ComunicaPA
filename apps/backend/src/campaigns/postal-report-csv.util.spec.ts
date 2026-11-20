@@ -23,6 +23,7 @@ const baseReport: PostalReportDto = {
     descrizioneErrore: null,
     appIoOutcome: null,
     externalId: null,
+    protocol: null,
     posteVerification: null,
     posteDiscrepancy: false,
     legalOutcome: 'delivered',
