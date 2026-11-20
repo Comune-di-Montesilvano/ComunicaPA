@@ -3,7 +3,7 @@ import { guessOcrColumns, ocrPairs, parseOcrCsv } from '../src/ocr-csv';
 
 describe('parseOcrCsv', () => {
   it('separatore ";" con BOM, CRLF, virgolette e righe vuote', () => {
-    const csv = parseOcrCsv('﻿Codice Fiscale;Nominativo;OCR\r\nRSSMRA80A01H501U;"Rossi; Mario";111111111111111111\r\n\r\n');
+    const csv = parseOcrCsv('FEFFCodice Fiscale;Nominativo;OCR\r\nRSSMRA80A01H501U;"Rossi; Mario";111111111111111111\r\n\r\n');
     expect(csv.headers).toEqual(['Codice Fiscale', 'Nominativo', 'OCR']);
     expect(csv.rows).toEqual([['RSSMRA80A01H501U', 'Rossi; Mario', '111111111111111111']]);
   });
