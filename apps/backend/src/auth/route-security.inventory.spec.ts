@@ -123,6 +123,8 @@ describe('Inventario sicurezza route', () => {
       GET /admin/campaigns/:id/duplicate-source | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/effective-channel-stats | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/export-download-report.csv | auth | roles=user,admin | guards=-
+      GET /admin/campaigns/:id/export-maggioli-mancate.txt | auth | roles=user,admin | guards=-
+      GET /admin/campaigns/:id/export-maggioli-notifiche.txt | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/export-postal-report-attuale.csv | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/export-postal-report-storico.csv | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/export-send-report-attuale.csv | auth | roles=user,admin | guards=-
@@ -133,6 +135,8 @@ describe('Inventario sicurezza route', () => {
       POST /admin/campaigns/:id/inad-check/skip | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/inad-check/status | auth | roles=user,admin | guards=-
       POST /admin/campaigns/:id/launch | auth | roles=user,admin | guards=-
+      GET /admin/campaigns/:id/maggioli-export-summary | auth | roles=user,admin | guards=-
+      POST /admin/campaigns/:id/maggioli-ocr-import | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/payment-total | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/pending-pec-review | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/postal-delivery-status-breakdown | auth | roles=user,admin | guards=-
@@ -142,6 +146,7 @@ describe('Inventario sicurezza route', () => {
       POST /admin/campaigns/:id/postal/reset-errors-for-recheck | auth | roles=user,admin | guards=-
       GET /admin/campaigns/:id/recipients-by-channel-outcome | auth | roles=user,admin | guards=-
       PATCH /admin/campaigns/:id/recipients/:recipientId/address | auth | roles=user,admin | guards=-
+      PATCH /admin/campaigns/:id/recipients/:recipientId/external-id | auth | roles=user,admin | guards=-
       PATCH /admin/campaigns/:id/recipients/:recipientId/postal/attempts/:attemptNumber/tracking-id | auth | roles=user,admin | guards=-
       POST /admin/campaigns/:id/recipients/:recipientId/postal/poste-check | auth | roles=user,admin | guards=-
       POST /admin/campaigns/:id/recipients/:recipientId/postal/refresh-status | auth | roles=user,admin | guards=-

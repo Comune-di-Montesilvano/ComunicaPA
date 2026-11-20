@@ -241,6 +241,7 @@ describe('NotificationsSearchService.getDetail', () => {
         pec: null,
         status: 'sent',
         physicalAddress: null,
+        externalId: null,
       },
       campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL', postalServiceType: null, postalReturnReceipt: false },
       attempts: [{

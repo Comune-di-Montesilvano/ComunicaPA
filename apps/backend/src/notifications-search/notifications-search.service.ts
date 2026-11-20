@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { resolveExternalId } from '../channels/external-id-mapping.util.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity.js';
@@ -290,6 +291,7 @@ export class NotificationsSearchService {
         pec: recipient.pec,
         status: recipient.status,
         physicalAddress: resolvedAddress,
+        externalId: resolveExternalId(recipient.campaign, recipient),
       },
       campaign: {
         id: recipient.campaign.id,
