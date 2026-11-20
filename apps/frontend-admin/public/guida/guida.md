@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-17_
+_Ultimo aggiornamento: 2026-11-20_
 
 ## Cos'è e chi lo usa
 
@@ -174,7 +174,25 @@ Se una notifica già presa in visione come ferma riceve in seguito un esito bloc
 
 1. Carica un file CSV e indica se ha una riga di intestazione.
 2. Scegli la colonna **Codice Fiscale / Partita IVA** e il servizio App IO da usare per la verifica.
-3. Premi **Avvia verifica**. Al termine vedi quanti soggetti sono su INAD e quanti su App IO.
+3. Se servono, spunta le verifiche ANPR facoltative (vedi sotto).
+4. Premi **Avvia verifica**. Al termine vedi quanti soggetti sono su INAD, App IO e Registro Imprese.
+
+Prima di interrogare i servizi nazionali il sistema controlla che ogni codice fiscale e partita IVA sia scritto correttamente (carattere di controllo). I valori errati non vengono interrogati.
+
+Il file **aggregato** è il CSV che hai caricato, con tutte le righe nello stesso ordine e le stesse colonne, più tre colonne in fondo:
+
+- **domicilio_digitale**: PEC dal Registro Imprese o, se manca, domicilio digitale INAD;
+- **app_io**: `attivo` se il cittadino riceve messaggi App IO dal servizio scelto;
+- **errori**: perché la riga non è utilizzabile o va controllata, ad esempio codice fiscale non valido, partita IVA con meno di 11 cifre (zeri iniziali persi aprendo il file con Excel), partita IVA non trovata nel Registro Imprese, codice fiscale non presente in ANPR, soggetto deceduto.
+
+Una partita IVA non trovata nel Registro Imprese non è per forza inesistente: professionisti e alcuni enti non sono iscritti.
+
+Le verifiche ANPR facoltative compaiono solo se l'amministratore le ha attivate in **Impostazioni → ANPR**:
+
+- **Verifica che i codici fiscali siano presenti in ANPR**: segnala i codici fiscali mai iscritti in anagrafe o cancellati;
+- **Verifica esistenza in vita**: segnala anche i soggetti deceduti e comprende già il controllo precedente.
+
+Riguardano solo i codici fiscali di persone fisiche. ANPR elabora l'elenco in modo massivo e può impiegare **fino a 3 giorni**: il risultato della verifica arriva solo alla fine. ANPR comprende i residenti in Italia e gli iscritti AIRE: un codice fiscale valido di uno straniero mai residente risulta comunque «non presente». Un amministratore può interrompere l'attesa con **Salta verifica ANPR**: i codici fiscali non ancora verificati restano senza esito ANPR.
 
 Nello **Storico verifiche** vedi solo le verifiche che hai caricato tu (un amministratore le vede tutte, con la colonna **Operatore**). Con il cestino elimini una verifica conclusa: il file caricato e i risultati vengono cancellati definitivamente. Una verifica ancora in corso non si può eliminare.
 

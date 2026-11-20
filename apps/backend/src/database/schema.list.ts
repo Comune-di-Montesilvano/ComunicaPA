@@ -80,6 +80,7 @@ import { NotificationReview } from '../entities/notification-review.entity.js';
 import { RemoteSignJob } from '../entities/remote-sign-job.entity.js';
 import { CreateRemoteSignJobs1790600000000 } from './migrations/1790600000000-CreateRemoteSignJobs.js';
 import { AddDomicileVerificationJobOwner1790700000000 } from './migrations/1790700000000-AddDomicileVerificationJobOwner.js';
+import { AddDomicileVerificationAnpr1791200000000 } from './migrations/1791200000000-AddDomicileVerificationAnpr.js';
 import { AddSendTimeline1790800000000 } from './migrations/1790800000000-AddSendTimeline.js';
 import { FixPosteMovementTimezone1790900000000 } from './migrations/1790900000000-FixPosteMovementTimezone.js';
 import { AddCampaignSigner1791000000000 } from './migrations/1791000000000-AddCampaignSigner.js';
@@ -181,4 +182,5 @@ export const MIGRATIONS: Function[] = [
   FixPosteMovementTimezone1790900000000,
   AddCampaignSigner1791000000000,
   PosteTrackingPerLetter1791100000000,
+  AddDomicileVerificationAnpr1791200000000,
 ];

@@ -295,6 +295,18 @@ export class SettingsController {
     return this.testAnprPurposeConnection('anpr.c019.purposeId');
   }
 
+  @Post('anpr/massivo-id/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testAnprMassivoIdConnection() {
+    return this.testAnprPurposeConnection('anpr.massivoId.purposeId');
+  }
+
+  @Post('anpr/massivo-vita/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testAnprMassivoVitaConnection() {
+    return this.testAnprPurposeConnection('anpr.massivoVita.purposeId');
+  }
+
   private async testAnprPurposeConnection(settingKey: SettingKey) {
     const purposeId = await this.appSettings.get<string>(settingKey);
     if (!purposeId) {

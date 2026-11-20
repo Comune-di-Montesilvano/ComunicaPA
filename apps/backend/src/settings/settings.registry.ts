@@ -127,6 +127,11 @@ export const SETTING_DEFS = {
   'registroImprese.prod.purposeId': { type: 'string', default: '' },
   'anpr.c002.purposeId': { type: 'string', default: '' },
   'anpr.c019.purposeId': { type: 'string', default: '' },
+  // Elaborazioni massive ANPR della Verifica Domicili (opzioni facoltative,
+  // nascoste finché il purposeId è vuoto): accertamento ID unico nazionale
+  // (C030, CF presente in ANPR) e verifica esistenza in vita (C007).
+  'anpr.massivoId.purposeId': { type: 'string', default: '' },
+  'anpr.massivoVita.purposeId': { type: 'string', default: '' },
   'anpr.trackingUserLocation': { type: 'string', default: 'comunicapa-backend' },
   'anpr.trackingLoA': { type: 'string', default: 'SpidL2' },
 

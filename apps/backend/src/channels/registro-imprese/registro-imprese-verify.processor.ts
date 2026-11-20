@@ -81,10 +81,15 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
 
     let pec: string | null;
     let found: boolean;
+    // Esito certo (trovata/non trovata) solo da una risposta del servizio:
+    // su errore la chiave resta fuori da registro_imprese_found_map, così il
+    // report scrive "verifica non riuscita" e mai "non trovata".
+    let foundEntry: Record<string, boolean> = {};
     try {
       const result = await this.registroImpreseService.dettaglioImpresa(partitaIva);
       found = result.found;
       pec = result.pec ?? null;
+      foundEntry = { [partitaIva]: found };
     } catch (error) {
       if (error instanceof RegistroImpreseRateLimitError) {
         return this.deferForRateLimit(job, token, error);
@@ -97,10 +102,11 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     await this.jobRepo.query(
       `UPDATE domicile_verification_jobs
        SET registro_imprese_results = COALESCE(registro_imprese_results, '{}'::jsonb) || $1::jsonb,
+           registro_imprese_found_map = COALESCE(registro_imprese_found_map, '{}'::jsonb) || $4::jsonb,
            registro_imprese_done = registro_imprese_done + 1,
            registro_imprese_found_count = registro_imprese_found_count + $2
        WHERE id = $3`,
-      [JSON.stringify({ [partitaIva]: pec }), found ? 1 : 0, jobId],
+      [JSON.stringify({ [partitaIva]: pec }), found ? 1 : 0, jobId, JSON.stringify(foundEntry)],
     );
     // Trigger immediato: senza questo, se INAD/App IO erano già pronti prima
     // di questo esito, il job padre resta PROCESSING fino al prossimo tick

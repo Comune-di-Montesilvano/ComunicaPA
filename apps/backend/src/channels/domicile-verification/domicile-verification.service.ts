@@ -8,17 +8,23 @@ import {
   DomicileVerificationJob,
   DomicileVerificationJobStatus,
   DomicileInadBatch,
+  DomicileAnprRequest,
 } from '../../entities/domicile-verification-job.entity.js';
 import { IoServiceConfig } from '../../entities/io-service-config.entity.js';
 import { parseCsvContent } from '../../io-services/csv.util.js';
 import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from '../../io-services/app-io-verify-bulk-job.types.js';
 import { InadService } from '../inad/inad.service.js';
 import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
-import { isPartitaIva } from '../tax-id.util.js';
+import { checkTaxId } from '../tax-id.util.js';
 import { errorMessage } from '../../common/error-message.js';
+import { AnprMassivoService, AnprMassivoKind, ANPR_MASSIVO_CHUNK_SIZE } from '../anpr/anpr-massivo.service.js';
 
 const BATCH_SIZE = 1000;
-const CF_FISICO_LENGTH = 16;
+
+const ANPR_KIND_LABEL: Record<AnprMassivoKind, string> = {
+  id: 'presenza in ANPR',
+  vita: 'esistenza in vita',
+};
 
 export interface CreateDomicileVerificationJobParams {
   csvContent: string;
@@ -27,6 +33,15 @@ export interface CreateDomicileVerificationJobParams {
   ioServiceId: string;
   /** Username dell'operatore che carica il tracciato (proprietario del job). */
   createdBy: string;
+  /** Verifica presenza CF in ANPR (C030, elaborazione massiva fino a 3 giorni). */
+  anprId?: boolean;
+  /** Verifica esistenza in vita (C007, elaborazione massiva fino a 3 giorni). */
+  anprVita?: boolean;
+}
+
+export interface DomicileVerificationOptions {
+  anprIdAvailable: boolean;
+  anprVitaAvailable: boolean;
 }
 
 /** Chi chiede: un 'user' vede e cancella solo i propri job, un 'admin' tutti. */
@@ -55,6 +70,14 @@ export interface DomicileVerificationStatus {
   registroImpreseTotal: number;
   registroImpreseDone: number;
   registroImpreseFoundCount: number;
+  anprIdRequested: boolean;
+  anprVitaRequested: boolean;
+  anprRequestsTotal: number;
+  anprRequestsDone: number;
+  /** CF verificati non presenti in ANPR (C030 o C007). */
+  anprNotFoundCount: number;
+  /** CF con esistenza in vita = N (C007). */
+  anprDeceasedCount: number;
   errorMessage: string | null;
 }
 
@@ -91,12 +114,31 @@ export class DomicileVerificationService {
     private readonly registroImpreseQueue: RegistroImpreseVerifyQueueService,
     @InjectQueue(APP_IO_VERIFY_BULK_QUEUE)
     private readonly appIoQueue: Queue<AppIoVerifyBulkJobData>,
+    private readonly anprMassivo: AnprMassivoService,
   ) {}
+
+  /** Opzioni facoltative disponibili al caricamento (ANPR solo se configurato). */
+  async getOptions(): Promise<DomicileVerificationOptions> {
+    const [anprIdAvailable, anprVitaAvailable] = await Promise.all([
+      this.anprMassivo.isConfigured('id'),
+      this.anprMassivo.isConfigured('vita'),
+    ]);
+    return { anprIdAvailable, anprVitaAvailable };
+  }
 
   async createJob(params: CreateDomicileVerificationJobParams): Promise<CreateDomicileVerificationJobResult> {
     const service = await this.ioServiceRepo.findOneBy({ id: params.ioServiceId });
     if (!service) {
       return { blocked: true, message: 'Servizio App IO selezionato non trovato' };
+    }
+    // C007 (esistenza in vita) restituisce già anche "non presente in ANPR"
+    // (CF assente dall'output, stessa regola di C030): con l'esistenza in
+    // vita richiesta basta una sola elaborazione, C030 solo da solo.
+    const anprKinds: AnprMassivoKind[] = params.anprVita ? ['vita'] : params.anprId ? ['id'] : [];
+    for (const kind of anprKinds) {
+      if (!(await this.anprMassivo.isConfigured(kind))) {
+        return { blocked: true, message: `Verifica ANPR (${ANPR_KIND_LABEL[kind]}) non configurata: manca il Purpose ID in Impostazioni → ANPR` };
+      }
     }
 
     const parsed = parseCsvContent(params.csvContent, params.hasHeaders);
@@ -107,11 +149,14 @@ export class DomicileVerificationService {
       return { blocked: true, message: `Colonna "${params.cfColumn}" non trovata tra le intestazioni del CSV` };
     }
 
-    const rawValues = parsed.rows.map((row) => (row[params.cfColumn] || '').trim().toUpperCase());
-    const cfFisici = Array.from(new Set(rawValues.filter((v) => v.length === CF_FISICO_LENGTH)));
-    const pive = Array.from(new Set(rawValues.filter((v) => isPartitaIva(v))));
+    // Controllo formale (carattere di controllo CF, cifra di controllo PIVA):
+    // i valori non validi non vanno a nessun servizio esterno, l'errore
+    // finisce nella colonna "errori" del report aggregato.
+    const checks = parsed.rows.map((row) => checkTaxId(row[params.cfColumn] || ''));
+    const cfFisici = Array.from(new Set(checks.filter((c) => c.kind === 'cf').map((c) => c.value)));
+    const pive = Array.from(new Set(checks.filter((c) => c.kind === 'piva').map((c) => c.value)));
     if (cfFisici.length === 0 && pive.length === 0) {
-      return { blocked: true, message: 'Nessun codice fiscale (16 caratteri) o Partita IVA (11 cifre) valido trovato nella colonna selezionata' };
+      return { blocked: true, message: 'Nessun codice fiscale o Partita IVA formalmente valido (carattere di controllo corretto) nella colonna selezionata' };
     }
 
     const job = this.jobRepo.create({
@@ -129,6 +174,13 @@ export class DomicileVerificationService {
       inadFoundMap: {},
       appIoResults: {},
       registroImpreseResults: {},
+      registroImpreseFoundMap: {},
+      // Presenza in ANPR verificata anche dalla sola C007.
+      anprIdRequested: anprKinds.length > 0,
+      anprVitaRequested: anprKinds.includes('vita'),
+      anprRequests: [],
+      anprResults: {},
+      anprVitaResults: {},
       resultAssentiCsv: null,
       resultAppIoCsv: null,
       resultInadCsv: null,
@@ -210,6 +262,29 @@ export class DomicileVerificationService {
       }
     }
 
+    // ANPR (facoltativo): elaborazioni massive asincrone, una richiesta per
+    // blocco di CF. Un blocco non accodato lascia quei CF "non verificati"
+    // (nessun errore per riga), il problema finisce in errorMessage.
+    if (cfFisici.length > 0 && anprKinds.length > 0) {
+      const anprRequests: DomicileAnprRequest[] = [];
+      for (const kind of anprKinds) {
+        for (let i = 0; i < cfFisici.length; i += ANPR_MASSIVO_CHUNK_SIZE) {
+          attempts++;
+          const chunk = cfFisici.slice(i, i + ANPR_MASSIVO_CHUNK_SIZE);
+          try {
+            const id = await this.anprMassivo.start(kind, chunk, `ComunicaPA verifica domicili ${saved.id.slice(0, 8)}`, params.createdBy);
+            anprRequests.push({ kind, id, cfs: chunk, done: false });
+            succeeded++;
+          } catch (err) {
+            lastError = err;
+            partialFailures.push(`ANPR (${ANPR_KIND_LABEL[kind]}) non avviato per ${chunk.length} CF: ${errorMessage(err)}`);
+            this.logger.warn(`Job ${saved.id}: richiesta ANPR massiva ${kind} fallita (${chunk.length} CF): ${errorMessage(err)}`);
+          }
+        }
+      }
+      await this.jobRepo.update(saved.id, { anprRequests });
+    }
+
     if (attempts > 0 && succeeded === 0) {
       await this.jobRepo.update(saved.id, {
         status: DomicileVerificationJobStatus.FAILED,
@@ -256,6 +331,15 @@ export class DomicileVerificationService {
       registroImpreseTotal: job.registroImpreseTotal,
       registroImpreseDone: job.registroImpreseDone,
       registroImpreseFoundCount: job.registroImpreseFoundCount,
+      anprIdRequested: job.anprIdRequested ?? false,
+      anprVitaRequested: job.anprVitaRequested ?? false,
+      anprRequestsTotal: (job.anprRequests ?? []).length,
+      anprRequestsDone: (job.anprRequests ?? []).filter((r) => r.done).length,
+      anprNotFoundCount: new Set([
+        ...Object.entries(job.anprResults ?? {}).filter(([, v]) => v === false).map(([k]) => k),
+        ...Object.entries(job.anprVitaResults ?? {}).filter(([, v]) => v === null).map(([k]) => k),
+      ]).size,
+      anprDeceasedCount: Object.values(job.anprVitaResults ?? {}).filter((v) => v === 'N').length,
       errorMessage: job.errorMessage,
     };
   }
@@ -307,6 +391,21 @@ export class DomicileVerificationService {
     }
     const inadBatches = job.inadBatches.map((b) => ({ ...b, done: true }));
     await this.jobRepo.update(jobId, { inadBatches, inadFetched: true });
+  }
+
+  /**
+   * Come skipInad, per le elaborazioni massive ANPR (fino a 3 giorni): le
+   * richieste non ancora scaricate vengono abbandonate, i loro CF restano
+   * "non verificati" (nessun errore ANPR nel report).
+   */
+  async skipAnpr(jobId: string): Promise<void> {
+    const job = await this.jobRepo.findOneBy({ id: jobId });
+    if (!job) throw new NotFoundException(`Job di verifica ${jobId} non trovato`);
+    if (job.status !== DomicileVerificationJobStatus.PROCESSING) {
+      throw new BadRequestException('Il job non è in elaborazione');
+    }
+    const anprRequests = (job.anprRequests ?? []).map((r) => ({ ...r, done: true }));
+    await this.jobRepo.update(jobId, { anprRequests });
   }
 
   async getResultCsv(jobId: string, variant: DomicileVerificationCsvVariant, requester: DomicileVerificationRequester): Promise<string> {

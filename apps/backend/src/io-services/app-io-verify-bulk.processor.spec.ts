@@ -39,22 +39,22 @@ describe('AppIoVerifyBulkProcessor', () => {
   it('classifica presenti/assenti sui soli CF plausibili (16 char), scrive appIoResults e marca appIoDone', async () => {
     jobRepoMock.findOneBy.mockResolvedValue({
       id: 'job-1',
-      sourceCsv: 'cf,nome\nRSSMRA85M01H501Z,Mario Rossi\nAAAAAA,CF Corto\nVRDLGI80A01H501W,Luigi Verdi',
+      sourceCsv: 'cf,nome\nRSSMRA85M01H501Q,Mario Rossi\nAAAAAA,CF Corto\nVRDLGI80A01H501E,Luigi Verdi',
       hasHeaders: true,
       cfColumn: 'cf',
       ioServiceId: 'svc-1',
     });
     ioServiceRepoMock.findOneBy.mockResolvedValue({ id: 'svc-1', apiKeyPrimariaEnc: 'enc:v1:xxx' });
     ioServicesMock.verifyProfile.mockImplementation(async (cf: string) => {
-      if (cf === 'RSSMRA85M01H501Z') return { success: true, active: true, message: 'Iscritto ad App IO e messaggi abilitati' };
+      if (cf === 'RSSMRA85M01H501Q') return { success: true, active: true, message: 'Iscritto ad App IO e messaggi abilitati' };
       return { success: true, active: false, message: 'Cittadino non iscritto ad App IO' };
     });
 
     await processor.process({ data: { jobId: 'job-1' } } as any);
 
     expect(ioServicesMock.verifyProfile).toHaveBeenCalledTimes(2); // AAAAAA è CF non plausibile, nessuna chiamata
-    expect(ioServicesMock.verifyProfile).toHaveBeenCalledWith('RSSMRA85M01H501Z', 'svc-1');
-    expect(ioServicesMock.verifyProfile).toHaveBeenCalledWith('VRDLGI80A01H501W', 'svc-1');
+    expect(ioServicesMock.verifyProfile).toHaveBeenCalledWith('RSSMRA85M01H501Q', 'svc-1');
+    expect(ioServicesMock.verifyProfile).toHaveBeenCalledWith('VRDLGI80A01H501E', 'svc-1');
 
     const doneCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.appIoDone === true);
     expect(doneCall).toBeDefined();
@@ -62,7 +62,7 @@ describe('AppIoVerifyBulkProcessor', () => {
     expect(patch.appIoProcessedRows).toBe(2); // solo le righe con CF plausibile, AAAAAA scartata a monte
     expect(patch.appIoPresentCount).toBe(1);
     expect(patch.appIoAbsentCount).toBe(1);
-    expect(patch.appIoResults).toEqual({ RSSMRA85M01H501Z: true, VRDLGI80A01H501W: false });
+    expect(patch.appIoResults).toEqual({ RSSMRA85M01H501Q: true, VRDLGI80A01H501E: false });
     // Trigger immediato per DomicileVerificationSyncService — senza questo,
     // se INAD/Registro Imprese erano già pronti, il job padre resta
     // PROCESSING fino al prossimo tick cron.
@@ -72,7 +72,7 @@ describe('AppIoVerifyBulkProcessor', () => {
   it('marca l\'intero DomicileVerificationJob FAILED se il servizio App IO scelto non esiste più o non ha una chiave configurata', async () => {
     jobRepoMock.findOneBy.mockResolvedValue({
       id: 'job-2',
-      sourceCsv: 'cf\nRSSMRA85M01H501Z',
+      sourceCsv: 'cf\nRSSMRA85M01H501Q',
       hasHeaders: true,
       cfColumn: 'cf',
       ioServiceId: 'svc-deleted',

@@ -5,13 +5,14 @@ import { InadQuotaExceededError } from '../inad/inad.service.js';
 const mockJobRepo = { find: jest.fn(), update: jest.fn(), findOneBy: jest.fn() };
 const mockInad = { getBulkState: jest.fn(), getBulkResult: jest.fn() };
 const mockDomicileEvents = { onJobProgress: jest.fn(), notifyJobProgress: jest.fn() };
+const mockAnprMassivo = { download: jest.fn() };
 
 describe('DomicileVerificationSyncService.handleCron', () => {
   let service: DomicileVerificationSyncService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockDomicileEvents as any);
+    service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockDomicileEvents as any, mockAnprMassivo as any);
   });
 
   it('non finalizza se i batch INAD non sono ancora tutti pronti', async () => {
@@ -20,7 +21,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: true,
       registroImpreseTotal: 1, registroImpreseDone: 1,
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
     mockInad.getBulkState.mockResolvedValue('IN_ELABORAZIONE');
 
@@ -38,11 +39,11 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [{ id: 'batch-1', size: 2, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 2, pivaTotal: 0, appIoDone: true,
       registroImpreseTotal: 2, registroImpreseDone: 0,
-      sourceCsv: 'cf\nRRANGL74M28R701V\nVRDLGI80A01H501W\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\nVRDLGI80A01H501E\n', hasHeaders: true, cfColumn: 'cf',
     }]);
     mockInad.getBulkState.mockResolvedValue('DISPONIBILE');
     mockInad.getBulkResult.mockResolvedValue([
-      { codiceFiscale: 'RRANGL74M28R701V', since: '2020', digitalAddress: [{ digitalAddress: 'trovato@pec.it', usageInfo: { motivation: 'x', dateEndValidity: '' } }] },
+      { codiceFiscale: 'RRANGL74M28R701D', since: '2020', digitalAddress: [{ digitalAddress: 'trovato@pec.it', usageInfo: { motivation: 'x', dateEndValidity: '' } }] },
     ]);
 
     await service.handleCron();
@@ -50,7 +51,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
     expect(mockInad.getBulkResult).toHaveBeenCalledTimes(1);
     const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.inadFetched === true);
     expect(call).toBeDefined();
-    expect(call![1].inadFoundMap).toEqual({ RRANGL74M28R701V: 'trovato@pec.it' });
+    expect(call![1].inadFoundMap).toEqual({ RRANGL74M28R701D: 'trovato@pec.it' });
     // Registro Imprese ancora 0/2: il job resta PROCESSING, non completa in questo tick
     expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.DONE }));
   });
@@ -58,11 +59,11 @@ describe('DomicileVerificationSyncService.handleCron', () => {
   it('non ri-fetcha INAD se già fatto (inadFetched già true)', async () => {
     mockJobRepo.find.mockResolvedValue([{
       id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(),
-      inadBatches: [{ id: 'batch-1', size: 1, done: true }], inadFetched: true, inadFoundMap: { RRANGL74M28R701V: 'x@pec.it' },
+      inadBatches: [{ id: 'batch-1', size: 1, done: true }], inadFetched: true, inadFoundMap: { RRANGL74M28R701D: 'x@pec.it' },
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: true,
       registroImpreseTotal: 0, registroImpreseDone: 0,
       appIoResults: {}, registroImpreseResults: {},
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
 
     await service.handleCron();
@@ -79,7 +80,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [], inadFetched: true, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: false,
       registroImpreseTotal: 0, registroImpreseDone: 0,
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
 
     await service.handleCron();
@@ -94,7 +95,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [], inadFetched: true, inadFoundMap: {},
       cfFisicoTotal: 0, pivaTotal: 1, appIoDone: true,
       registroImpreseTotal: 1, registroImpreseDone: 0,
-      sourceCsv: 'cf\n12345678901\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\n12345678903\n', hasHeaders: true, cfColumn: 'cf',
     }]);
 
     await service.handleCron();
@@ -105,12 +106,12 @@ describe('DomicileVerificationSyncService.handleCron', () => {
   it('finalizza (DONE) quando INAD+App IO+Registro Imprese sono tutti completi, costruendo i 5 CSV', async () => {
     mockJobRepo.find.mockResolvedValue([{
       id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(),
-      inadBatches: [], inadFetched: true, inadFoundMap: { RRANGL74M28R701V: 'inad@pec.it' },
+      inadBatches: [], inadFetched: true, inadFoundMap: { RRANGL74M28R701D: 'inad@pec.it' },
       cfFisicoTotal: 1, pivaTotal: 1, appIoDone: true,
       registroImpreseTotal: 2, registroImpreseDone: 2,
-      registroImpreseResults: { '12345678901': 'registro@pec.it', RRANGL74M28R701V: null },
+      registroImpreseResults: { '12345678903': 'registro@pec.it', RRANGL74M28R701D: null },
       appIoResults: {},
-      sourceCsv: 'cf\nRRANGL74M28R701V\n12345678901\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n12345678903\n', hasHeaders: true, cfColumn: 'cf',
     }]);
 
     await service.handleCron();
@@ -131,7 +132,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: false,
       registroImpreseTotal: 1, registroImpreseDone: 0,
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
     mockInad.getBulkState.mockResolvedValue('IN_ELABORAZIONE');
 
@@ -146,7 +147,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: false,
       registroImpreseTotal: 1, registroImpreseDone: 0,
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
     mockInad.getBulkState.mockResolvedValue('IN_ELABORAZIONE');
 
@@ -163,7 +164,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: true,
       registroImpreseTotal: 0, registroImpreseDone: 0,
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
     mockInad.getBulkState.mockRejectedValue(new InadQuotaExceededError('quota esaurita'));
 
@@ -179,7 +180,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: true,
       registroImpreseTotal: 0, registroImpreseDone: 0,
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
     mockInad.getBulkState.mockResolvedValue('DISPONIBILE');
     mockInad.getBulkResult.mockRejectedValue(new InadQuotaExceededError('quota esaurita'));
@@ -196,7 +197,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
       inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: true,
       registroImpreseTotal: 0, registroImpreseDone: 0,
-      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      sourceCsv: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf',
     }]);
     mockInad.getBulkState.mockRejectedValue(new Error('INAD giù'));
 
@@ -210,7 +211,7 @@ describe('DomicileVerificationSyncService.handleCron', () => {
 
 describe('DomicileVerificationSyncService — trigger on-demand (evento App IO/Registro Imprese)', () => {
   it('il costruttore si sottoscrive all\'evento e richiama checkJobById col jobId ricevuto', () => {
-    const service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockDomicileEvents as any);
+    const service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockDomicileEvents as any, mockAnprMassivo as any);
     const spy = jest.spyOn(service, 'checkJobById').mockResolvedValue(undefined);
 
     expect(mockDomicileEvents.onJobProgress).toHaveBeenCalledTimes(1);
@@ -225,7 +226,7 @@ describe('DomicileVerificationSyncService — trigger on-demand (evento App IO/R
 
     beforeEach(() => {
       jest.clearAllMocks();
-      service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockDomicileEvents as any);
+      service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockDomicileEvents as any, mockAnprMassivo as any);
     });
 
     it('ignora un job non trovato', async () => {
@@ -246,8 +247,8 @@ describe('DomicileVerificationSyncService — trigger on-demand (evento App IO/R
         inadBatches: [], inadFetched: true, inadFoundMap: {},
         cfFisicoTotal: 0, pivaTotal: 1, appIoDone: true,
         registroImpreseTotal: 1, registroImpreseDone: 1,
-        registroImpreseResults: { '12345678901': 'acme@pec.it' }, appIoResults: {},
-        sourceCsv: 'cf\n12345678901\n', hasHeaders: true, cfColumn: 'cf',
+        registroImpreseResults: { '12345678903': 'acme@pec.it' }, appIoResults: {},
+        sourceCsv: 'cf\n12345678903\n', hasHeaders: true, cfColumn: 'cf',
       });
 
       await service.checkJobById('job-1');
@@ -255,5 +256,80 @@ describe('DomicileVerificationSyncService — trigger on-demand (evento App IO/R
       const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.DONE);
       expect(call).toBeDefined();
     });
+  });
+});
+
+describe('DomicileVerificationSyncService — elaborazioni massive ANPR', () => {
+  let service: DomicileVerificationSyncService;
+  const readyJob = (over: Record<string, unknown>) => ({
+    id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(), createdBy: 'op',
+    inadBatches: [], inadFetched: true, inadFoundMap: {},
+    cfFisicoTotal: 2, pivaTotal: 0, appIoDone: true, appIoResults: {},
+    registroImpreseTotal: 0, registroImpreseDone: 0, registroImpreseResults: {},
+    sourceCsv: 'cf\nRRANGL74M28R701D\nVRDLGI80A01H501E\n', hasHeaders: true, cfColumn: 'cf',
+    anprResults: {}, anprVitaResults: {},
+    ...over,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockDomicileEvents as any, mockAnprMassivo as any);
+  });
+
+  it('esito non pronto: job resta PROCESSING, ultima risposta salvata per la diagnosi', async () => {
+    mockJobRepo.find.mockResolvedValue([readyJob({ anprRequests: [{ kind: 'id', id: '9', cfs: ['RRANGL74M28R701D'], done: false }] })]);
+    mockAnprMassivo.download.mockResolvedValue({ ready: false, detail: 'HTTP 404: in lavorazione' });
+
+    await service.handleCron();
+
+    expect(mockAnprMassivo.download).toHaveBeenCalledWith('id', '9', 'op');
+    const patch = mockJobRepo.update.mock.calls[0][1];
+    expect(patch.status).toBeUndefined();
+    expect(patch.anprRequests[0]).toMatchObject({ done: false, lastResponse: 'HTTP 404: in lavorazione' });
+  });
+
+  it('download riprovato al massimo ogni 10 minuti', async () => {
+    mockJobRepo.find.mockResolvedValue([readyJob({
+      anprRequests: [{ kind: 'id', id: '9', cfs: ['RRANGL74M28R701D'], done: false, lastPolledAt: new Date().toISOString() }],
+    })]);
+
+    await service.handleCron();
+
+    expect(mockAnprMassivo.download).not.toHaveBeenCalled();
+  });
+
+  it('C007 pronto: deceduto e non presente nel report, job DONE', async () => {
+    mockJobRepo.find.mockResolvedValue([readyJob({
+      anprRequests: [{ kind: 'vita', id: '5', cfs: ['RRANGL74M28R701D', 'VRDLGI80A01H501E'], done: false }],
+    })]);
+    mockAnprMassivo.download.mockResolvedValue({ ready: true, esiti: new Map([['RRANGL74M28R701D', { esistenzaInVita: 'N' }]]) });
+
+    await service.handleCron();
+
+    const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.DONE);
+    expect(call![1].anprVitaResults).toEqual({ RRANGL74M28R701D: 'N', VRDLGI80A01H501E: null });
+    expect(call![1].resultAggregatoCsv).toContain('RRANGL74M28R701D,,,soggetto deceduto (ANPR)');
+    expect(call![1].resultAggregatoCsv).toContain('VRDLGI80A01H501E,,,codice fiscale non presente in ANPR');
+  });
+
+  it('errore ANPR non fa fallire il job', async () => {
+    mockJobRepo.find.mockResolvedValue([readyJob({ anprRequests: [{ kind: 'id', id: '9', cfs: ['RRANGL74M28R701D'], done: false }] })]);
+    mockAnprMassivo.download.mockRejectedValue(new Error('HTTP 401'));
+
+    await service.handleCron();
+
+    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+  });
+
+  it('con ANPR pendente la soglia di stallo è 96h, non 48h', async () => {
+    const old = (h: number) => new Date(Date.now() - h * 3_600_000);
+    mockAnprMassivo.download.mockResolvedValue({ ready: false, detail: 'HTTP 404' });
+    mockJobRepo.find.mockResolvedValue([readyJob({ createdAt: old(60), anprRequests: [{ kind: 'id', id: '9', cfs: ['RRANGL74M28R701D'], done: false }] })]);
+    await service.handleCron();
+    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+
+    mockJobRepo.find.mockResolvedValue([readyJob({ createdAt: old(97), anprRequests: [{ kind: 'id', id: '9', cfs: ['RRANGL74M28R701D'], done: false }] })]);
+    await service.handleCron();
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
   });
 });

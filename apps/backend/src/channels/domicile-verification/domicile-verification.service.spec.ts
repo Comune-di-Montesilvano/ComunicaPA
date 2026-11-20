@@ -13,6 +13,7 @@ const mockIoServiceRepo = { findOneBy: jest.fn() };
 const mockInad = { startBulkExtraction: jest.fn() };
 const mockRegistroImpreseQueue = { enqueueVerify: jest.fn() };
 const mockAppIoQueue = { add: jest.fn() };
+const mockAnprMassivo = { isConfigured: jest.fn(async () => true), start: jest.fn() };
 
 const ADMIN = { username: 'admin1', role: 'admin' as const };
 const USER = { username: 'operatore1', role: 'user' as const };
@@ -23,22 +24,22 @@ describe('DomicileVerificationService.createJob', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIoServiceRepo.findOneBy.mockResolvedValue({ id: 'svc-1' });
-    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any);
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any, mockAnprMassivo as any);
   });
 
   it('smista CF fisici (16 char) su App IO+INAD+Registro Imprese (in parallelo) e Partite IVA (11 cifre) su Registro Imprese', async () => {
-    const csv = 'cf\nRRANGL74M28R701V\n12345678901\n98765432109\n';
+    const csv = 'cf\nRRANGL74M28R701D\n12345678903\n98765432103\n';
     mockInad.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
 
     const result = await service.createJob({ csvContent: csv, hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
 
     expect(result.jobId).toBe('job-1');
     expect(mockAppIoQueue.add).toHaveBeenCalledWith('verify', { jobId: 'job-1' }, { jobId: 'job-1' });
-    expect(mockInad.startBulkExtraction).toHaveBeenCalledWith(['RRANGL74M28R701V'], 'comunicapa-domicili-job-1');
+    expect(mockInad.startBulkExtraction).toHaveBeenCalledWith(['RRANGL74M28R701D'], 'comunicapa-domicili-job-1');
     // Registro Imprese: PIVA + il CF fisico, tutti accodati subito (in parallelo a INAD, non un residuo dopo)
-    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678901');
-    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '98765432109');
-    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', 'RRANGL74M28R701V');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678903');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '98765432103');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', 'RRANGL74M28R701D');
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledTimes(3);
     expect(mockJobRepo.save).toHaveBeenCalledWith(expect.objectContaining({ cfFisicoTotal: 1, pivaTotal: 2, ioServiceId: 'svc-1' }));
     expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { inadBatches: [{ id: 'batch-1', size: 1, done: false }] });
@@ -46,14 +47,14 @@ describe('DomicileVerificationService.createJob', () => {
   });
 
   it('CSV di sole PIVA: nessun job App IO/INAD accodato', async () => {
-    const csv = 'cf\n12345678901\n';
+    const csv = 'cf\n12345678903\n';
 
     const result = await service.createJob({ csvContent: csv, hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
 
     expect(result.jobId).toBe('job-1');
     expect(mockAppIoQueue.add).not.toHaveBeenCalled();
     expect(mockInad.startBulkExtraction).not.toHaveBeenCalled();
-    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678901');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678903');
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledTimes(1);
     expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: DomicileVerificationJobStatus.PROCESSING, registroImpreseTotal: 1, residualEnqueued: true });
   });
@@ -61,7 +62,7 @@ describe('DomicileVerificationService.createJob', () => {
   it('blocca se il servizio App IO non esiste', async () => {
     mockIoServiceRepo.findOneBy.mockResolvedValue(null);
 
-    const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-x', createdBy: 'operatore1' });
+    const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-x', createdBy: 'operatore1' });
 
     expect(result).toEqual({ blocked: true, message: 'Servizio App IO selezionato non trovato' });
     expect(mockJobRepo.save).not.toHaveBeenCalled();
@@ -70,7 +71,7 @@ describe('DomicileVerificationService.createJob', () => {
   it('blocca se non ci sono né CF fisici né Partite IVA validi', async () => {
     const result = await service.createJob({ csvContent: 'cf\nnonvalido\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
 
-    expect(result).toEqual({ blocked: true, message: 'Nessun codice fiscale (16 caratteri) o Partita IVA (11 cifre) valido trovato nella colonna selezionata' });
+    expect(result).toEqual({ blocked: true, message: 'Nessun codice fiscale o Partita IVA formalmente valido (carattere di controllo corretto) nella colonna selezionata' });
     expect(mockJobRepo.save).not.toHaveBeenCalled();
   });
 
@@ -78,7 +79,7 @@ describe('DomicileVerificationService.createJob', () => {
     mockAppIoQueue.add.mockRejectedValue(new Error('coda giù'));
     mockInad.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
 
-    const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
+    const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
 
     expect(result.jobId).toBe('job-1');
     const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.PROCESSING);
@@ -90,7 +91,7 @@ describe('DomicileVerificationService.createJob', () => {
     mockInad.startBulkExtraction.mockRejectedValue(new Error('INAD giù'));
     mockRegistroImpreseQueue.enqueueVerify.mockRejectedValue(new Error('registro giù'));
 
-    const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
+    const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
 
     expect(result.jobId).toBe('job-1');
     const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.FAILED);
@@ -103,7 +104,7 @@ describe('DomicileVerificationService.skipInad', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any);
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any, mockAnprMassivo as any);
   });
 
   it('marca tutti i batch INAD pending come done e inadFetched, senza toccare i risultati già trovati', async () => {
@@ -137,7 +138,7 @@ describe('DomicileVerificationService.getResultCsv', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any);
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any, mockAnprMassivo as any);
   });
 
   it('ritorna il CSV richiesto quando il job è DONE', async () => {
@@ -167,13 +168,13 @@ describe('DomicileVerificationService — visibilità per operatore', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIoServiceRepo.findOneBy.mockResolvedValue({ id: 'svc-1' });
-    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any);
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any, mockAnprMassivo as any);
   });
 
   it('createJob salva lo username di chi carica il tracciato', async () => {
     mockRegistroImpreseQueue.enqueueVerify.mockResolvedValue(undefined);
 
-    await service.createJob({ csvContent: 'cf\n12345678901\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
+    await service.createJob({ csvContent: 'cf\n12345678903\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'operatore1' });
 
     expect(mockJobRepo.save).toHaveBeenCalledWith(expect.objectContaining({ createdBy: 'operatore1' }));
   });
@@ -217,7 +218,7 @@ describe('DomicileVerificationService.deleteJob', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any);
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any, mockAnprMassivo as any);
   });
 
   it('il proprietario elimina un proprio job concluso', async () => {
@@ -249,5 +250,84 @@ describe('DomicileVerificationService.deleteJob', () => {
 
     await expect(service.deleteJob('job-1', USER)).rejects.toThrow('in elaborazione');
     expect(mockJobRepo.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe('DomicileVerificationService — controllo formale e ANPR', () => {
+  let service: DomicileVerificationService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIoServiceRepo.findOneBy.mockResolvedValue({ id: 'svc-1' });
+    mockAnprMassivo.isConfigured.mockResolvedValue(true);
+    mockInad.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
+    mockAppIoQueue.add.mockResolvedValue(undefined);
+    mockRegistroImpreseQueue.enqueueVerify.mockResolvedValue(undefined);
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any, mockAnprMassivo as any);
+  });
+
+  it('CF e PIVA con controllo errato non vanno a nessun servizio esterno', async () => {
+    const csv = 'cf\nRRANGL74M28R701D\nRRANGL74M28R701V\n12345678903\n12345678901\n';
+
+    await service.createJob({ csvContent: csv, hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'op' });
+
+    expect(mockInad.startBulkExtraction).toHaveBeenCalledWith(['RRANGL74M28R701D'], expect.any(String));
+    const enqueued = mockRegistroImpreseQueue.enqueueVerify.mock.calls.map(([, v]: any) => v);
+    expect(enqueued.sort()).toEqual(['12345678903', 'RRANGL74M28R701D']);
+    expect(mockJobRepo.save).toHaveBeenCalledWith(expect.objectContaining({ cfFisicoTotal: 1, pivaTotal: 1 }));
+  });
+
+  it('senza opzioni ANPR nessuna elaborazione massiva', async () => {
+    await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'op' });
+    expect(mockAnprMassivo.start).not.toHaveBeenCalled();
+  });
+
+  it('solo presenza in ANPR → una richiesta C030 sui soli CF fisici validi', async () => {
+    mockAnprMassivo.start.mockResolvedValue('987');
+
+    await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n12345678903\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'op', anprId: true });
+
+    expect(mockAnprMassivo.start).toHaveBeenCalledTimes(1);
+    expect(mockAnprMassivo.start).toHaveBeenCalledWith('id', ['RRANGL74M28R701D'], expect.any(String), 'op');
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { anprRequests: [{ kind: 'id', id: '987', cfs: ['RRANGL74M28R701D'], done: false }] });
+  });
+
+  it('esistenza in vita (anche insieme alla presenza) → una sola elaborazione C007', async () => {
+    mockAnprMassivo.start.mockResolvedValue('5');
+
+    await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'op', anprId: true, anprVita: true });
+
+    expect(mockAnprMassivo.start).toHaveBeenCalledTimes(1);
+    expect(mockAnprMassivo.start).toHaveBeenCalledWith('vita', ['RRANGL74M28R701D'], expect.any(String), 'op');
+    expect(mockJobRepo.save).toHaveBeenCalledWith(expect.objectContaining({ anprIdRequested: true, anprVitaRequested: true }));
+  });
+
+  it('opzione ANPR non configurata → caricamento bloccato', async () => {
+    mockAnprMassivo.isConfigured.mockResolvedValue(false);
+
+    const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'op', anprVita: true });
+
+    expect(result.blocked).toBe(true);
+    expect(mockJobRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('richiesta ANPR fallita: il job prosegue, problema in errorMessage', async () => {
+    mockAnprMassivo.start.mockRejectedValue(new Error('HTTP 400'));
+
+    await service.createJob({ csvContent: 'cf\nRRANGL74M28R701D\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1', createdBy: 'op', anprId: true });
+
+    const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.PROCESSING);
+    expect(call![1].errorMessage).toContain('ANPR');
+  });
+
+  it('skipAnpr marca concluse le richieste pendenti', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue({
+      id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING,
+      anprRequests: [{ kind: 'id', id: '1', cfs: ['RRANGL74M28R701D'], done: false }],
+    });
+
+    await service.skipAnpr('job-1');
+
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { anprRequests: [{ kind: 'id', id: '1', cfs: ['RRANGL74M28R701D'], done: true }] });
   });
 });

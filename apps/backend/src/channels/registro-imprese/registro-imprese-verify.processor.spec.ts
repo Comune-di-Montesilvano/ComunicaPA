@@ -23,7 +23,7 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE domicile_verification_jobs'),
-      [JSON.stringify({ '12345678901': 'acme@pec.it' }), 1, 'job-1'],
+      [JSON.stringify({ '12345678901': 'acme@pec.it' }), 1, 'job-1', JSON.stringify({ '12345678901': true })],
     );
     // Trigger immediato per DomicileVerificationSyncService — senza questo,
     // se INAD/App IO erano già pronti, il job padre resta PROCESSING fino
@@ -38,7 +38,7 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
       expect.any(String),
-      [JSON.stringify({ '12345678901': null }), 0, 'job-1'],
+      [JSON.stringify({ '12345678901': null }), 0, 'job-1', JSON.stringify({ '12345678901': false })],
     );
   });
 
@@ -47,9 +47,10 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
 
     await processor.process({ name: VERIFY_PIVA_JOB_NAME, data: { jobId: 'job-1', partitaIva: '12345678901' } } as any);
 
+    // Esito sconosciuto: nessuna voce in registro_imprese_found_map (mai "non trovata").
     expect(mockJobRepo.query).toHaveBeenCalledWith(
       expect.any(String),
-      [JSON.stringify({ '12345678901': null }), 0, 'job-1'],
+      [JSON.stringify({ '12345678901': null }), 0, 'job-1', '{}'],
     );
   });
 

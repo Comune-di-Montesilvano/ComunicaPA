@@ -10,6 +10,7 @@ import { parseCsvContent } from './csv.util.js';
 import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types.js';
 import { DomicileVerificationEventsService } from '../channels/domicile-verification/domicile-verification-events.service.js';
 import { errorMessage } from '../common/error-message.js';
+import { isValidCodiceFiscale } from '../channels/tax-id.util.js';
 
 const PROGRESS_UPDATE_EVERY = 25;
 const CONCURRENCY = 5;
@@ -67,7 +68,9 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       // (bug reale segnalato: barra progresso "2404/2404" su un CSV con
       // solo 2096 CF fisici validi, fuorviante anche se nessuna chiamata di
       // rete viene fatta per le righe scartate).
-      const eligibleRows = parsed.rows.filter((row) => (row[record.cfColumn] || '').trim().toUpperCase().length === 16);
+      // Dal controllo formale: CF con carattere di controllo errato mai interrogati
+      // (finiscono nella colonna errori del report aggregato).
+      const eligibleRows = parsed.rows.filter((row) => isValidCodiceFiscale(row[record.cfColumn] || ''));
       const results: Record<string, boolean> = {};
       let processed = 0;
       let present = 0;

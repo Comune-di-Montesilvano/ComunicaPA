@@ -19,6 +19,25 @@ export interface DomicileInadBatch {
   done: boolean;
 }
 
+/**
+ * Una richiesta di elaborazione massiva ANPR: 'id' = accertamento ID unico
+ * nazionale (C030), 'vita' = verifica esistenza in vita (C007). File gzip
+ * con i soli CF, esito asincrono (fino a 3 giorni) scaricato per
+ * idOperazioneANPR.
+ */
+export interface DomicileAnprRequest {
+  kind: 'id' | 'vita';
+  /** idOperazioneANPR restituito dalla richiesta. */
+  id: string;
+  /** CF inviati in questa richiesta: l'esito vale solo per questi. */
+  cfs: string[];
+  done: boolean;
+  /** ISO timestamp dell'ultimo tentativo di download (poll diradato). */
+  lastPolledAt?: string;
+  /** Ultima risposta "non pronto"/errore del download, per diagnosi. */
+  lastResponse?: string;
+}
+
 @Entity('domicile_verification_jobs')
 @Index('IDX_domicile_verification_jobs_created_by', ['createdBy', 'createdAt']) // AddDomicileVerificationJobOwner
 export class DomicileVerificationJob {
@@ -104,6 +123,41 @@ export class DomicileVerificationJob {
    */
   @Column({ name: 'registro_imprese_results', type: 'jsonb', default: {} })
   registroImpreseResults!: Record<string, string | null>;
+
+  /**
+   * Chiave = CF/PIVA interrogato, valore = impresa trovata nel Registro
+   * Imprese. Distinto da registroImpreseResults (PEC o null), dove null vale
+   * sia "non trovata" sia "trovata senza PEC". Stesso UPDATE jsonb concat.
+   * Chiave assente = esito sconosciuto (errore/tentativi esauriti).
+   */
+  @Column({ name: 'registro_imprese_found_map', type: 'jsonb', default: {} })
+  registroImpreseFoundMap!: Record<string, boolean>;
+
+  /** Verifica presenza CF in ANPR (C030) richiesta dall'operatore al caricamento. */
+  @Column({ name: 'anpr_id_requested', type: 'boolean', default: false })
+  anprIdRequested!: boolean;
+
+  /** Verifica esistenza in vita (C007) richiesta dall'operatore al caricamento. */
+  @Column({ name: 'anpr_vita_requested', type: 'boolean', default: false })
+  anprVitaRequested!: boolean;
+
+  @Column({ name: 'anpr_requests', type: 'jsonb', default: [] })
+  anprRequests!: DomicileAnprRequest[];
+
+  /**
+   * Chiave = CF fisico verificato su ANPR, valore = presente in ANPR. Solo i
+   * CF di richieste concluse: chiave assente = non verificato (saltato,
+   * richiesta fallita), mai "non presente".
+   */
+  @Column({ name: 'anpr_results', type: 'jsonb', default: {} })
+  anprResults!: Record<string, boolean>;
+
+  /**
+   * Chiave = CF fisico verificato con C007, valore = esistenza in vita S/N,
+   * null = non presente in ANPR. Chiave assente = non verificato.
+   */
+  @Column({ name: 'anpr_vita_results', type: 'jsonb', default: {} })
+  anprVitaResults!: Record<string, 'S' | 'N' | null>;
 
   /** true dopo che il fallback CF-fisici-non-trovati-INAD è stato accodato su Registro Imprese (una sola volta). */
   @Column({ name: 'residual_enqueued', type: 'boolean', default: false })

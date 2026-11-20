@@ -1,8 +1,10 @@
 import { buildDomicileVerificationCsvs } from './domicile-verification-csv.util.js';
 
+const BOM = '﻿';
+
 describe('buildDomicileVerificationCsvs', () => {
   const baseInput = {
-    sourceCsv: 'cf,nome\nRSSMRA85M01H501Z,Mario Rossi\nVRDLGI80A01H501W,Luigi Verdi\n12345678901,Acme Srl\n98765432109,Beta Srl\n',
+    sourceCsv: 'cf,nome\nRSSMRA85M01H501Q,Mario Rossi\nVRDLGI80A01H501E,Luigi Verdi\n12345678903,Acme Srl\n98765432103,Beta Srl\n',
     hasHeaders: true,
     cfColumn: 'cf',
   };
@@ -10,9 +12,9 @@ describe('buildDomicileVerificationCsvs', () => {
   it('priorità Registro Imprese su INAD per un CF fisico trovato da entrambi', () => {
     const result = buildDomicileVerificationCsvs({
       ...baseInput,
-      inadFoundMap: { RSSMRA85M01H501Z: 'mario.inad@pec.it' },
+      inadFoundMap: { RSSMRA85M01H501Q: 'mario.inad@pec.it' },
       appIoResults: {},
-      registroImpreseResults: { RSSMRA85M01H501Z: 'mario.registro@pec.it' },
+      registroImpreseResults: { RSSMRA85M01H501Q: 'mario.registro@pec.it' },
     });
     expect(result.aggregatoCsv).toContain('mario.registro@pec.it');
     expect(result.aggregatoCsv).not.toContain('mario.inad@pec.it');
@@ -20,130 +22,175 @@ describe('buildDomicileVerificationCsvs', () => {
     expect(result.registroImpreseCsv).toContain('mario.registro@pec.it');
   });
 
-  it('CF fisico trovato solo su App IO: nell\'aggregato con "attivo" — resta un "trovato" anche senza domicilio digitale', () => {
+  it('App IO: solo i CF attivi nel tracciato App IO, "attivo" nell\'aggregato', () => {
     const result = buildDomicileVerificationCsvs({
       ...baseInput,
       inadFoundMap: {},
-      appIoResults: { RSSMRA85M01H501Z: true, VRDLGI80A01H501W: false },
+      appIoResults: { RSSMRA85M01H501Q: true, VRDLGI80A01H501E: false },
       registroImpreseResults: {},
     });
-    expect(result.appIoCsv).toContain('RSSMRA85M01H501Z');
-    expect(result.appIoCsv).not.toContain('VRDLGI80A01H501W');
-    expect(result.aggregatoCsv).toMatch(/"RSSMRA85M01H501Z","Mario Rossi","","attivo"/);
-    // VRDLGI: né INAD né App IO né Registro Imprese → assente, MAI nell'aggregato
-    expect(result.aggregatoCsv).not.toContain('VRDLGI80A01H501W');
-    expect(result.assentiCsv).toContain('VRDLGI80A01H501W');
+    expect(result.appIoCsv).toContain('RSSMRA85M01H501Q');
+    expect(result.appIoCsv).not.toContain('VRDLGI80A01H501E');
+    expect(result.aggregatoCsv).toContain('RSSMRA85M01H501Q,Mario Rossi,,attivo,\n');
+    expect(result.assentiCsv).toContain('VRDLGI80A01H501E');
   });
 
-  it('CF fisico senza nessun risultato: finisce SOLO in assenti, mai nell\'aggregato', () => {
+  it('assenti: righe senza nessun risultato (CF, PIVA, valori non validi)', () => {
     const result = buildDomicileVerificationCsvs({
-      ...baseInput,
-      inadFoundMap: {},
-      appIoResults: { RSSMRA85M01H501Z: false, VRDLGI80A01H501W: false },
-      registroImpreseResults: {},
-    });
-    expect(result.assentiCsv).toContain('RSSMRA85M01H501Z');
-    expect(result.assentiCsv).toContain('VRDLGI80A01H501W');
-    expect(result.aggregatoCsv).not.toContain('RSSMRA85M01H501Z');
-    expect(result.aggregatoCsv).not.toContain('VRDLGI80A01H501W');
-  });
-
-  it('PIVA trovata su Registro Imprese: nell\'aggregato, colonna App IO vuota (mai "n.d."), mai in assenti', () => {
-    const result = buildDomicileVerificationCsvs({
-      ...baseInput,
-      inadFoundMap: {},
-      appIoResults: {},
-      registroImpreseResults: { '12345678901': 'acme@pec.it' },
-    });
-    expect(result.registroImpreseCsv).toContain('acme@pec.it');
-    expect(result.assentiCsv).not.toContain('12345678901');
-    expect(result.aggregatoCsv).toMatch(/"12345678901","Acme Srl","acme@pec\.it",""/);
-  });
-
-  it('CF assente/malformato nel tracciato sorgente (dato mancante, non un bug di parsing): SOLO in assenti, mai nell\'aggregato', () => {
-    const result = buildDomicileVerificationCsvs({
-      sourceCsv: 'cf,nome\n,Riga senza CF\n',
+      sourceCsv: 'cf,nome\nRSSMRA85M01H501Q,Mario\n12345678903,Acme\n,Riga senza CF\n',
       hasHeaders: true,
       cfColumn: 'cf',
       inadFoundMap: {},
-      appIoResults: {},
-      registroImpreseResults: {},
+      appIoResults: { RSSMRA85M01H501Q: false },
+      registroImpreseResults: { '12345678903': null },
     });
+    expect(result.assentiCsv).toContain('RSSMRA85M01H501Q');
+    expect(result.assentiCsv).toContain('12345678903');
     expect(result.assentiCsv).toContain('Riga senza CF');
-    expect(result.aggregatoCsv).not.toContain('Riga senza CF');
-    expect(result.aggregatoCsv).not.toContain('n.d.');
   });
 
-  it('PIVA non trovata (chiave assente da registroImpreseResults): finisce in assenti, mai nell\'aggregato', () => {
-    const result = buildDomicileVerificationCsvs({
-      ...baseInput,
-      inadFoundMap: {},
-      appIoResults: {},
-      registroImpreseResults: { '12345678901': 'acme@pec.it' }, // 98765432109 mai interrogata/trovata
-    });
-    expect(result.assentiCsv).toContain('98765432109');
-    expect(result.aggregatoCsv).not.toContain('98765432109');
-  });
-
-  it('PIVA con esito "non trovata" esplicito (valore null): finisce comunque in assenti, mai nell\'aggregato', () => {
-    const result = buildDomicileVerificationCsvs({
-      ...baseInput,
-      inadFoundMap: {},
-      appIoResults: {},
-      registroImpreseResults: { '98765432109': null },
-    });
-    expect(result.assentiCsv).toContain('98765432109');
-    expect(result.aggregatoCsv).not.toContain('98765432109');
-  });
-
-  it('appIoCsv/inadCsv/registroImpreseCsv sono null quando zero risultati (nessuna riga "se almeno un risultato")', () => {
-    const result = buildDomicileVerificationCsvs({
-      ...baseInput,
-      inadFoundMap: {},
-      appIoResults: {},
-      registroImpreseResults: {},
-    });
+  it('appIoCsv/inadCsv/registroImpreseCsv sono null quando zero risultati', () => {
+    const result = buildDomicileVerificationCsvs({ ...baseInput, inadFoundMap: {}, appIoResults: {}, registroImpreseResults: {} });
     expect(result.appIoCsv).toBeNull();
     expect(result.inadCsv).toBeNull();
     expect(result.registroImpreseCsv).toBeNull();
   });
 
-  it('assentiCsv e aggregatoCsv sono SEMPRE stringhe — a zero risultati assentiCsv ha tutte le righe, aggregatoCsv è vuoto (solo header)', () => {
-    const result = buildDomicileVerificationCsvs({
-      ...baseInput,
-      inadFoundMap: {},
-      appIoResults: {},
-      registroImpreseResults: {},
+  describe('aggregato = copia del tracciato + domicilio_digitale, app_io, errori', () => {
+    it('tutte le righe, stesso ordine, celle originali invariate, anche quelle senza risultati', () => {
+      const result = buildDomicileVerificationCsvs({
+        ...baseInput,
+        inadFoundMap: { RSSMRA85M01H501Q: 'mario@pec.it' },
+        appIoResults: { RSSMRA85M01H501Q: true },
+        registroImpreseResults: { '12345678903': 'acme@pec.it', '98765432103': null },
+        registroImpreseFoundMap: { '12345678903': true, '98765432103': true },
+      });
+      expect(result.aggregatoCsv).toBe(
+        BOM +
+          'cf,nome,domicilio_digitale,app_io,errori\n' +
+          'RSSMRA85M01H501Q,Mario Rossi,mario@pec.it,attivo,\n' +
+          'VRDLGI80A01H501E,Luigi Verdi,,,\n' +
+          '12345678903,Acme Srl,acme@pec.it,,\n' +
+          '98765432103,Beta Srl,,,\n',
+      );
     });
-    expect(typeof result.assentiCsv).toBe('string');
-    expect(typeof result.aggregatoCsv).toBe('string');
-    // tutte e 4 le righe del CSV sorgente sono assenti
-    expect(result.assentiCsv).toContain('RSSMRA85M01H501Z');
-    expect(result.assentiCsv).toContain('VRDLGI80A01H501W');
-    expect(result.assentiCsv).toContain('12345678901');
-    expect(result.assentiCsv).toContain('98765432109');
-    // aggregato: zero righe trovate, resta solo l'header
-    expect(result.aggregatoCsv).not.toContain('RSSMRA85M01H501Z');
-    expect(result.aggregatoCsv).not.toContain('VRDLGI80A01H501W');
-    expect(result.aggregatoCsv).not.toContain('12345678901');
-    expect(result.aggregatoCsv).not.toContain('98765432109');
-  });
 
-  it('aggregatoCsv contiene SOLO le righe trovate (mutuamente esclusivo con assentiCsv)', () => {
-    const result = buildDomicileVerificationCsvs({
-      ...baseInput,
-      inadFoundMap: { RSSMRA85M01H501Z: 'mario@pec.it' },
-      appIoResults: {},
-      registroImpreseResults: { '12345678901': 'acme@pec.it' },
+    it('mantiene separatore ";", virgolette originali e fine riga CRLF', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf;nome;importo\r\n"RSSMRA85M01H501Q";"Rossi; Mario";27,00\r\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: {},
+      });
+      expect(result.aggregatoCsv).toBe(
+        BOM + 'cf;nome;importo;domicilio_digitale;app_io;errori\r\n"RSSMRA85M01H501Q";"Rossi; Mario";27,00;;;\r\n',
+      );
     });
-    expect(result.aggregatoCsv).toContain('RSSMRA85M01H501Z');
-    expect(result.aggregatoCsv).toContain('12345678901');
-    // VRDLGI e 98765432109 non trovati da nessuna fonte: assenti, non nell'aggregato
-    expect(result.aggregatoCsv).not.toContain('VRDLGI80A01H501W');
-    expect(result.aggregatoCsv).not.toContain('98765432109');
-    expect(result.assentiCsv).toContain('VRDLGI80A01H501W');
-    expect(result.assentiCsv).toContain('98765432109');
-    expect(result.assentiCsv).not.toContain('RSSMRA85M01H501Z');
-    expect(result.assentiCsv).not.toContain('12345678901');
+
+    it('senza intestazione nel tracciato: nessuna riga di intestazione aggiunta', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'RSSMRA85M01H501Q,Mario\n',
+        hasHeaders: false,
+        cfColumn: 'Colonna 1',
+        inadFoundMap: { RSSMRA85M01H501Q: 'mario@pec.it' },
+        appIoResults: {},
+        registroImpreseResults: {},
+      });
+      expect(result.aggregatoCsv).toBe(BOM + 'RSSMRA85M01H501Q,Mario,mario@pec.it,,\n');
+    });
+
+    it('errori del controllo formale: CF/PIVA non validi, mancanti, zeri persi', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf,nome\nRSSMRA85M01H501A,A\n12345678901,B\n,C\n159560366,D\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        // anche con un esito presente, un valore non valido non lo usa mai
+        registroImpreseResults: { '12345678901': 'x@pec.it' },
+      });
+      const lines = result.aggregatoCsv.split('\n');
+      expect(lines[1]).toContain('codice fiscale non valido');
+      expect(lines[2]).toContain('partita IVA non valida');
+      expect(lines[2]).not.toContain('x@pec.it');
+      expect(lines[3]).toContain('codice fiscale/partita IVA mancante');
+      expect(lines[4]).toContain('meno di 11 cifre');
+    });
+
+    it('PIVA non trovata nel Registro Imprese: avviso; trovata senza PEC: nessun errore; esito mancante: verifica non riuscita', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf\n12345678903\n98765432103\n00159560366\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: { '12345678903': null, '98765432103': null, '00159560366': null },
+        registroImpreseFoundMap: { '12345678903': false, '98765432103': true },
+      });
+      const lines = result.aggregatoCsv.split('\n');
+      expect(lines[1]).toBe('12345678903,,,partita IVA non trovata nel Registro Imprese');
+      expect(lines[2]).toBe('98765432103,,,');
+      expect(lines[3]).toBe('00159560366,,,verifica Registro Imprese non riuscita');
+    });
+
+    it('CF non presente in ANPR: avviso solo per i CF verificati con esito negativo', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf\nRSSMRA85M01H501Q\nVRDLGI80A01H501E\nRSSMRA80A01H501U\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: {},
+        anprResults: { RSSMRA85M01H501Q: false, VRDLGI80A01H501E: true }, // RSSMRA80… non verificato
+      });
+      const lines = result.aggregatoCsv.split('\n');
+      expect(lines[1]).toContain('non presente in ANPR');
+      expect(lines[2]).toBe('VRDLGI80A01H501E,,,');
+      expect(lines[3]).toBe('RSSMRA80A01H501U,,,');
+    });
+
+    it('esistenza in vita (C007): deceduto e non presente; un solo messaggio "non presente" anche con C030', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf\nRSSMRA85M01H501Q\nVRDLGI80A01H501E\nRSSMRA80A01H501U\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: {},
+        anprResults: { VRDLGI80A01H501E: false },
+        anprVitaResults: { RSSMRA85M01H501Q: 'N', VRDLGI80A01H501E: null, RSSMRA80A01H501U: 'S' },
+      });
+      const lines = result.aggregatoCsv.split('\n');
+      expect(lines[1]).toBe('RSSMRA85M01H501Q,,,soggetto deceduto (ANPR)');
+      expect(lines[2]).toBe('VRDLGI80A01H501E,,,codice fiscale non presente in ANPR (mai iscritto o cancellato)');
+      expect(lines[3]).toBe('RSSMRA80A01H501U,,,');
+    });
+
+    it('celle aggiunte con separatore o virgolette vengono quotate', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf\n12345678903\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: { '12345678903': 'a,"b"@pec.it' },
+        registroImpreseFoundMap: { '12345678903': true },
+      });
+      expect(result.aggregatoCsv.split('\n')[1]).toBe('12345678903,"a,""b""@pec.it",,');
+    });
+
+    it('riga più corta dell\'intestazione: completata, colonne aggiunte allineate', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf,nome,via\nRSSMRA85M01H501Q,Mario\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: { RSSMRA85M01H501Q: 'm@pec.it' },
+        appIoResults: {},
+        registroImpreseResults: {},
+      });
+      expect(result.aggregatoCsv.split('\n')[1]).toBe('RSSMRA85M01H501Q,Mario,,m@pec.it,,');
+    });
   });
 });

@@ -125,3 +125,31 @@ digitale**, esito legittimo e non un errore.
 **INIPEC abbandonato**: il domicilio digitale d'impresa passa da Registro
 Imprese (PDND). Rimossi modulo, chiavi settings `inipec.*` (migration
 `RemoveInipecSettings`), tab Impostazioni e test connessione.
+
+## ANPR elaborazioni massive (Verifica Domicili) — C030 e C007
+
+`AnprMassivoService` (`channels/anpr/anpr-massivo.service.ts`): stessa spec
+"Consultazione ANPR API C0XX massiva" per i due e-service, cambiano path e
+caso d'uso — `E002AccertamentoIdAnprMassivo` (C030, presenza in ANPR) e
+`E002VericaEsistenzaInVitaMassiva` ("Verica" sic, C007, esistenza in vita
+S/N). Purpose ID distinti: `anpr.massivoId.purposeId`,
+`anpr.massivoVita.purposeId` (vuoto = opzione nascosta nella UI).
+
+- Input: `fileInput` = base64 di un gzip CSV con un CF per riga (senza
+  intestazione), max 1.500.000 byte compressi → blocchi da 50.000 CF.
+  `tipoRicerca: '1'` (CF), `datiRichiesta.casoUso` C030/C007.
+- Output: JSON gzip `{risposteMassive:[{cf, RispostaE002OK:{listaSoggetti:…}}]}`.
+  CF **assente** dall'output = mai in ANPR o cancellato per motivi diversi dal
+  decesso (doc ufficiale, uguale per entrambi): per questo con C007 non serve
+  anche C030 (una sola elaborazione).
+- Fino a **3 giorni** di elaborazione: soglia di stallo del job 96h con ANPR
+  pendente (48h altrimenti), download riprovato ogni 10 minuti.
+
+**Da verificare al primo uso reale** (dedotti, non provati):
+1. la spec non ha un endpoint di stato: si prova il download, qualunque
+   risposta ≠ 200 (tranne 401/403) = "non ancora pronto", salvata in
+   `anprRequests[].lastResponse` e mostrata nel messaggio di stallo;
+2. `aud` = URL senza `-PDND` (stessa regola C002);
+3. GET download con `Agid-JWT-Signature` senza `signed_headers` di body;
+4. il file di esito può essere gzip binario o base64 di gzip
+   (`format: byte`): `parseRispostaMassiva` accetta entrambi più JSON in chiaro.
