@@ -70,14 +70,20 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       // rete viene fatta per le righe scartate).
       // Dal controllo formale: CF con carattere di controllo errato mai interrogati
       // (finiscono nella colonna errori del report aggregato).
-      const eligibleRows = parsed.rows.filter((row) => isValidCodiceFiscale(row[record.cfColumn] || ''));
+      // Un CF ripetuto su più righe si interroga una volta sola: il progresso
+      // conta CF distinti come cfFisicoTotal (bug reale: "App IO 204 / 202",
+      // righe contro CF distinti) e l'esito è comunque per CF.
+      const eligibleCfs = Array.from(new Set(
+        parsed.rows
+          .map((row) => (row[record.cfColumn] || '').trim().toUpperCase())
+          .filter((cf) => isValidCodiceFiscale(cf)),
+      ));
       const results: Record<string, boolean> = {};
       let processed = 0;
       let present = 0;
       let absent = 0;
 
-      const runRow = async (row: Record<string, string>) => {
-        const cf = (row[record.cfColumn] || '').trim().toUpperCase();
+      const runCf = async (cf: string) => {
         let isPresent: boolean;
         try {
           const result = await this.ioServices.verifyProfile(cf, record.ioServiceId);
@@ -96,19 +102,19 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
         }
       };
 
-      for (let i = 0; i < eligibleRows.length; i += CONCURRENCY) {
+      for (let i = 0; i < eligibleCfs.length; i += CONCURRENCY) {
         // Verifica annullata dall'operatore: stop, nessuna altra chiamata App IO.
         if (i > 0 && i % (CONCURRENCY * PROGRESS_UPDATE_EVERY) === 0 && (await this.isCancelled(jobId))) {
-          this.logger.log(`DomicileVerificationJob ${jobId}: annullato, App IO interrotto a ${processed}/${eligibleRows.length}`);
+          this.logger.log(`DomicileVerificationJob ${jobId}: annullato, App IO interrotto a ${processed}/${eligibleCfs.length}`);
           return;
         }
-        const batch = eligibleRows.slice(i, i + CONCURRENCY);
-        await Promise.all(batch.map(runRow));
+        const batch = eligibleCfs.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(runCf));
       }
 
       await this.jobRepo.update(jobId, {
         appIoDone: true,
-        appIoProcessedRows: eligibleRows.length,
+        appIoProcessedRows: eligibleCfs.length,
         appIoPresentCount: present,
         appIoAbsentCount: absent,
         appIoResults: results,

@@ -6,6 +6,19 @@ import { IoServiceConfig } from '../entities/io-service-config.entity.js';
 import { IoServicesService } from './io-services.service.js';
 import { DomicileVerificationEventsService } from '../channels/domicile-verification/domicile-verification-events.service.js';
 
+
+/** n codici fiscali distinti con carattere di controllo corretto (codice comune variabile). */
+function distinctCfs(n: number): string[] {
+  const odd = [1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16, 10, 22, 25, 24, 23];
+  const val = (c: string) => (c >= '0' && c <= '9' ? c.charCodeAt(0) - 48 : c.charCodeAt(0) - 65);
+  return Array.from({ length: n }, (_, i) => {
+    const body = `RSSMRA85M01H${String(100 + i).padStart(3, '0')}`;
+    let sum = 0;
+    for (let k = 0; k < 15; k++) sum += k % 2 === 0 ? odd[val(body[k])] : val(body[k]);
+    return body + String.fromCharCode(65 + (sum % 26));
+  });
+}
+
 describe('isPresentResult', () => {
   it('presente solo se success && active && messaggio non contiene "disabilitati"', () => {
     expect(isPresentResult({ success: true, active: true, message: 'Iscritto ad App IO e messaggi abilitati' })).toBe(true);
@@ -69,11 +82,33 @@ describe('AppIoVerifyBulkProcessor', () => {
     expect(domicileEventsMock.notifyJobProgress).toHaveBeenCalledWith('job-1');
   });
 
+  it('CF ripetuto su più righe: una sola chiamata, progresso = CF distinti (mai 204/202)', async () => {
+    jobRepoMock.findOneBy.mockReset();
+    jobRepoMock.findOneBy.mockResolvedValue({
+      id: 'job-4',
+      status: 'processing',
+      sourceCsv: 'cf\nRSSMRA85M01H501Q\nrssmra85m01h501q \nVRDLGI80A01H501E',
+      hasHeaders: true,
+      cfColumn: 'cf',
+      ioServiceId: 'svc-1',
+    });
+    ioServiceRepoMock.findOneBy.mockResolvedValue({ id: 'svc-1', apiKeyPrimariaEnc: 'enc:v1:xxx' });
+    ioServicesMock.verifyProfile.mockReset();
+    ioServicesMock.verifyProfile.mockResolvedValue({ success: true, active: true, message: 'ok' });
+
+    await processor.process({ data: { jobId: 'job-4' } } as any);
+
+    expect(ioServicesMock.verifyProfile).toHaveBeenCalledTimes(2);
+    const [, patch] = jobRepoMock.update.mock.calls.find(([, p]: any) => p.appIoDone === true);
+    expect(patch.appIoProcessedRows).toBe(2);
+    expect(patch.appIoPresentCount).toBe(2);
+  });
+
   it('si ferma se la verifica viene annullata durante l\'elaborazione (nessun appIoDone)', async () => {
     const record = {
       id: 'job-3',
       status: 'processing',
-      sourceCsv: 'cf\n' + 'RSSMRA85M01H501Q\n'.repeat(300),
+      sourceCsv: 'cf\n' + distinctCfs(300).join('\n'),
       hasHeaders: true,
       cfColumn: 'cf',
       ioServiceId: 'svc-1',
