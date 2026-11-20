@@ -11,6 +11,8 @@ export enum DomicileVerificationJobStatus {
   PROCESSING = 'processing',
   DONE = 'done',
   FAILED = 'failed',
+  /** Annullata dall'operatore durante l'elaborazione (nessun risultato). */
+  CANCELLED = 'cancelled',
 }
 
 export interface DomicileInadBatch {

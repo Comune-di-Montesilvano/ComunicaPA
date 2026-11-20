@@ -39,6 +39,30 @@ export class RegistroImpreseVerifyQueueService {
     });
   }
 
+  /**
+   * Annullamento di una Verifica Domicili: rimuove i job ancora in attesa
+   * (waiting/delayed/prioritized) per i valori indicati. Un job già attivo
+   * non è rimovibile (lock del worker): termina e scrive il suo esito su un
+   * job padre ormai annullato, senza effetti. Restituisce quanti ne ha tolti.
+   */
+  async removePendingVerify(jobId: string, values: string[]): Promise<number> {
+    let removed = 0;
+    for (const value of values) {
+      const job = await this.queue.getJob(`${jobId}__${value}`);
+      if (!job) continue;
+      const state = await job.getState();
+      if (state === 'waiting' || state === 'delayed' || state === 'prioritized' || state === 'waiting-children') {
+        try {
+          await job.remove();
+          removed++;
+        } catch {
+          // diventato attivo nel frattempo: lo lascia finire
+        }
+      }
+    }
+    return removed;
+  }
+
   async enqueueCampaignVerify(
     campaignId: string,
     recipientId: string,

@@ -194,6 +194,8 @@ Le verifiche ANPR facoltative compaiono solo se l'amministratore le ha attivate 
 
 Riguardano solo i codici fiscali di persone fisiche. ANPR elabora l'elenco in modo massivo e può impiegare **fino a 3 giorni**: il risultato della verifica arriva solo alla fine. ANPR comprende i residenti in Italia e gli iscritti AIRE: un codice fiscale valido di uno straniero mai residente risulta comunque «non presente». Un amministratore può interrompere l'attesa con **Salta verifica ANPR**: i codici fiscali non ancora verificati restano senza esito ANPR.
 
+Una verifica in corso si può fermare con **Annulla verifica**: le interrogazioni ancora in coda non partono e non viene prodotto nessun risultato. Le elaborazioni ANPR già prese in carico da ANPR proseguono lato ANPR, ma il risultato non viene più scaricato. Una verifica annullata resta nello storico come **Annullato** e si può eliminare.
+
 Nello **Storico verifiche** vedi solo le verifiche che hai caricato tu (un amministratore le vede tutte, con la colonna **Operatore**). Con il cestino elimini una verifica conclusa: il file caricato e i risultati vengono cancellati definitivamente. Una verifica ancora in corso non si può eliminare.
 
 ### Gestire i template

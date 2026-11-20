@@ -11,9 +11,9 @@ const mockJobRepo = {
 };
 const mockIoServiceRepo = { findOneBy: jest.fn() };
 const mockInad = { startBulkExtraction: jest.fn() };
-const mockRegistroImpreseQueue = { enqueueVerify: jest.fn() };
-const mockAppIoQueue = { add: jest.fn() };
-const mockAnprMassivo = { isConfigured: jest.fn(async () => true), start: jest.fn() };
+const mockRegistroImpreseQueue = { enqueueVerify: jest.fn(), removePendingVerify: jest.fn() };
+const mockAppIoQueue = { add: jest.fn(), remove: jest.fn() };
+const mockAnprMassivo = { isConfigured: jest.fn(async () => true), start: jest.fn(), cancel: jest.fn() };
 
 const ADMIN = { username: 'admin1', role: 'admin' as const };
 const USER = { username: 'operatore1', role: 'user' as const };
@@ -329,5 +329,64 @@ describe('DomicileVerificationService — controllo formale e ANPR', () => {
     await service.skipAnpr('job-1');
 
     expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { anprRequests: [{ kind: 'id', id: '1', cfs: ['RRANGL74M28R701D'], done: true }] });
+  });
+});
+
+describe('DomicileVerificationService.cancelJob', () => {
+  let service: DomicileVerificationService;
+  const processingJob = {
+    id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdBy: 'operatore1',
+    sourceCsv: 'cf\nRRANGL74M28R701D\n12345678903\n98765432103\nnonvalido\n', hasHeaders: true, cfColumn: 'cf',
+    registroImpreseResults: { '12345678903': 'acme@pec.it' },
+    anprRequests: [{ kind: 'vita', id: '77', cfs: ['RRANGL74M28R701D'], done: false }, { kind: 'vita', id: '78', cfs: [], done: true }],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any, mockAnprMassivo as any);
+    mockRegistroImpreseQueue.removePendingVerify.mockResolvedValue(2);
+  });
+
+  it('marca CANCELLED solo se ancora in coda/in elaborazione, poi svuota le code e annulla ANPR pendente', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue(processingJob);
+    mockJobRepo.update.mockResolvedValue({ affected: 1 });
+
+    await service.cancelJob('job-1', USER);
+
+    const [criteria, patch] = mockJobRepo.update.mock.calls[0];
+    expect(criteria.id).toBe('job-1');
+    expect(criteria.status).toBeDefined(); // UPDATE condizionato (In queued/processing)
+    expect(patch).toMatchObject({ status: DomicileVerificationJobStatus.CANCELLED, errorMessage: 'Verifica annullata da operatore1' });
+    expect(mockAppIoQueue.remove).toHaveBeenCalledWith('job-1');
+    // solo valori validi e senza esito già scritto
+    expect(mockRegistroImpreseQueue.removePendingVerify).toHaveBeenCalledWith('job-1', ['RRANGL74M28R701D', '98765432103']);
+    expect(mockAnprMassivo.cancel).toHaveBeenCalledTimes(1);
+    expect(mockAnprMassivo.cancel).toHaveBeenCalledWith('vita', '77', 'operatore1');
+  });
+
+  it('job già concluso: BadRequest, nessuna pulizia', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue({ ...processingJob, status: DomicileVerificationJobStatus.DONE });
+    mockJobRepo.update.mockResolvedValue({ affected: 0 });
+
+    await expect(service.cancelJob('job-1', USER)).rejects.toThrow('non è in corso');
+    expect(mockRegistroImpreseQueue.removePendingVerify).not.toHaveBeenCalled();
+  });
+
+  it('un operatore non annulla un job altrui (404)', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.cancelJob('job-1', USER)).rejects.toThrow('non trovato');
+    expect(mockJobRepo.findOneBy).toHaveBeenCalledWith({ id: 'job-1', createdBy: 'operatore1' });
+    expect(mockJobRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('errori di pulizia (coda, ANPR) non fanno fallire l\'annullamento', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue(processingJob);
+    mockJobRepo.update.mockResolvedValue({ affected: 1 });
+    mockAppIoQueue.remove.mockRejectedValue(new Error('locked'));
+    mockRegistroImpreseQueue.removePendingVerify.mockRejectedValue(new Error('redis giù'));
+    mockAnprMassivo.cancel.mockRejectedValue(new Error('HTTP 400'));
+
+    await expect(service.cancelJob('job-1', USER)).resolves.toBeUndefined();
   });
 });

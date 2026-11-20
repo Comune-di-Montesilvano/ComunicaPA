@@ -145,11 +145,24 @@ S/N). Purpose ID distinti: `anpr.massivoId.purposeId`,
 - Fino a **3 giorni** di elaborazione: soglia di stallo del job 96h con ANPR
   pendente (48h altrimenti), download riprovato ogni 10 minuti.
 
+**`aud` dei massivi = URL dei `servers` CON `-PDND`** (l'opposto di
+C002/C019). Bug reale v1.25.0: con la regola di C002 la richiesta C007 in
+produzione rispondeva 400 `InteroperabilityInvalidRequest`; il supporto ANPR
+indica per lo stesso errore "Token contenente un claim 'aud' non valido" su
+entrambi gli header (italia/anpr#4662), valore confermato in collaudo da un
+altro ente (italia/anpr#5425). Mai ricavare l'`aud` di un nuovo e-service
+ANPR per analogia: cercare prima nelle issue `italia/anpr`.
+
+Stato elaborazione: non c'è un endpoint di stato, il download risponde 404
+con `{"listaErrori":[{"testoErroreAnomalia":"Risorsa in attesa di
+elaborazione con stato: N"}]}` finché non è pronto (italia/anpr#5425). Esiste
+anche uno stato `5` non documentato. L'annullamento (`DELETE
+…/anpr-massivo-e002-delete/resource/{id}`) è accettato solo nello stato
+"inserita", che dura pochi istanti: l'annullamento di una Verifica Domicili
+lo tenta comunque, best effort.
+
 **Da verificare al primo uso reale** (dedotti, non provati):
-1. la spec non ha un endpoint di stato: si prova il download, qualunque
-   risposta ≠ 200 (tranne 401/403) = "non ancora pronto", salvata in
-   `anprRequests[].lastResponse` e mostrata nel messaggio di stallo;
-2. `aud` = URL senza `-PDND` (stessa regola C002);
-3. GET download con `Agid-JWT-Signature` senza `signed_headers` di body;
-4. il file di esito può essere gzip binario o base64 di gzip
+1. GET download con `Agid-JWT-Signature` senza `signed_headers` di body
+   (dichiarare `digest`/`content-type` senza inviarli → errore, #4888);
+2. il file di esito può essere gzip binario o base64 di gzip
    (`format: byte`): `parseRispostaMassiva` accetta entrambi più JSON in chiaro.

@@ -69,6 +69,27 @@ describe('AppIoVerifyBulkProcessor', () => {
     expect(domicileEventsMock.notifyJobProgress).toHaveBeenCalledWith('job-1');
   });
 
+  it('si ferma se la verifica viene annullata durante l\'elaborazione (nessun appIoDone)', async () => {
+    const record = {
+      id: 'job-3',
+      status: 'processing',
+      sourceCsv: 'cf\n' + 'RSSMRA85M01H501Q\n'.repeat(300),
+      hasHeaders: true,
+      cfColumn: 'cf',
+      ioServiceId: 'svc-1',
+    };
+    jobRepoMock.findOneBy.mockReset();
+    jobRepoMock.findOneBy.mockResolvedValueOnce(record).mockResolvedValue({ ...record, status: 'cancelled' });
+    ioServiceRepoMock.findOneBy.mockResolvedValue({ id: 'svc-1', apiKeyPrimariaEnc: 'enc:v1:xxx' });
+    ioServicesMock.verifyProfile.mockReset();
+    ioServicesMock.verifyProfile.mockResolvedValue({ success: true, active: false, message: 'x' });
+
+    await processor.process({ data: { jobId: 'job-3' } } as any);
+
+    expect(ioServicesMock.verifyProfile.mock.calls.length).toBeLessThan(300);
+    expect(jobRepoMock.update.mock.calls.some(([, patch]: any) => patch.appIoDone === true)).toBe(false);
+  });
+
   it('marca l\'intero DomicileVerificationJob FAILED se il servizio App IO scelto non esiste più o non ha una chiave configurata', async () => {
     jobRepoMock.findOneBy.mockResolvedValue({
       id: 'job-2',

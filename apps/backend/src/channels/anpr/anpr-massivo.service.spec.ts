@@ -106,6 +106,18 @@ describe('AnprMassivoService', () => {
     expect(mockPdndAuth.getVoucherWithDigest).toHaveBeenCalledWith('prod', 'purpose-vita', expect.any(String));
   });
 
+  it('aud di Agid-JWT-Signature e TrackingEvidence = URL dei servers CON "-PDND" (diverso da C002, italia/anpr#5425, #4662)', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('{"idOperazioneANPR":5}') });
+
+    await service.start('vita', ['RSSMRA80A01H501U'], 'x', 'mario');
+
+    const auds = mockPdndAuth.signAgidJwt.mock.calls.map(([, aud]: any) => aud);
+    expect(auds).toEqual([
+      'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/E002VericaEsistenzaInVitaMassiva/v1',
+      'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/E002VericaEsistenzaInVitaMassiva/v1',
+    ]);
+  });
+
   it('richiesta rifiutata → eccezione con HTTP e corpo', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 400, text: () => Promise.resolve('{"listaErrori":[]}') });
     await expect(service.start('id', ['RSSMRA80A01H501U'], 'x', 'mario')).rejects.toThrow(/HTTP 400/);

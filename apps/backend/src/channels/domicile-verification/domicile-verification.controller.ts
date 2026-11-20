@@ -96,6 +96,13 @@ export class DomicileVerificationController {
     return { ok: true };
   }
 
+  @Post('jobs/:id/cancel')
+  @Roles('user', 'admin')
+  async cancelJob(@Param('id', ParseUUIDPipe) id: string, @Req() req: OperatorRequest): Promise<{ ok: true }> {
+    await this.svc.cancelJob(id, req.user);
+    return { ok: true };
+  }
+
   @Post('jobs/:id/skip-inad')
   @Roles('admin')
   async skipInad(@Param('id', ParseUUIDPipe) id: string): Promise<{ ok: true }> {

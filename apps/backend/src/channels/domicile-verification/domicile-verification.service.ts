@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import type { OperatorRole } from '@comunicapa/shared-types';
 import {
   DomicileVerificationJob,
@@ -372,6 +372,56 @@ export class DomicileVerificationService {
       throw new BadRequestException('Il job è in elaborazione: si può eliminare solo a verifica conclusa');
     }
     await this.jobRepo.delete(job.id);
+  }
+
+  /**
+   * Annullamento completo di una verifica in corso (proprietario o admin):
+   * stato CANCELLED, nessun risultato. Lo stato si cambia per primo e solo
+   * se il job è ancora in coda/in elaborazione (UPDATE condizionato): da lì
+   * sync, App IO e Registro Imprese non lo toccano più. Poi, best effort,
+   * si tolgono le verifiche ancora in coda (Registro Imprese, App IO) e si
+   * chiede ad ANPR di annullare le elaborazioni massive (accettato solo se
+   * ancora "inserite"). INAD non ha annullamento: i batch restano lato INAD.
+   */
+  async cancelJob(jobId: string, requester: DomicileVerificationRequester): Promise<void> {
+    const job = await this.findVisibleJob(jobId, requester);
+    const result = await this.jobRepo.update(
+      { id: job.id, status: In([DomicileVerificationJobStatus.QUEUED, DomicileVerificationJobStatus.PROCESSING]) },
+      {
+        status: DomicileVerificationJobStatus.CANCELLED,
+        errorMessage: `Verifica annullata da ${requester.username}`,
+        completedAt: new Date(),
+      },
+    );
+    if (!result.affected) {
+      throw new BadRequestException('La verifica non è in corso: niente da annullare');
+    }
+
+    try {
+      await this.appIoQueue.remove(job.id);
+    } catch {
+      // già attivo: il worker si ferma da solo vedendo lo stato annullato
+    }
+
+    const parsed = parseCsvContent(job.sourceCsv, job.hasHeaders);
+    const values = Array.from(new Set(
+      parsed.rows.map((row) => checkTaxId(row[job.cfColumn] || '')).filter((c) => c.kind !== 'invalid').map((c) => c.value),
+    ));
+    const pending = values.filter((v) => !(v in (job.registroImpreseResults ?? {})));
+    try {
+      const removed = await this.registroImpreseQueue.removePendingVerify(job.id, pending);
+      this.logger.log(`Job ${job.id} annullato da ${requester.username}: ${removed} verifiche Registro Imprese tolte dalla coda`);
+    } catch (err) {
+      this.logger.warn(`Job ${job.id}: pulizia coda Registro Imprese non riuscita: ${errorMessage(err)}`);
+    }
+
+    for (const req of (job.anprRequests ?? []).filter((r) => !r.done)) {
+      try {
+        await this.anprMassivo.cancel(req.kind, req.id, requester.username);
+      } catch (err) {
+        this.logger.warn(`Job ${job.id}: annullamento ANPR ${req.id} non riuscito: ${errorMessage(err)}`);
+      }
+    }
   }
 
   /**

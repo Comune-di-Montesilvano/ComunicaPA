@@ -182,6 +182,7 @@ describe('Inventario sicurezza route', () => {
       GET /admin/domicile-verification/jobs/:id/aggregato.csv | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs/:id/app-io.csv | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs/:id/assenti.csv | auth | roles=user,admin | guards=-
+      POST /admin/domicile-verification/jobs/:id/cancel | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs/:id/inad.csv | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs/:id/registro-imprese.csv | auth | roles=user,admin | guards=-
       POST /admin/domicile-verification/jobs/:id/skip-anpr | auth | roles=admin | guards=-
