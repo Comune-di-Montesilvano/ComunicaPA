@@ -8,6 +8,7 @@ describe('normalizeTaxKey', () => {
     expect(normalizeTaxKey(' rssmra80a01h501u ')).toBe('RSSMRA80A01H501U');
     expect(normalizeTaxKey('159560366')).toBe('00159560366');
     expect(normalizeTaxKey('12345678903')).toBe('12345678903');
+    expect(normalizeTaxKey("'RSSMRA80A01H501U")).toBe('RSSMRA80A01H501U');
   });
 });
 
@@ -46,5 +47,10 @@ describe('matchOcrImport', () => {
   it('stesso CF ripetuto nel CSV con lo stesso OCR: non è ambiguo', () => {
     const { toWrite } = matchOcrImport([['RSSMRA80A01H501U', OCR_A], ['RSSMRA80A01H501U', ` ${OCR_A}`]], recipients);
     expect(toWrite).toHaveLength(1);
+  });
+
+  it('apostrofo iniziale (Excel) tolto da CF e OCR', () => {
+    const { toWrite } = matchOcrImport([["'RSSMRA80A01H501U", `'${OCR_A}`]], recipients);
+    expect(toWrite).toEqual([{ recipientId: 'r1', ocr: OCR_A }]);
   });
 });
