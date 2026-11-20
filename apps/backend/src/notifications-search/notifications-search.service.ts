@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { externalIdColumnOfCampaignSql, identifierSearchSql } from '../campaigns/recipient-identifier-search.util.js';
 import { resolveExternalId } from '../channels/external-id-mapping.util.js';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -103,7 +104,7 @@ export class NotificationsSearchService {
         ? ` OR EXISTS (SELECT 1 FROM notification_attempts p WHERE p.recipient_id = recipient.id AND p.protocol_number = :protocolNumber${protocol.year !== null ? ' AND p.protocol_year = :protocolYear' : ''})`
         : '';
       qb.andWhere(
-        `(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q))${protocolSql})`,
+        `(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)) OR ${identifierSearchSql('recipient', externalIdColumnOfCampaignSql('campaign'), 'q')}${protocolSql})`,
         {
           q,
           ...(protocol ? { protocolNumber: protocol.number } : {}),

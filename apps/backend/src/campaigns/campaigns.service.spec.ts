@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { identifierSearchSql } from './recipient-identifier-search.util.js';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
@@ -784,8 +785,8 @@ describe('CampaignsService', () => {
     await service.getRecipientStats('uuid-1', 1, 20, 'rossi');
 
     expect(qb.andWhere).toHaveBeenCalledWith(
-      '(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)',
-      { search: '%rossi%' },
+      `(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search OR ${identifierSearchSql('r', 'CAST(:searchExtCol AS text)', 'search')})`,
+      { search: '%rossi%', searchExtCol: 'external_id' },
     );
   });
 

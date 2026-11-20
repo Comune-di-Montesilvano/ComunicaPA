@@ -130,7 +130,7 @@ Se la campagna è stata caricata senza OCR, puoi aggiungerlo dopo:
 
 ### Cercare una singola notifica
 
-Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC, IUN o numero di protocollo. Il protocollo si cerca esatto: `1234` trova il protocollo 1234 di qualunque anno, `1234/2026` solo quello del 2026. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente. Il filtro **Autore** limita la ricerca alle notifiche delle campagne create da un certo operatore. I risultati sono 20 per pagina: scorri le pagine con i pulsanti **Precedente** e **Successiva** sotto l'elenco.
+Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC, IUN, numero di protocollo, OCR (External ID) o numero di raccomandata. Anche la casella di ricerca dei destinatari, nel dettaglio di una campagna, trova OCR e raccomandata oltre a nominativo e codice fiscale. Il protocollo si cerca esatto: `1234` trova il protocollo 1234 di qualunque anno, `1234/2026` solo quello del 2026. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente. Il filtro **Autore** limita la ricerca alle notifiche delle campagne create da un certo operatore. I risultati sono 20 per pagina: scorri le pagine con i pulsanti **Precedente** e **Successiva** sotto l'elenco.
 
 Una notifica ha due date, una per ciascuna parte (scissione degli effetti; per SEND art. 26, comma 9, D.L. 76/2020):
 
