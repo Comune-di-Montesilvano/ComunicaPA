@@ -20,6 +20,8 @@ const baseReport: SendReportDto = {
     foreignState: 'Francia',
     appIoOutcome: null,
     externalId: null,
+    sendDeliveryKind: null,
+    sendRegisteredLetterCode: null,
   }],
 };
 

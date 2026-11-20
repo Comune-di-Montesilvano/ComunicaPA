@@ -170,7 +170,13 @@ export interface SendReportRowDto {
   /** null se la campagna non ha co-consegna App IO configurata. */
   appIoOutcome: { success: boolean; error: string | null } | null;
   externalId: string | null;
+  /** Canale con cui SEND ha perfezionato o tentato la consegna (sendDeliveryKind). */
+  sendDeliveryKind: SendDeliveryKind | null;
+  /** Ultima raccomandata del recapitista SEND (timeline), null se nessuna. */
+  sendRegisteredLetterCode: string | null;
 }
+
+export type SendDeliveryKind = 'PEC' | 'RACC' | 'IO' | 'WEB' | 'RADD';
 
 export interface SendReportDto {
   /** Determina se i CSV builder devono includere la colonna "Esito App IO". */

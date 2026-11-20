@@ -3,6 +3,8 @@ import {
   buildMaggioliNotificheTxt,
   maggioliFromPostal,
   maggioliFromSend,
+  sendDeliveryKind,
+  sendRegisteredLetterOf,
   maggioliOcr,
 } from './maggioli-export.util.js';
 import type { PostalReportRowDto, SendReportRowDto } from './dto/campaign-stats.dto.js';
@@ -26,6 +28,7 @@ function send(over: Partial<SendReportRowDto>): SendReportRowDto {
   return {
     codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi', iun: 'IUN-1', digitalDomicileType: null, digitalDomicileAddress: null,
     sendStatus: 'EFFECTIVE_DATE', address: '', municipality: '', foreignState: '', appIoOutcome: null, externalId: OCR18,
+    sendDeliveryKind: null, sendRegisteredLetterCode: null,
     sendStatusHistory: [
       { status: 'ACCEPTED', activeFrom: '2026-05-01T08:00:00Z' },
       { status: 'EFFECTIVE_DATE', activeFrom: '2026-05-12T22:30:00Z' },
@@ -126,5 +129,60 @@ describe('esclusi', () => {
     expect(maggioliFromSend([send({ externalId: '614451234567' }), send({})]).ocrMancanti).toBe(1);
     const s = maggioliFromSend([send({ sendStatusHistory: [{ status: 'CANCELLED', activeFrom: '2026-05-01T08:00:00Z' }] })]);
     expect(s).toMatchObject({ notifiche: [], mancate: [], nonEsportabili: 1 });
+  });
+});
+
+describe('canale SEND nei campi note', () => {
+  const ACC = { status: 'ACCEPTED', activeFrom: '2026-05-01T08:00:00Z' };
+  const VIEWED = { status: 'VIEWED', activeFrom: '2026-05-03T08:00:00Z' };
+  const EFFECTIVE = { status: 'EFFECTIVE_DATE', activeFrom: '2026-05-12T08:00:00Z' };
+
+  it('letta prima del perfezionamento: IO con cortesia App IO, RADD allo sportello, altrimenti WEB', () => {
+    expect(sendDeliveryKind([ACC, VIEWED], [{ category: 'SEND_COURTESY_MESSAGE', at: '2026-05-01T09:00:00Z', channel: 'APPIO' }], null)).toBe('IO');
+    expect(sendDeliveryKind([ACC, VIEWED], [{ category: 'NOTIFICATION_VIEWED', at: '2026-05-03T08:00:00Z', raddType: 'ALT' }], null)).toBe('RADD');
+    expect(sendDeliveryKind([ACC, VIEWED], [{ category: 'SEND_COURTESY_MESSAGE', at: '2026-05-01T09:00:00Z', channel: 'EMAIL' }], 'PEC')).toBe('WEB');
+  });
+
+  it('perfezionata per decorrenza: PEC da domicilio digitale, RACC da recapitista (vince sul fallback cartaceo)', () => {
+    expect(sendDeliveryKind([ACC, EFFECTIVE], [{ category: 'SEND_DIGITAL_DOMICILE', at: '2026-05-01T09:00:00Z', channel: 'PEC' }], 'PEC')).toBe('PEC');
+    expect(sendDeliveryKind([ACC, EFFECTIVE], [
+      { category: 'SEND_DIGITAL_DOMICILE', at: '2026-05-01T09:00:00Z', channel: 'PEC' },
+      { category: 'SEND_ANALOG_DOMICILE', at: '2026-05-05T09:00:00Z' },
+    ], 'CARTACEO')).toBe('RACC');
+    // Letta DOPO il perfezionamento: conta il perfezionamento.
+    expect(sendDeliveryKind([ACC, EFFECTIVE, { status: 'VIEWED', activeFrom: '2026-05-20T08:00:00Z' }], [], 'PEC')).toBe('PEC');
+    expect(sendDeliveryKind([ACC, { status: 'UNREACHABLE', activeFrom: '2026-05-10T08:00:00Z' }], [], null)).toBe('RACC');
+    expect(sendDeliveryKind([ACC], [], null)).toBeNull();
+  });
+
+  it('ultima raccomandata del recapitista', () => {
+    expect(sendRegisteredLetterOf([
+      { category: 'SEND_ANALOG_PROGRESS', at: '2026-05-05T09:00:00Z', registeredLetterCode: 'RA111111111IT' },
+      { category: 'SEND_ANALOG_PROGRESS', at: '2026-05-08T09:00:00Z', registeredLetterCode: '614451234567' },
+    ])).toBe('614451234567');
+    expect(sendRegisteredLetterOf(null)).toBeNull();
+  });
+
+  it('notifiche: sigla nel campo inkjet (42-49) e raccomandata del recapitista nei campi raccomandata', () => {
+    const exp = maggioliFromSend([
+      send({ sendDeliveryKind: 'RACC', sendRegisteredLetterCode: '614451234567' }),
+      send({ sendDeliveryKind: 'PEC', sendRegisteredLetterCode: '614451234567' }),
+      send({ sendDeliveryKind: 'IO' }),
+    ]);
+    const [racc, pec, io] = buildMaggioliNotificheTxt(exp.notifiche).split('\n');
+    expect(racc.slice(11, 23)).toBe('614451234567');
+    expect(racc.slice(41, 49)).toBe('SEND RAC');
+    expect(racc.slice(51, 63)).toBe('614451234567');
+    expect(pec.slice(11, 23)).toBe(' '.repeat(12));
+    expect(pec.slice(41, 49)).toBe('SEND PEC');
+    expect(io.slice(41, 49)).toBe('SEND IO ');
+    expect(racc).toHaveLength(64);
+  });
+
+  it('mancate: sigla nel campo inkjet (65-80), default SEND RACC', () => {
+    const exp = maggioliFromSend([send({ sendStatusHistory: [ACC, { status: 'RETURNED_TO_SENDER', activeFrom: '2026-05-10T08:00:00Z' }] })]);
+    const [line] = buildMaggioliMancateTxt(exp.mancate).split('\n');
+    expect(line.slice(64, 80)).toBe('SEND RACC'.padEnd(16));
+    expect(line).toHaveLength(150);
   });
 });
