@@ -38,6 +38,11 @@ export interface DomicileAnprRequest {
   lastPolledAt?: string;
   /** Ultima risposta "non pronto"/errore del download, per diagnosi. */
   lastResponse?: string;
+  /**
+   * Esito scaricato ma inattendibile (nessun CF riconosciuto): i CF della
+   * richiesta restano "verifica ANPR non riuscita", mai "non presenti".
+   */
+  failed?: string;
 }
 
 @Entity('domicile_verification_jobs')

@@ -14,6 +14,8 @@ export interface DomicileVerificationCsvInput {
   anprResults?: Record<string, boolean>;
   /** CF fisico → esistenza in vita S/N, null = non presente in ANPR (C007). Chiave assente = non verificato. */
   anprVitaResults?: Record<string, 'S' | 'N' | null>;
+  /** CF di richieste ANPR con esito inattendibile (DomicileAnprRequest.failed). */
+  anprFailedCfs?: string[];
 }
 
 export interface DomicileVerificationCsvResult {
@@ -41,6 +43,7 @@ export function buildDomicileVerificationCsvs(input: DomicileVerificationCsvInpu
   const foundMap = input.registroImpreseFoundMap ?? {};
   const anpr = input.anprResults ?? {};
   const vita = input.anprVitaResults ?? {};
+  const anprFailed = new Set(input.anprFailedCfs ?? []);
 
   const assentiRows: Record<string, string>[] = [];
   const appIoRows: Record<string, string>[] = [];
@@ -72,6 +75,7 @@ export function buildDomicileVerificationCsvs(input: DomicileVerificationCsvInpu
       // C030 e C007 dicono entrambi "non presente": un solo messaggio.
       if (anpr[key] === false || vita[key] === null) errori.push('codice fiscale non presente in ANPR (mai iscritto o cancellato)');
       if (vita[key] === 'N') errori.push('soggetto deceduto (ANPR)');
+      if (anprFailed.has(key)) errori.push('verifica ANPR non riuscita');
     }
 
     // Vuoto sempre tranne quando attivo — mai "non attivo": vuoto = nessuna

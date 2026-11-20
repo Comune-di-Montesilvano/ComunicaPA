@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { AnprMassivoService, parseRispostaMassiva } from './anpr-massivo.service.js';
+import { AnprMassivoService, parseRispostaMassiva, sanitizeForProbe } from './anpr-massivo.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
@@ -40,18 +40,48 @@ describe('parseRispostaMassiva', () => {
     const json = Buffer.from(JSON.stringify(esito));
     const gz = gzipSync(json);
     for (const buf of [gz, Buffer.from(gz.toString('base64')), json]) {
-      expect([...parseRispostaMassiva(buf).keys()]).toEqual(['RSSMRA80A01H501U']);
+      expect([...parseRispostaMassiva(buf).esiti.keys()]).toEqual(['RSSMRA80A01H501U']);
     }
   });
 
   it('C007: legge "Verifica esistenza in vita" S/N per CF', () => {
-    const esiti = parseRispostaMassiva(Buffer.from(JSON.stringify(esitoVita)));
+    const { esiti } = parseRispostaMassiva(Buffer.from(JSON.stringify(esitoVita)));
     expect(esiti.get('RSSMRA80A01H501U')).toEqual({ esistenzaInVita: 'S' });
     expect(esiti.get('RSSMRA85M01H501Q')).toEqual({ esistenzaInVita: 'N' });
   });
 
   it('voce senza soggetti = non presente', () => {
-    expect(parseRispostaMassiva(Buffer.from(JSON.stringify(esito))).has('VRDLGI80A01H501E')).toBe(false);
+    expect(parseRispostaMassiva(Buffer.from(JSON.stringify(esito))).esiti.has('VRDLGI80A01H501E')).toBe(false);
+  });
+
+  it('esito vuoto {"risposteMassive":[]}: zero voci, mappa vuota (il chiamante decide, mai "tutti assenti")', () => {
+    const r = parseRispostaMassiva(gzipSync(Buffer.from('{"risposteMassive":[]}')));
+    expect(r.entries).toBe(0);
+    expect(r.esiti.size).toBe(0);
+  });
+
+  it('tollera maiuscole diverse nelle chiavi, datiSoggetto oggetto singolo e CF solo in generalita', () => {
+    const data = { RisposteMassive: [
+      { rispostaE002OK: { ListaSoggetti: { datiSoggetto: { infoSoggettoEnte: [{ Chiave: 'Verifica esistenza in vita', Valore: 's' }] } } }, CF: 'RSSMRA80A01H501U' },
+      { RispostaE002OK: { listaSoggetti: { datiSoggetto: [{ generalita: { codiceFiscale: { codFiscale: 'VRDLGI80A01H501E' } } }] } } },
+    ] };
+    const { esiti, entries } = parseRispostaMassiva(Buffer.from(JSON.stringify(data)));
+    expect(entries).toBe(2);
+    expect(esiti.get('RSSMRA80A01H501U')).toEqual({ esistenzaInVita: 'S' });
+    expect(esiti.has('VRDLGI80A01H501E')).toBe(true);
+  });
+
+  it('sanitizeForProbe: chiavi intatte, CF mascherati, anagrafiche ridotte, valori tecnici in chiaro', () => {
+    const out = JSON.stringify(sanitizeForProbe([{ cf: 'RSSMRA80A01H501U', RispostaE002OK: { listaSoggetti: { datiSoggetto: [{
+      generalita: { cognome: 'ROSSI', nome: 'MARIO' },
+      infoSoggettoEnte: [{ id: '1003', chiave: 'Verifica esistenza in vita', valore: 'S' }],
+    }] } } }]));
+    expect(out).not.toContain('RSSMRA80A01H501U');
+    expect(out).not.toContain('ROSSI');
+    expect(out).toContain('***501U');
+    expect(out).toContain('"cognome":"<str:5>"');
+    expect(out).toContain('"valore":"S"');
+    expect(out).toContain('"chiave":"Verifica esistenza in vita"');
   });
 
   it('esito illeggibile o senza risposteMassive → eccezione (mai "nessuno presente")', () => {
