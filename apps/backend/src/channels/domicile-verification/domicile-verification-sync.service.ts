@@ -228,7 +228,6 @@ export class DomicileVerificationSyncService {
           continue;
         }
         const matched = req.cfs.filter((cf) => res.esiti.has(cf)).length;
-        this.anprMassivo.reportEsito(req.kind, req.id, { requested: req.cfs.length, matched, entries: res.entries, sample: res.sample });
         if (req.cfs.length > 0 && matched === 0) {
           // Nessun CF riconosciuto su un intero lotto: esito vuoto o formato
           // inatteso, mai "tutti assenti" (bug reale: 204/204 "non presenti").

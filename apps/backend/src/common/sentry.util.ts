@@ -17,19 +17,6 @@ import * as Sentry from '@sentry/node';
  * all'utente (questa funzione è chiamata da AllExceptionsFilter.catch()
  * PRIMA di super.catch(), che scrive la risposta).
  */
-/**
- * Evento diagnostico (sonda) verso GlitchTip, stesso flush fire-and-forget
- * di captureException. No-op senza DSN. Mai dati personali in chiaro in
- * `context`: chi chiama sanifica prima.
- */
-export function captureMessage(message: string, level: 'info' | 'warning' | 'error', context?: Record<string, unknown>): void {
-  if (!Sentry.getClient()) return;
-  Sentry.captureMessage(message, { level, ...(context ? { extra: context } : {}) });
-  void Sentry.flush(2000).catch(() => {
-    /* best-effort */
-  });
-}
-
 export function captureException(error: unknown, context?: Record<string, unknown>): void {
   if (!Sentry.getClient()) return;
   Sentry.captureException(error, context ? { extra: context } : undefined);
