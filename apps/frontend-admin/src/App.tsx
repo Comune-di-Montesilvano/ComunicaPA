@@ -14664,9 +14664,19 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
 
-                    {(domicileVerifStatus.status === 'done' || domicileVerifStatus.status === 'failed' || domicileVerifStatus.status === 'cancelled') && (
+                    {(domicileVerifStatus.status === 'done' || domicileVerifStatus.status === 'failed' || domicileVerifStatus.status === 'cancelled') ? (
                       <button className="btn btn-sm btn-outline-primary" onClick={handleDomicileVerifReset}>
                         <RotateCcw className="me-1" size={16} />Nuova verifica
+                      </button>
+                    ) : (
+                      // In coda o in corso: si può caricare un'altra verifica, questa
+                      // continua in background e resta riapribile dallo storico.
+                      <button
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={() => { handleDomicileVerifReset(); fetchDomicileVerifJobs(); }}
+                        title="Questa verifica continua in background: la ritrovi nello storico qui sotto"
+                      >
+                        <Plus className="me-1" size={16} />Accoda un'altra verifica
                       </button>
                     )}
                   </div>
