@@ -63,7 +63,7 @@ describe('buildDomicileVerificationCsvs', () => {
         inadFoundMap: { RSSMRA85M01H501Q: 'mario@pec.it' },
         appIoResults: { RSSMRA85M01H501Q: true },
         registroImpreseResults: { '12345678903': 'acme@pec.it', '98765432103': null },
-        registroImpreseFoundMap: { '12345678903': true, '98765432103': true },
+        registroImpreseFoundMap: { '12345678903': { found: true }, '98765432103': { found: true } },
       });
       expect(result.aggregatoCsv).toBe(
         BOM +
@@ -127,12 +127,67 @@ describe('buildDomicileVerificationCsvs', () => {
         inadFoundMap: {},
         appIoResults: {},
         registroImpreseResults: { '12345678903': null, '98765432103': null, '00159560366': null },
-        registroImpreseFoundMap: { '12345678903': false, '98765432103': true },
+        registroImpreseFoundMap: { '12345678903': { found: false }, '98765432103': { found: true } },
       });
       const lines = result.aggregatoCsv.split('\n');
       expect(lines[1]).toBe('12345678903,,,partita IVA non trovata nel Registro Imprese');
       expect(lines[2]).toBe('98765432103,,,');
       expect(lines[3]).toBe('00159560366,,,verifica Registro Imprese non riuscita');
+    });
+
+    const CEASED = { found: true, stato: 'CANCELLATA', dtCancellazione: '12/03/2019', causale: 'FALLIMENTO' };
+    const CEASED_ERROR = 'impresa cessata nel Registro Imprese (stato: CANCELLATA, dal 12/03/2019, causale: FALLIMENTO)';
+
+    it('impresa cessata con PEC: domicilio e errore', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf;nome\n12345678903;ACME SRL\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: { '12345678903': 'acme@pec.it' },
+        registroImpreseFoundMap: { '12345678903': CEASED },
+      });
+      expect(result.aggregatoCsv.split('\n')[1]).toBe(`12345678903;ACME SRL;acme@pec.it;;${CEASED_ERROR}`);
+    });
+
+    it('impresa cessata senza data né causale', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf;nome\n12345678903;ACME SRL\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: { '12345678903': null },
+        registroImpreseFoundMap: { '12345678903': { found: true, stato: 'CANCELLATA' } },
+      });
+      expect(result.aggregatoCsv.split('\n')[1]).toBe('12345678903;ACME SRL;;;impresa cessata nel Registro Imprese (stato: CANCELLATA)');
+    });
+
+    it('impresa cessata, separatore ",": cella quotata', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf,nome\n12345678903,ACME SRL\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: { '12345678903': 'acme@pec.it' },
+        registroImpreseFoundMap: { '12345678903': CEASED },
+      });
+      expect(result.aggregatoCsv.split('\n')[1]).toBe(`12345678903,ACME SRL,acme@pec.it,,"${CEASED_ERROR}"`);
+    });
+
+    it('CF fisico con ditta individuale cessata: nessun errore', () => {
+      const result = buildDomicileVerificationCsvs({
+        sourceCsv: 'cf\nRSSMRA80A01H501U\n',
+        hasHeaders: true,
+        cfColumn: 'cf',
+        inadFoundMap: {},
+        appIoResults: {},
+        registroImpreseResults: { RSSMRA80A01H501U: null },
+        registroImpreseFoundMap: { RSSMRA80A01H501U: { found: true, stato: 'CANCELLATA' } },
+      });
+      expect(result.aggregatoCsv.split('\n')[1]).toBe('RSSMRA80A01H501U,,,');
     });
 
     it('CF non presente in ANPR: avviso solo per i CF verificati con esito negativo', () => {
@@ -176,7 +231,7 @@ describe('buildDomicileVerificationCsvs', () => {
         inadFoundMap: {},
         appIoResults: {},
         registroImpreseResults: { '12345678903': 'a,"b"@pec.it' },
-        registroImpreseFoundMap: { '12345678903': true },
+        registroImpreseFoundMap: { '12345678903': { found: true } },
       });
       expect(result.aggregatoCsv.split('\n')[1]).toBe('12345678903,"a,""b""@pec.it",,');
     });

@@ -211,6 +211,23 @@ describe('DomicileVerificationService — visibilità per operatore', () => {
 
     expect(mockJobRepo.findOneBy).toHaveBeenCalledWith({ id: 'job-1' });
   });
+
+  it('getStatus conta le imprese cessate solo tra le partite IVA', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue({
+      status: DomicileVerificationJobStatus.DONE,
+      inadBatches: [],
+      inadFoundMap: {},
+      registroImpreseFoundMap: {
+        '12345678903': { found: true, stato: 'CANCELLATA' },
+        '98765432103': { found: true },
+        RSSMRA80A01H501U: { found: true, stato: 'CANCELLATA' },
+      },
+    });
+
+    const status = await service.getStatus('job-1', ADMIN);
+
+    expect(status.registroImpreseCeasedCount).toBe(1);
+  });
 });
 
 describe('DomicileVerificationService.deleteJob', () => {
