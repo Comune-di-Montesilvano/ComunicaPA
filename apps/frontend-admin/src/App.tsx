@@ -14621,7 +14621,7 @@ export function App(): React.JSX.Element {
                     {domicileVerifStatus.status === 'done' && (
                       <>
                         <div className="alert alert-success small">
-                          Verifica completata: <strong>{domicileVerifStatus.inadFoundCount}</strong> trovati su INAD, <strong>{domicileVerifStatus.appIoPresentCount}</strong> presenti su App IO, <strong>{domicileVerifStatus.registroImpreseFoundCount}</strong> trovati su Registro Imprese{(domicileVerifStatus.registroImpreseCeasedCount ?? 0) > 0 && <>, di cui <strong>{domicileVerifStatus.registroImpreseCeasedCount}</strong> cessate</>}.
+                          Verifica completata: <strong>{domicileVerifStatus.inadFoundCount}</strong> trovati su INAD, <strong>{domicileVerifStatus.appIoPresentCount}</strong> presenti su App IO, <strong>{domicileVerifStatus.registroImpreseFoundCount}</strong> trovati su Registro Imprese{(domicileVerifStatus.registroImpreseCeasedCount ?? 0) > 0 && <> (di cui <strong>{domicileVerifStatus.registroImpreseCeasedCount}</strong> partite IVA di imprese cessate)</>}.
                           {domicileVerifStatus.anprIdRequested && (
                             <> ANPR: <strong>{domicileVerifStatus.anprNotFoundCount ?? 0}</strong> codici fiscali non presenti{domicileVerifStatus.anprVitaRequested && <>, <strong>{domicileVerifStatus.anprDeceasedCount ?? 0}</strong> soggetti deceduti</>}.</>
                           )}
