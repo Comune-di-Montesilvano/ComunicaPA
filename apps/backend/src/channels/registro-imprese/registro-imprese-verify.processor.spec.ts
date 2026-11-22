@@ -23,7 +23,7 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE domicile_verification_jobs'),
-      [JSON.stringify({ '12345678901': 'acme@pec.it' }), 1, 'job-1', JSON.stringify({ '12345678901': true })],
+      [JSON.stringify({ '12345678901': 'acme@pec.it' }), 1, 'job-1', JSON.stringify({ '12345678901': { found: true } })],
     );
     // Trigger immediato per DomicileVerificationSyncService — senza questo,
     // se INAD/App IO erano già pronti, il job padre resta PROCESSING fino
@@ -38,7 +38,28 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
       expect.any(String),
-      [JSON.stringify({ '12345678901': null }), 0, 'job-1', JSON.stringify({ '12345678901': false })],
+      [JSON.stringify({ '12345678901': null }), 0, 'job-1', JSON.stringify({ '12345678901': { found: false } })],
+    );
+  });
+
+  it('scrive stato, data e causale per un\'impresa cessata', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockResolvedValue({
+      found: true,
+      raw: '',
+      pec: undefined,
+      data: { sede: { denominazione: 'ACME SRL', statoImpresa: 'CANCELLATA', dtCancellazione: '12/03/2019', causaleCessazione: 'CESSAZIONE ATTIVITA' } },
+    });
+
+    await processor.process({ name: VERIFY_PIVA_JOB_NAME, data: { jobId: 'job-1', partitaIva: '12345678901' } } as any);
+
+    expect(mockJobRepo.query).toHaveBeenCalledWith(
+      expect.any(String),
+      [
+        JSON.stringify({ '12345678901': null }),
+        1,
+        'job-1',
+        JSON.stringify({ '12345678901': { found: true, stato: 'CANCELLATA', dtCancellazione: '12/03/2019', causale: 'CESSAZIONE ATTIVITA' } }),
+      ],
     );
   });
 

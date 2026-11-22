@@ -45,6 +45,18 @@ export interface DomicileAnprRequest {
   failed?: string;
 }
 
+/**
+ * Esito Registro Imprese di un CF/PIVA. Campi di cessazione presenti solo se
+ * il dettaglio ha `stato-impresa` (assente per le imprese attive).
+ */
+export interface RegistroImpreseOutcome {
+  found: boolean;
+  stato?: string;
+  /** "DD/MM/YYYY" così come arriva dal Registro Imprese. */
+  dtCancellazione?: string;
+  causale?: string;
+}
+
 @Entity('domicile_verification_jobs')
 @Index('IDX_domicile_verification_jobs_created_by', ['createdBy', 'createdAt']) // AddDomicileVerificationJobOwner
 export class DomicileVerificationJob {
@@ -132,13 +144,13 @@ export class DomicileVerificationJob {
   registroImpreseResults!: Record<string, string | null>;
 
   /**
-   * Chiave = CF/PIVA interrogato, valore = impresa trovata nel Registro
-   * Imprese. Distinto da registroImpreseResults (PEC o null), dove null vale
-   * sia "non trovata" sia "trovata senza PEC". Stesso UPDATE jsonb concat.
-   * Chiave assente = esito sconosciuto (errore/tentativi esauriti).
+   * Chiave = CF/PIVA interrogato, valore = esito Registro Imprese (trovata,
+   * ed eventuale cessazione). Distinto da registroImpreseResults (PEC o null),
+   * dove null vale sia "non trovata" sia "trovata senza PEC". Stesso UPDATE
+   * jsonb concat. Chiave assente = esito sconosciuto (errore/tentativi esauriti).
    */
   @Column({ name: 'registro_imprese_found_map', type: 'jsonb', default: {} })
-  registroImpreseFoundMap!: Record<string, boolean>;
+  registroImpreseFoundMap!: Record<string, RegistroImpreseOutcome>;
 
   /** Verifica presenza CF in ANPR (C030) richiesta dall'operatore al caricamento. */
   @Column({ name: 'anpr_id_requested', type: 'boolean', default: false })
