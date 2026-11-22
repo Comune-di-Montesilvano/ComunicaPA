@@ -1,5 +1,6 @@
 import { parseCsvContent, buildCsvContent, detectDelimiter, parseCsvLine } from '../../io-services/csv.util.js';
 import { checkTaxId } from '../tax-id.util.js';
+import type { RegistroImpreseOutcome } from '../../entities/domicile-verification-job.entity.js';
 
 export interface DomicileVerificationCsvInput {
   sourceCsv: string;
@@ -8,8 +9,8 @@ export interface DomicileVerificationCsvInput {
   inadFoundMap: Record<string, string>;
   appIoResults: Record<string, boolean>;
   registroImpreseResults: Record<string, string | null>;
-  /** CF/PIVA → impresa trovata. Chiave assente con esito in registroImpreseResults = verifica non riuscita. */
-  registroImpreseFoundMap?: Record<string, boolean>;
+  /** CF/PIVA → esito (trovata, cessazione). Chiave assente con esito in registroImpreseResults = verifica non riuscita. */
+  registroImpreseFoundMap?: Record<string, RegistroImpreseOutcome>;
   /** CF fisico → presente in ANPR (C030). Chiave assente = non verificato. */
   anprResults?: Record<string, boolean>;
   /** CF fisico → esistenza in vita S/N, null = non presente in ANPR (C007). Chiave assente = non verificato. */
@@ -67,7 +68,9 @@ export function buildDomicileVerificationCsvs(input: DomicileVerificationCsvInpu
     if (check.kind === 'invalid') {
       errori.push(check.error);
     } else if (check.kind === 'piva') {
-      if (foundMap[key] === false) errori.push('partita IVA non trovata nel Registro Imprese');
+      const outcome = foundMap[key];
+      if (outcome?.found === false) errori.push('partita IVA non trovata nel Registro Imprese');
+      else if (outcome?.stato) errori.push(ceasedError(outcome));
       else if (key in input.registroImpreseResults && !(key in foundMap) && input.registroImpreseFoundMap) {
         errori.push('verifica Registro Imprese non riuscita');
       }
@@ -95,6 +98,14 @@ export function buildDomicileVerificationCsvs(input: DomicileVerificationCsvInpu
     registroImpreseCsv: registroImpreseRows.length > 0 ? buildCsvContent([...parsed.headers, PEC_COLUMN], registroImpreseRows) : null,
     aggregatoCsv: buildAggregato(input.sourceCsv, input.hasHeaders, outcomes),
   };
+}
+
+/** Errore per un'impresa con stato-impresa: parti mancanti omesse. */
+function ceasedError(o: RegistroImpreseOutcome): string {
+  const parts = [`stato: ${o.stato}`];
+  if (o.dtCancellazione) parts.push(`dal ${o.dtCancellazione}`);
+  if (o.causale) parts.push(`causale: ${o.causale}`);
+  return `impresa cessata nel Registro Imprese (${parts.join(', ')})`;
 }
 
 /**

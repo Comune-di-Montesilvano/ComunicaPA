@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-20_
+_Ultimo aggiornamento: 2026-11-22_
 
 ## Cos'è e chi lo usa
 
@@ -195,9 +195,11 @@ Il file **aggregato** è il CSV che hai caricato, con tutte le righe nello stess
 
 - **domicilio_digitale**: PEC dal Registro Imprese o, se manca, domicilio digitale INAD;
 - **app_io**: `attivo` se il cittadino riceve messaggi App IO dal servizio scelto;
-- **errori**: perché la riga non è utilizzabile o va controllata, ad esempio codice fiscale non valido, partita IVA con meno di 11 cifre (zeri iniziali persi aprendo il file con Excel), partita IVA non trovata nel Registro Imprese, codice fiscale non presente in ANPR, soggetto deceduto.
+- **errori**: perché la riga non è utilizzabile o va controllata, ad esempio codice fiscale non valido, partita IVA con meno di 11 cifre (zeri iniziali persi aprendo il file con Excel), partita IVA non trovata nel Registro Imprese, impresa cessata nel Registro Imprese (con stato, data e causale della cessazione), codice fiscale non presente in ANPR, soggetto deceduto.
 
 Una partita IVA non trovata nel Registro Imprese non è per forza inesistente: professionisti e alcuni enti non sono iscritti.
+
+Un'impresa cessata da meno di un anno può avere ancora la PEC in **domicilio_digitale**, insieme all'errore: decidi tu se usarla. Oltre l'anno la PEC non viene riportata. L'errore riguarda solo le partite IVA, non i codici fiscali delle persone fisiche.
 
 Le verifiche ANPR facoltative compaiono solo se l'amministratore le ha attivate in **Impostazioni → ANPR**:
 

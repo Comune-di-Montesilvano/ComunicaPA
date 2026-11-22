@@ -70,6 +70,8 @@ export interface DomicileVerificationStatus {
   registroImpreseTotal: number;
   registroImpreseDone: number;
   registroImpreseFoundCount: number;
+  /** Partite IVA di imprese cessate (stato-impresa valorizzato). CF fisici esclusi. */
+  registroImpreseCeasedCount: number;
   anprIdRequested: boolean;
   anprVitaRequested: boolean;
   anprRequestsTotal: number;
@@ -331,6 +333,9 @@ export class DomicileVerificationService {
       registroImpreseTotal: job.registroImpreseTotal,
       registroImpreseDone: job.registroImpreseDone,
       registroImpreseFoundCount: job.registroImpreseFoundCount,
+      registroImpreseCeasedCount: Object.entries(job.registroImpreseFoundMap ?? {}).filter(
+        ([key, outcome]) => !!outcome.stato && checkTaxId(key).kind === 'piva',
+      ).length,
       anprIdRequested: job.anprIdRequested ?? false,
       anprVitaRequested: job.anprVitaRequested ?? false,
       anprRequestsTotal: (job.anprRequests ?? []).length,

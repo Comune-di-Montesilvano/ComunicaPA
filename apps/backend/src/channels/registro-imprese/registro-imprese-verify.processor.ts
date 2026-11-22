@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { DelayedError, type Job } from 'bullmq';
-import { DomicileVerificationJob } from '../../entities/domicile-verification-job.entity.js';
+import { DomicileVerificationJob, type RegistroImpreseOutcome } from '../../entities/domicile-verification-job.entity.js';
 import { Recipient, RecipientStatus } from '../../entities/recipient.entity.js';
 import {
   REGISTRO_IMPRESE_QUEUE,
@@ -84,12 +84,20 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     // Esito certo (trovata/non trovata) solo da una risposta del servizio:
     // su errore la chiave resta fuori da registro_imprese_found_map, così il
     // report scrive "verifica non riuscita" e mai "non trovata".
-    let foundEntry: Record<string, boolean> = {};
+    let foundEntry: Record<string, RegistroImpreseOutcome> = {};
     try {
       const result = await this.registroImpreseService.dettaglioImpresa(partitaIva);
       found = result.found;
       pec = result.pec ?? null;
-      foundEntry = { [partitaIva]: found };
+      const sede = found ? result.data?.sede : undefined;
+      foundEntry = {
+        [partitaIva]: {
+          found,
+          ...(sede?.statoImpresa
+            ? { stato: sede.statoImpresa, dtCancellazione: sede.dtCancellazione, causale: sede.causaleCessazione }
+            : {}),
+        },
+      };
     } catch (error) {
       if (error instanceof RegistroImpreseRateLimitError) {
         return this.deferForRateLimit(job, token, error);
