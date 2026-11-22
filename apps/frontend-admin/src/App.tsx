@@ -1757,6 +1757,7 @@ export function App(): React.JSX.Element {
     registroImpreseTotal: number;
     registroImpreseDone: number;
     registroImpreseFoundCount: number;
+    registroImpreseCeasedCount?: number;
     anprIdRequested?: boolean;
     anprVitaRequested?: boolean;
     anprRequestsTotal?: number;
@@ -3733,7 +3734,7 @@ export function App(): React.JSX.Element {
         status: 'queued', totalRows: 0, cfFisicoTotal: 0, pivaTotal: 0,
         inadBatchesTotal: 0, inadBatchesDone: 0, inadFoundCount: 0,
         appIoDone: false, appIoProcessedRows: 0, appIoPresentCount: 0,
-        registroImpreseTotal: 0, registroImpreseDone: 0, registroImpreseFoundCount: 0,
+        registroImpreseTotal: 0, registroImpreseDone: 0, registroImpreseFoundCount: 0, registroImpreseCeasedCount: 0,
         errorMessage: null,
       });
       fetchDomicileVerifJobs();
@@ -14620,7 +14621,7 @@ export function App(): React.JSX.Element {
                     {domicileVerifStatus.status === 'done' && (
                       <>
                         <div className="alert alert-success small">
-                          Verifica completata: <strong>{domicileVerifStatus.inadFoundCount}</strong> trovati su INAD, <strong>{domicileVerifStatus.appIoPresentCount}</strong> presenti su App IO, <strong>{domicileVerifStatus.registroImpreseFoundCount}</strong> trovati su Registro Imprese.
+                          Verifica completata: <strong>{domicileVerifStatus.inadFoundCount}</strong> trovati su INAD, <strong>{domicileVerifStatus.appIoPresentCount}</strong> presenti su App IO, <strong>{domicileVerifStatus.registroImpreseFoundCount}</strong> trovati su Registro Imprese{(domicileVerifStatus.registroImpreseCeasedCount ?? 0) > 0 && <>, di cui <strong>{domicileVerifStatus.registroImpreseCeasedCount}</strong> cessate</>}.
                           {domicileVerifStatus.anprIdRequested && (
                             <> ANPR: <strong>{domicileVerifStatus.anprNotFoundCount ?? 0}</strong> codici fiscali non presenti{domicileVerifStatus.anprVitaRequested && <>, <strong>{domicileVerifStatus.anprDeceasedCount ?? 0}</strong> soggetti deceduti</>}.</>
                           )}
