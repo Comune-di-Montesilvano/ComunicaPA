@@ -14,6 +14,8 @@ import { uploadFileInChunks } from './chunked-upload';
 import { SignaturePanel, ATTACHMENT_RESTRICTED_MESSAGE } from './components/signature/SignaturePanel';
 import { RemoteSignModal } from './components/signature/RemoteSignModal';
 import { UnsignedDecisionModal, type UnsignedDecision } from './components/signature/UnsignedDecisionModal';
+import { invalidFilesPlainText, invalidRecipientsText } from './components/signature/invalidSignature';
+import type { SignatureJobStatus } from './components/signature/types';
 import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, isPosteTrackableService, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
@@ -2529,13 +2531,12 @@ export function App(): React.JSX.Element {
     externalId: '',
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
-  const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<{ status: string; totalRows: number; validCount: number; invalidCount: number; errorMessage: string | null; required?: boolean } | null>(null);
+  const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<SignatureJobStatus | null>(null);
   // Invio Manuale SEND: decisione dell'operatore su allegati non firmati,
   // risolta da UnsignedDecisionModal (firma Aruba / invia comunque / annulla).
   const [unsignedDecision, setUnsignedDecision] = useState<{
     campaignId: string;
-    invalidCount: number;
-    totalRows: number;
+    status: SignatureJobStatus;
     arubaEnabled: boolean;
     signatureRequired: boolean;
     resolve: (d: UnsignedDecision) => void;
@@ -8714,10 +8715,12 @@ export function App(): React.JSX.Element {
   // impostarne il default a livello browser — il testo lo rende comunque
   // esplicito: Annulla è l'opzione consigliata, OK prosegue a rischio
   // dell'operatore. Ritorna `true` solo se l'operatore sceglie di proseguire.
-  const confirmContinueDespiteInvalidSignature = (invalidCount: number, totalRows: number): boolean => {
+  const confirmContinueDespiteInvalidSignature = (status: SignatureJobStatus): boolean => {
+    const files = invalidFilesPlainText(status.invalidFiles, status.invalidFilesTotal, status.totalRows);
     return window.confirm(
-      `ATTENZIONE: ${invalidCount} allegato/i su ${totalRows} non risulta/no firmato/i digitalmente in modo valido.\n\n` +
-      `Per il canale SEND l'allegato è il documento legale notificato al cittadino: senza una firma digitale valida (o con firma non riconducibile a una CA della lista di fiducia AgID) non è garantita l'integrità né la provenienza del documento. La notifica rischia di NON avere piena validità legale/probatoria — possibili contestazioni su autenticità dell'atto o decorrenza dei termini.\n\n` +
+      `ATTENZIONE: ${invalidRecipientsText(status.invalidCount, status.totalRows)}.\n\n` +
+      (files ? `${files}\n\n` : '') +
+      `Per il canale SEND tutti gli allegati sono notificati al cittadino come documenti dell'atto: senza una firma digitale valida (o con firma non riconducibile a una CA della lista di fiducia AgID) non è garantita l'integrità né la provenienza del documento. La notifica rischia di NON avere piena validità legale/probatoria — possibili contestazioni su autenticità dell'atto o decorrenza dei termini.\n\n` +
       `Premi ANNULLA (consigliato) per tornare indietro e caricare un allegato correttamente firmato.\n` +
       `Premi OK solo se vuoi procedere comunque, sotto la tua responsabilità.`
     );
@@ -8733,7 +8736,7 @@ export function App(): React.JSX.Element {
   // Ritorna `false` solo se il singolo viene annullato (Annulla sulla
   // conferma) — i chiamanti interrompono il flusso silenziosamente, nessun
   // ulteriore popup di errore: la conferma già spiegata è l'unico messaggio.
-  const askUnsignedDecision = async (campaignId: string, invalidCount: number, totalRows: number, signatureRequired: boolean): Promise<boolean> => {
+  const askUnsignedDecision = async (campaignId: string, status: SignatureJobStatus, signatureRequired: boolean): Promise<boolean> => {
     let arubaEnabled = false;
     try {
       const res = await apiFetch('/remote-sign/config');
@@ -8742,7 +8745,7 @@ export function App(): React.JSX.Element {
       // senza config: solo Invia comunque / Annulla
     }
     const decision = await new Promise<UnsignedDecision>((resolve) => {
-      setUnsignedDecision({ campaignId, invalidCount, totalRows, arubaEnabled, signatureRequired, resolve });
+      setUnsignedDecision({ campaignId, status, arubaEnabled, signatureRequired, resolve });
     });
     setUnsignedDecision(null);
     return decision === 'continue';
@@ -8761,16 +8764,17 @@ export function App(): React.JSX.Element {
       try {
         const res = await apiFetch(`/campaigns/${campaignId}/signature-verification`);
         if (!res.ok) continue;
-        const status = await res.json();
+        const status: SignatureJobStatus = await res.json();
         if (wizChannel === 'SEND' && !wizSingleMode) setWizSignatureJobStatus(status);
         if (status.status === 'done') {
           if (status.invalidCount > 0) {
             if (isSingolo) {
-              return askUnsignedDecision(campaignId, status.invalidCount, status.totalRows, status.required === true);
+              return askUnsignedDecision(campaignId, status, status.required === true);
             }
+            const files = invalidFilesPlainText(status.invalidFiles, status.invalidFilesTotal, status.totalRows);
             alert(status.required
-              ? `${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente. La firma digitale è obbligatoria: correggi o firma i file prima di avviare la campagna.`
-              : `Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
+              ? `${invalidRecipientsText(status.invalidCount, status.totalRows)}.${files ? `\n\n${files}` : ''}\n\nLa firma digitale è obbligatoria: correggi o firma i file prima di avviare la campagna.`
+              : `Attenzione: ${invalidRecipientsText(status.invalidCount, status.totalRows)}.${files ? `\n\n${files}` : ''}`);
           }
           return true;
         }
@@ -8886,10 +8890,11 @@ export function App(): React.JSX.Element {
     let forceUnsignedAttachments = false;
     if (wizChannel === 'SEND' && !wizSingleMode && wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount > 0) {
       if (wizSignatureJobStatus.required) {
-        alert(`${wizSignatureJobStatus.invalidCount} allegato/i su ${wizSignatureJobStatus.totalRows} non risultano firmati validamente. La firma digitale è obbligatoria (Impostazioni → SEND): correggi o firma i file prima di avviare.`);
+        const files = invalidFilesPlainText(wizSignatureJobStatus.invalidFiles, wizSignatureJobStatus.invalidFilesTotal, wizSignatureJobStatus.totalRows);
+        alert(`${invalidRecipientsText(wizSignatureJobStatus.invalidCount, wizSignatureJobStatus.totalRows)}.${files ? `\n\n${files}` : ''}\n\nLa firma digitale è obbligatoria (Impostazioni → SEND): correggi o firma i file prima di avviare.`);
         return;
       }
-      if (!confirmContinueDespiteInvalidSignature(wizSignatureJobStatus.invalidCount, wizSignatureJobStatus.totalRows)) return;
+      if (!confirmContinueDespiteInvalidSignature(wizSignatureJobStatus)) return;
       forceUnsignedAttachments = true;
     }
     setWizSending(true);
@@ -20223,8 +20228,7 @@ export function App(): React.JSX.Element {
         <UnsignedDecisionModal
           apiFetch={apiFetch}
           campaignId={unsignedDecision.campaignId}
-          invalidCount={unsignedDecision.invalidCount}
-          totalRows={unsignedDecision.totalRows}
+          status={unsignedDecision.status}
           arubaEnabled={unsignedDecision.arubaEnabled}
           signatureRequired={unsignedDecision.signatureRequired}
           onDecision={unsignedDecision.resolve}

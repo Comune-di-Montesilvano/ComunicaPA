@@ -69,6 +69,8 @@ export class Recipient {
   signatureCheck!: {
     valid: boolean;
     reason: string | null;
+    /** Allegati non validi del destinatario (solo se valid=false; assente nelle verifiche precedenti). */
+    invalidFiles?: Array<{ filename: string | null; reason: string }>;
     checkedAt: string;
   } | null;
 
