@@ -430,7 +430,12 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('uploadId') uploadId: string,
     @Req() req: Request & { user: JwtOperatorPayload },
+    @Body() body?: { final?: boolean },
   ): Promise<{ uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[]; campaignId: string; blocked?: boolean; message?: string }> {
+    // `final: false` = file intermedio di un upload multi-file: la validazione
+    // (blocco + pulizia) va fatta solo sull'ultimo, quando ci sono tutti.
+    // Assente = true (client che caricano un solo file/ZIP).
+    const validate = body?.final !== false;
     // 400/404 prima del try: una sessione altrui non va mai rimossa.
     assertChunkedUploadAccess(uploadId, operatorUploadOwner(req.user));
     try {
@@ -440,7 +445,7 @@ export class CampaignsController {
       let result: { uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[]; blocked?: boolean; message?: string };
       if (filename.toLowerCase().endsWith('.zip')) {
         const fakeFile = { path, originalname: filename } as Express.Multer.File;
-        result = await this.campaignsService.finalizeAttachments(id, [fakeFile]);
+        result = await this.campaignsService.finalizeAttachments(id, [fakeFile], { validate });
       } else {
         const dir = getUploadsDir(id);
         fs.mkdirSync(dir, { recursive: true });
@@ -454,7 +459,7 @@ export class CampaignsController {
             throw renameErr;
           }
         }
-        result = await this.campaignsService.finalizeAttachments(id, []);
+        result = await this.campaignsService.finalizeAttachments(id, [], { validate });
       }
       const campaign = await this.campaignsService.findOne(id).catch(() => null);
       await this.auditLogsService.log({

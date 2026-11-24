@@ -8660,9 +8660,13 @@ export function App(): React.JSX.Element {
     setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
     let cumulativeBefore = 0;
     let lastAttachData: { uploaded: number; discarded?: number; attachmentsExpected?: number; attachmentsPresent?: number; filenames?: string[]; blocked?: boolean; message?: string } | null = null;
-    for (const file of files) {
+    for (const [i, file] of files.entries()) {
       const base = cumulativeBefore;
       const isZip = file.name.toLowerCase().endsWith('.zip');
+      // Validazione (blocco + pulizia cartella) solo sull'ultimo file: farla a
+      // ogni file bloccava sempre gli upload multi-file (il primo PDF risultava
+      // "senza il secondo" e veniva cancellato).
+      const isLast = i === files.length - 1;
       lastAttachData = await uploadFileInChunks<{ uploaded: number; discarded?: number; attachmentsExpected?: number; attachmentsPresent?: number; filenames?: string[] }>(
         `${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/upload`,
         token!,
@@ -8674,8 +8678,10 @@ export function App(): React.JSX.Element {
           loaded: base + file.size,
           total: totalBytes,
         }),
+        { final: isLast },
       );
       cumulativeBefore += file.size;
+      if (lastAttachData?.blocked) break;
     }
     setWizUploadProgress(null);
     if (lastAttachData?.blocked) {
