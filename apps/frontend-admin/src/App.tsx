@@ -11293,7 +11293,9 @@ export function App(): React.JSX.Element {
                         )}
 
                         {wizSingleAttachmentSlots.map((slot, idx) => (
-                          <div className="row g-2 mb-2 align-items-center" key={slot.id}>
+                          // align-items-start: la riga del nome file sotto l'input allunga la
+                          // colonna centrale, con "center" nome e cestino scendono a metà.
+                          <div className="row g-2 mb-2 align-items-start" key={slot.id}>
                             <div className="col-md-4">
                               <input
                                 type="text"
@@ -11317,8 +11319,9 @@ export function App(): React.JSX.Element {
                                   il nome dallo stato per non dare l'impressione che sia
                                   andato perso. */}
                               {slot.file && (
-                                <div className="form-text small text-success mb-0">
-                                  <CheckCircle2 size={12} className="me-1" />{slot.file.name}
+                                <div className="form-text small text-success mb-0 d-flex align-items-center gap-1" title={slot.file.name}>
+                                  <CheckCircle2 size={12} className="flex-shrink-0" />
+                                  <span className="text-truncate" style={{ minWidth: 0 }}>{slot.file.name}</span>
                                 </div>
                               )}
                             </div>
