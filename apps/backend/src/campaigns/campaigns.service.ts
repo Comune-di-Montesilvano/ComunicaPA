@@ -4082,10 +4082,19 @@ export class CampaignsService {
    *    destinatario referenzia un allegato E non c'è mappatura esplicita,
    *    non scarta nulla (evita di svuotare la cartella in flussi senza
    *    mappatura allegato).
+   *
+   * `validate: false` = file intermedio di un upload multi-file (il client
+   * carica i file uno alla volta via chunked upload): solo estrazione ZIP,
+   * niente blocco/pulizia/scarto, che si fanno sull'ultimo file. Bug reale:
+   * invio singolo SEND con due PDF — il complete del primo bloccava per il
+   * secondo non ancora caricato e cancellava il primo, quindi l'upload
+   * falliva sempre. Il lancio resta comunque protetto da
+   * `findMissingAttachments()`.
    */
   async finalizeAttachments(
     campaignId: string,
     files: Express.Multer.File[],
+    opts: { validate?: boolean } = {},
   ): Promise<{
     uploaded: number;
     discarded: number;
@@ -4107,6 +4116,11 @@ export class CampaignsService {
 
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    if (opts.validate === false) {
+      const progress = await this.getAttachmentsProgress(campaignId);
+      return { uploaded: progress.filenames.length, discarded: 0, ...progress };
+    }
 
     // 2. Con mappatura esplicita, ogni destinatario deve avere un allegato
     // risolvibile e realmente presente — altrimenti blocco totale.

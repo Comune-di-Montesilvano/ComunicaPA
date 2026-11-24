@@ -1438,6 +1438,30 @@ describe('CampaignsService', () => {
       expect(result.message).toContain('non trovato tra quelli caricati');
     });
 
+    it('con validate:false (file intermedio di un upload multi-file) non blocca né cancella i file già caricati', async () => {
+      // Bug reale: invio singolo SEND con due PDF caricati uno alla volta via
+      // chunked upload — il complete del primo file validava entrambi gli slot,
+      // trovava il secondo assente, bloccava e CANCELLAVA il primo; il complete
+      // del secondo trovava allora il primo assente → upload sempre bloccato.
+      fs.writeFileSync(join(tmpDir, 'primo.pdf'), '%PDF');
+      mockCampaignRepo.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelConfig: { attachments: [{ key: 'a1', label: 'Atto' }, { key: 'a2', label: 'Allegato' }] },
+      });
+      mockRecipientRepo.find.mockResolvedValue([
+        { extraData: { a1: 'primo.pdf', a2: 'secondo.pdf' } },
+      ]);
+
+      const partial = await service.finalizeAttachments('c1', [], { validate: false });
+      expect(partial.blocked).toBeFalsy();
+      expect(fs.existsSync(join(tmpDir, 'primo.pdf'))).toBe(true);
+
+      fs.writeFileSync(join(tmpDir, 'secondo.pdf'), '%PDF');
+      const final = await service.finalizeAttachments('c1', []);
+      expect(final.blocked).toBeFalsy();
+      expect(final.attachmentsPresent).toBe(2);
+    });
+
     it('ridenomina i file per farli coincidere con il case-sensitivity referenziato nel CSV', async () => {
       fs.writeFileSync(join(tmpDir, 'ok_file.PDF'), '%PDF');
       mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: { allegatoKey: 'allegato' } });
