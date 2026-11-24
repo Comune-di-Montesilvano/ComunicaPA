@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, Loader2, PenLine, Upload, UserCheck } from 'lucide-react';
 import { uploadFileInChunks } from '../../chunked-upload';
 import { RemoteSignModal } from './RemoteSignModal';
+import { InvalidFilesList } from './InvalidFilesList';
+import { invalidRecipientsText } from './invalidSignature';
 import type { ApiFetch, SignatureJobStatus } from './types';
 import { errorMessage } from '../../error-message';
 
@@ -156,11 +158,12 @@ export function SignaturePanel({
         ) : status.status !== 'done' ? (
           <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
         ) : hasInvalid ? (
-          <><AlertTriangle size={16} /> {status.invalidCount} allegato/i non firmati validamente su {status.totalRows} — firmali qui sotto o lancia comunque confermando sotto la tua responsabilità.</>
+          <><AlertTriangle size={16} /> {invalidRecipientsText(status.invalidCount, status.totalRows)} — firmali qui sotto o lancia comunque confermando sotto la tua responsabilità.</>
         ) : (
-          <><CheckCircle2 size={16} /> Tutti gli allegati ({status.totalRows}) risultano firmati validamente.</>
+          <><CheckCircle2 size={16} /> Gli allegati di tutti i destinatari ({status.totalRows}) risultano firmati validamente.</>
         )}
       </div>
+      {hasInvalid && <InvalidFilesList status={status} className="mt-1" />}
 
       <div className="d-flex flex-wrap align-items-center gap-2 mt-2 small">
         <UserCheck size={14} />

@@ -11,7 +11,7 @@ describe('SignatureVerificationBulkService', () => {
   let service: SignatureVerificationBulkService;
   let jobRepo: { create: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; findOne: ReturnType<typeof vi.fn> };
   let queue: { add: ReturnType<typeof vi.fn> };
-  let recipientRepo: { exists: ReturnType<typeof vi.fn> };
+  let recipientRepo: { exists: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
     jobRepo = {
@@ -20,7 +20,7 @@ describe('SignatureVerificationBulkService', () => {
       findOne: vi.fn(),
     };
     queue = { add: vi.fn().mockResolvedValue(undefined) };
-    recipientRepo = { exists: vi.fn().mockResolvedValue(false) };
+    recipientRepo = { exists: vi.fn().mockResolvedValue(false), query: vi.fn().mockResolvedValue([]) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -68,6 +68,26 @@ describe('SignatureVerificationBulkService', () => {
       recipientRepo.exists.mockResolvedValueOnce(true);
       const result = await service.getLatestStatus('camp-1');
       expect(result).toBeNull();
+    });
+
+    it('getInvalidFiles: mappa le righe raggruppate e il totale delle voci', async () => {
+      recipientRepo.query.mockResolvedValueOnce([
+        { filename: 'stipula.pdf', reason: 'File non firmato', recipients: 3, total: 2 },
+        { filename: null, reason: null, recipients: 1, total: 2 },
+      ]);
+      const result = await service.getInvalidFiles('camp-1');
+      expect(result).toEqual({
+        items: [
+          { filename: 'stipula.pdf', reason: 'File non firmato', recipients: 3 },
+          { filename: null, reason: 'Firma non valida', recipients: 1 },
+        ],
+        total: 2,
+      });
+      expect(recipientRepo.query).toHaveBeenCalledWith(expect.any(String), ['camp-1', 'pending', 10]);
+    });
+
+    it('getInvalidFiles: nessuna riga → elenco vuoto', async () => {
+      await expect(service.getInvalidFiles('camp-1')).resolves.toEqual({ items: [], total: 0 });
     });
 
     it('job in corso: nessun controllo sui destinatari (signatureCheck ancora in scrittura)', async () => {

@@ -55,4 +55,38 @@ export class SignatureVerificationBulkService {
       errorMessage: job.errorMessage,
     };
   }
+
+  /**
+   * Allegati non validi dei destinatari pending, raggruppati per file e
+   * motivo (un allegato comune a tutte le righe conta una voce sola), i più
+   * frequenti per primi. Verifiche precedenti a `invalidFiles`: solo il
+   * motivo, senza nome file.
+   */
+  async getInvalidFiles(campaignId: string, limit = INVALID_FILES_LIMIT): Promise<{ items: InvalidFileSummary[]; total: number }> {
+    const rows: Array<{ filename: string | null; reason: string | null; recipients: number; total: number }> = await this.recipientRepo.query(
+      `SELECT f->>'filename' AS filename, f->>'reason' AS reason, count(*)::int AS recipients, count(*) OVER ()::int AS total
+         FROM recipients r
+         CROSS JOIN LATERAL jsonb_array_elements(
+           COALESCE(r.signature_check->'invalidFiles', jsonb_build_array(jsonb_build_object('filename', NULL, 'reason', r.signature_check->>'reason')))
+         ) f
+        WHERE r.campaign_id = $1 AND r.status = $2 AND r.signature_check->>'valid' = 'false'
+        GROUP BY 1, 2
+        ORDER BY 3 DESC, 1 NULLS LAST, 2
+        LIMIT $3`,
+      [campaignId, RecipientStatus.PENDING, limit],
+    );
+    return {
+      items: rows.map((r) => ({ filename: r.filename, reason: r.reason ?? 'Firma non valida', recipients: r.recipients })),
+      total: rows[0]?.total ?? 0,
+    };
+  }
 }
+
+export interface InvalidFileSummary {
+  filename: string | null;
+  reason: string;
+  /** Destinatari che hanno questo allegato non valido. */
+  recipients: number;
+}
+
+const INVALID_FILES_LIMIT = 10;

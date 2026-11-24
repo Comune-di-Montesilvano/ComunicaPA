@@ -6,6 +6,18 @@ export interface SignatureJobStatus {
   validCount: number;
   invalidCount: number;
   errorMessage: string | null;
+  required?: boolean;
+  /** Allegati non validi raggruppati per file e motivo (i più frequenti, max 10). */
+  invalidFiles?: SignatureInvalidFile[];
+  /** Voci totali di invalidFiles prima del limite. */
+  invalidFilesTotal?: number;
+}
+
+export interface SignatureInvalidFile {
+  filename: string | null;
+  reason: string;
+  /** Destinatari che hanno questo allegato non valido. */
+  recipients: number;
 }
 
 export interface RemoteSignStatus {

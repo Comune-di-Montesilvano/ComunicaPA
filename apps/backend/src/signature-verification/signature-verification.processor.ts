@@ -54,37 +54,44 @@ export class SignatureVerificationProcessor extends WorkerHost {
       const dir = getUploadsDir(campaignId);
 
       for (const recipient of recipients) {
-        // Un solo allegato per SEND nella pratica comune, ma il ciclo copre
-        // eventuali slot multipli configurati — basta un allegato non
-        // valido per marcare il destinatario invalid.
-        let recipientValid = attachmentsConfig.length > 0;
-        let recipientReason: string | null = attachmentsConfig.length > 0 ? null : 'Nessun allegato configurato per SEND';
+        // SEND notifica TUTTI gli slot come documenti dell'atto (nessun
+        // "principale"): basta un allegato non valido per marcare il
+        // destinatario invalid. Si verificano comunque tutti, così l'operatore
+        // vede quali file vanno firmati (invalidFiles), non solo il primo.
+        const invalidFiles: Array<{ filename: string | null; reason: string }> = [];
+        if (attachmentsConfig.length === 0) invalidFiles.push({ filename: null, reason: 'Nessun allegato configurato per SEND' });
 
         for (let index = 0; index < attachmentsConfig.length; index++) {
           const filename = resolveCustomAttachmentFilename({ campaign, extraData: recipient.extraData } as unknown as Recipient, index);
           if (!filename) {
-            recipientValid = false;
-            recipientReason = 'Allegato non configurato per questo destinatario';
-            break;
+            invalidFiles.push({ filename: null, reason: 'Allegato non configurato per questo destinatario' });
+            continue;
           }
           const filePath = join(dir, filename);
           if (!fs.existsSync(filePath)) {
-            recipientValid = false;
-            recipientReason = `Allegato ${filename} non trovato su disco`;
-            break;
+            invalidFiles.push({ filename, reason: 'File non trovato su disco' });
+            continue;
           }
           const buffer = fs.readFileSync(filePath);
           const result = await this.verificationService.verify(buffer, filename);
-          if (!result.valid) {
-            recipientValid = false;
-            recipientReason = result.reason;
-            break;
-          }
+          if (!result.valid) invalidFiles.push({ filename, reason: result.reason ?? 'Firma non valida' });
         }
+
+        const recipientValid = invalidFiles.length === 0;
+        const recipientReason = recipientValid
+          ? null
+          : invalidFiles.map((f) => (f.filename ? `${f.filename}: ${f.reason}` : f.reason)).join('; ');
 
         await this.recipientRepo.update(
           { id: recipient.id },
-          { signatureCheck: { valid: recipientValid, reason: recipientReason, checkedAt: new Date().toISOString() } },
+          {
+            signatureCheck: {
+              valid: recipientValid,
+              reason: recipientReason,
+              ...(recipientValid ? {} : { invalidFiles }),
+              checkedAt: new Date().toISOString(),
+            },
+          },
         );
 
         if (recipientValid) validCount++;

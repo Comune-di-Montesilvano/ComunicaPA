@@ -59,6 +59,42 @@ describe('SignatureVerificationProcessor', () => {
     }));
   });
 
+  it('più allegati: li verifica tutti e salva quali non sono validi (nessun allegato "principale")', async () => {
+    campaignRepo.findOneBy.mockResolvedValue({ id: 'camp-1', channelConfig: { attachments: [{ key: 'atto', label: 'Atto' }, { key: 'stipula', label: 'Stipula' }] } });
+    recipientRepo.find.mockResolvedValue([
+      { id: 'r1', status: RecipientStatus.PENDING, extraData: { atto: 'atto.pdf', stipula: 'stipula.pdf' } },
+    ]);
+    verificationService.verify
+      .mockResolvedValueOnce({ valid: false, reason: 'File non firmato' })
+      .mockResolvedValueOnce({ valid: false, reason: 'CA non riconosciuta' });
+
+    await processor.process({ data: { jobId: 'job-1', campaignId: 'camp-1' } } as any);
+
+    expect(verificationService.verify).toHaveBeenCalledTimes(2);
+    expect(recipientRepo.update).toHaveBeenCalledWith({ id: 'r1' }, {
+      signatureCheck: {
+        valid: false,
+        reason: 'atto.pdf: File non firmato; stipula.pdf: CA non riconosciuta',
+        invalidFiles: [
+          { filename: 'atto.pdf', reason: 'File non firmato' },
+          { filename: 'stipula.pdf', reason: 'CA non riconosciuta' },
+        ],
+        checkedAt: expect.any(String),
+      },
+    });
+    expect(jobRepo.update).toHaveBeenCalledWith({ id: 'job-1' }, expect.objectContaining({ totalRows: 1, invalidCount: 1 }));
+  });
+
+  it('destinatario valido: niente invalidFiles', async () => {
+    campaignRepo.findOneBy.mockResolvedValue({ id: 'camp-1', channelConfig: { attachments: [{ key: 'doc', label: 'Documento' }] } });
+    recipientRepo.find.mockResolvedValue([{ id: 'r1', status: RecipientStatus.PENDING, extraData: { doc: 'ok.pdf' } }]);
+    verificationService.verify.mockResolvedValueOnce({ valid: true, reason: null });
+
+    await processor.process({ data: { jobId: 'job-1', campaignId: 'camp-1' } } as any);
+
+    expect(recipientRepo.update).toHaveBeenCalledWith({ id: 'r1' }, { signatureCheck: { valid: true, reason: null, checkedAt: expect.any(String) } });
+  });
+
   it('marca invalid ogni destinatario se nessun allegato è configurato (job comunque DONE)', async () => {
     campaignRepo.findOneBy.mockResolvedValue({ id: 'camp-1', channelConfig: {} });
     recipientRepo.find.mockResolvedValue([{ id: 'r1', status: RecipientStatus.PENDING, extraData: {} }]);

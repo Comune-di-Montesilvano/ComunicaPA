@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-22_
+_Ultimo aggiornamento: 2026-11-24_
 
 ## Cos'è e chi lo usa
 
@@ -217,6 +217,8 @@ Nello **Storico verifiche** vedi solo le verifiche che hai caricato tu (un ammin
 Dalla voce **Template** salvi oggetti e testi da riusare negli invii. Un template email può essere collegato a un template App IO «gemello», usato per la notifica App IO abbinata.
 
 ### Firmare gli allegati SEND
+
+Per SEND tutti gli allegati sono notificati come documenti dell'atto: non c'è un allegato «principale», vanno firmati tutti. Il conteggio della verifica è per destinatario (una riga va firmata se almeno uno dei suoi allegati non è valido); sotto il conteggio compare l'elenco dei file non validi con il motivo.
 
 Se la verifica firma segnala allegati non firmati validamente:
 
@@ -508,7 +510,7 @@ Rimessi in coda, i loro vecchi errori escono dai **job falliti** dei motori di i
 
 ### SEND: «allegato/i non firmati validamente» al Passo 6
 
-**Causa:** per le campagne SEND massive ComunicaPA verifica la firma digitale di ogni allegato. Il messaggio compare quando uno o più PDF non hanno una firma digitale valida (per esempio documenti con firma autografa a stampa).
+**Causa:** per le campagne SEND massive ComunicaPA verifica la firma digitale di ogni allegato. Il messaggio compare quando uno o più PDF non hanno una firma digitale valida (per esempio documenti con firma autografa a stampa). Il numero indica i destinatari con almeno un allegato da firmare; l'elenco sotto il messaggio dice quali file e perché.
 
 **Soluzione:** firma gli allegati dal riquadro (vedi [Firmare gli allegati SEND](#firmare-gli-allegati-send)). Se devi inviare comunque, premi **Conferma ed Avvia Campagna** e conferma l'avviso: l'invio parte sotto la tua responsabilità e la forzatura resta registrata nel registro attività. Senza firma valida la notifica può essere contestata. Con la firma obbligatoria attiva (Impostazioni → SEND) l'avvio forzato non è possibile: l'unica strada è firmare gli allegati.
 
