@@ -45,6 +45,8 @@ export interface SearchFilters {
   query?: string;
   campaignId?: string;
   channelType?: string;
+  /** Tassonomia SEND già validata (6 cifre + P/N): solo campagne SEND con quel codice. */
+  taxonomyCode?: string;
   createdBy?: string;
   status?: string;
   dateFrom?: string;
@@ -135,6 +137,12 @@ export class NotificationsSearchService {
     }
     if (filters.channelType) {
       qb.andWhere('campaign.channelType = :channelType', { channelType: filters.channelType });
+    }
+    if (filters.taxonomyCode) {
+      qb.andWhere(
+        "campaign.channelType = 'SEND' AND (campaign.channelConfig ->> 'taxonomyCode') = :taxonomyCode",
+        { taxonomyCode: filters.taxonomyCode },
+      );
     }
     if (filters.dateFrom) {
       qb.andWhere('recipient.createdAt >= :dateFrom', { dateFrom: filters.dateFrom });

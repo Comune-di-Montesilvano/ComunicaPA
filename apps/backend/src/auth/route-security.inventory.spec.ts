@@ -181,6 +181,7 @@ describe('Inventario sicurezza route', () => {
       GET /admin/campaigns/stats/costs | auth | roles=user,admin | guards=-
       GET /admin/campaigns/stats/global | auth | roles=user,admin | guards=-
       GET /admin/campaigns/stats/global/never-downloaded.csv | auth | roles=user,admin | guards=-
+      GET /admin/campaigns/stats/send-taxonomy | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs | auth | roles=user,admin | guards=-
       DELETE /admin/domicile-verification/jobs/:id | auth | roles=user,admin | guards=-
       GET /admin/domicile-verification/jobs/:id | auth | roles=user,admin | guards=-

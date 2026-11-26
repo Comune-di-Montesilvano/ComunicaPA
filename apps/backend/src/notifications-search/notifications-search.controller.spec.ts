@@ -45,6 +45,19 @@ describe('NotificationsSearchController', () => {
     });
   });
 
+  describe('search per tassonomia SEND', () => {
+    it('passa il codice normalizzato al servizio', () => {
+      controller.search(REQ, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ' 010201p ');
+
+      expect(svcMock.search).toHaveBeenCalledWith(expect.objectContaining({ taxonomyCode: '010201P' }), REQ.user);
+    });
+
+    it('rifiuta un codice non valido con 400 senza interrogare il servizio', () => {
+      expect(() => controller.search(REQ, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "x' OR 1=1")).toThrow('taxonomyCode non valido');
+      expect(svcMock.search).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getSendLegalFacts', () => {
     it('delega a svc.getSendLegalFacts e ritorna il risultato', async () => {
       const recipientId = 'rec-1';

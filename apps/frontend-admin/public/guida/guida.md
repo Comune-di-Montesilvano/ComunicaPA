@@ -128,9 +128,17 @@ Se la campagna è stata caricata senza OCR, puoi aggiungerlo dopo:
 5. Nelle campagne SEND non compaiono i dati sui documenti scaricati: il destinatario apre la notifica su SEND (app IO, sito di SEND o punto di ritiro), non da ComunicaPA. Per sapere se l'ha letta guarda lo stato SEND **Letta dal destinatario**.
 6. Con **Torna a Campagne** l'elenco riporta in vista la campagna appena consultata e la evidenzia per qualche secondo.
 
+### Consultare le statistiche
+
+Dalla voce **Statistiche** vedi invii, esiti, costi e download del periodo scelto (preset o date **Dal**/**Al**). I numeri escludono le campagne di prova.
+
+- **Scaricati** e **Tasso di download per campagna** contano solo chi poteva scaricare: tutti gli inviati di Email, PEC, App IO e SEND; per la Posta solo i destinatari dirottati su PEC dal controllo INAD o raggiunti anche su App IO. Una lettera solo cartacea non ha nulla da scaricare: una campagna di 3.000 raccomandate con 100 dirottati e 10 download vale 10 su 100. La colonna **Online** della classifica dice su quanti destinatari è calcolata; le campagne solo cartacee non compaiono.
+- **SEND per tassonomia**: per ogni tassonomia SEND usata nel periodo, campagne, notifiche, esito (perfezionate, in corso, irreperibili, fallite comprese quelle rifiutate da SEND, annullate) e costo. L'esito è quello dell'ultimo tentativo di ogni destinatario.
+- **Tassonomia SEND** (in alto, o clic su una riga della tabella): tutte le statistiche della pagina si limitano alle campagne SEND con quella tassonomia, compreso l'elenco CSV **Mai scaricato**. Un nuovo clic sulla riga toglie il filtro.
+
 ### Cercare una singola notifica
 
-Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC, IUN, numero di protocollo, OCR (External ID) o numero di raccomandata. Anche la casella di ricerca dei destinatari, nel dettaglio di una campagna, trova OCR e raccomandata oltre a nominativo e codice fiscale. Il protocollo si cerca esatto: `1234` trova il protocollo 1234 di qualunque anno, `1234/2026` solo quello del 2026. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente. Il filtro **Autore** limita la ricerca alle notifiche delle campagne create da un certo operatore. I risultati sono 20 per pagina: scorri le pagine con i pulsanti **Precedente** e **Successiva** sotto l'elenco.
+Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC, IUN, numero di protocollo, OCR (External ID) o numero di raccomandata. Anche la casella di ricerca dei destinatari, nel dettaglio di una campagna, trova OCR e raccomandata oltre a nominativo e codice fiscale. Il protocollo si cerca esatto: `1234` trova il protocollo 1234 di qualunque anno, `1234/2026` solo quello del 2026. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente. Il filtro **Autore** limita la ricerca alle notifiche delle campagne create da un certo operatore. Il filtro **Tassonomia SEND** mostra solo le notifiche SEND con quella tassonomia; compare con canale **Tutti** o **SEND**. I risultati sono 20 per pagina: scorri le pagine con i pulsanti **Precedente** e **Successiva** sotto l'elenco.
 
 Una notifica ha due date, una per ciascuna parte (scissione degli effetti; per SEND art. 26, comma 9, D.L. 76/2020):
 

@@ -2636,12 +2636,12 @@ describe('CampaignsService', () => {
 
     it('assembla il DTO dai conteggi sullo stato attuale dei destinatari', async () => {
       wire({
-        totals: { totalRecipients: '100', totalSent: '90', totalFailed: '10', totalDownloaded: '60' },
+        totals: { totalRecipients: '100', totalSent: '90', totalFailed: '10', totalDownloadable: '80', totalDownloaded: '60' },
         monthly: [{ month: '2026-06', sent: '50', downloaded: '30' }, { month: '2026-07', sent: '40', downloaded: '0' }],
         daily: [{ date: '2026-07-05', sent: '12', failed: '2' }],
         channel: [{ channel: 'EMAIL', sent: '90' }],
         never: 15,
-        leaderboard: [{ campaignId: 'c1', campaignName: 'Tari', totalRecipients: '100', sentCount: '90', downloadedCount: '60' }],
+        leaderboard: [{ campaignId: 'c1', campaignName: 'Tari', totalRecipients: '100', sentCount: '90', downloadableCount: '80', downloadedCount: '60' }],
         downloadChannel: [{ channel: 'EMAIL', count: '55' }],
         cost: { totalCostCents: '2431' },
       });
@@ -2653,9 +2653,11 @@ describe('CampaignsService', () => {
         totalSent: 90,
         totalFailed: 10,
         totalDownloaded: 60,
-        // Percentuale sugli inviati con successo (90), mai sul totale: i
-        // falliti non hanno mai ricevuto un link da scaricare.
-        downloadPercentage: 67,
+        totalDownloadable: 80,
+        // Percentuale sugli inviati con un download possibile (80), mai sul
+        // totale né sugli inviati: falliti e lettere solo cartacee non hanno
+        // mai avuto nulla da scaricare.
+        downloadPercentage: 75,
         totalCostCents: 2431,
         totalSavingCents: 0,
       });
@@ -2667,7 +2669,7 @@ describe('CampaignsService', () => {
       expect(result.channelTotals).toEqual([{ channel: 'EMAIL', sent: 90 }]);
       expect(result.downloadChannelTotals).toEqual([{ channel: 'EMAIL', count: 55 }]);
       expect(result.campaignLeaderboard).toEqual([
-        { campaignId: 'c1', campaignName: 'Tari', totalRecipients: 100, sentCount: 90, downloadPercentage: 67 },
+        { campaignId: 'c1', campaignName: 'Tari', totalRecipients: 100, sentCount: 90, downloadableCount: 80, downloadPercentage: 75 },
       ]);
       expect(result.neverDownloadedCount).toBe(15);
     });
@@ -2688,10 +2690,10 @@ describe('CampaignsService', () => {
       const qbs: any[] = [];
       wire({
         leaderboard: [
-          { campaignId: 'c-b', campaignName: 'Beta', totalRecipients: '10', sentCount: '10', downloadedCount: '5' },
-          { campaignId: 'c-a', campaignName: 'Alfa', totalRecipients: '10', sentCount: '10', downloadedCount: '5' },
-          { campaignId: 'c-big', campaignName: 'Zeta', totalRecipients: '200', sentCount: '200', downloadedCount: '100' },
-          { campaignId: 'c-top', campaignName: 'Top', totalRecipients: '4', sentCount: '4', downloadedCount: '4' },
+          { campaignId: 'c-b', campaignName: 'Beta', totalRecipients: '10', sentCount: '10', downloadableCount: '10', downloadedCount: '5' },
+          { campaignId: 'c-a', campaignName: 'Alfa', totalRecipients: '10', sentCount: '10', downloadableCount: '10', downloadedCount: '5' },
+          { campaignId: 'c-big', campaignName: 'Zeta', totalRecipients: '200', sentCount: '200', downloadableCount: '200', downloadedCount: '100' },
+          { campaignId: 'c-top', campaignName: 'Top', totalRecipients: '4', sentCount: '4', downloadableCount: '4', downloadedCount: '4' },
         ],
       }, qbs);
 
@@ -2701,7 +2703,7 @@ describe('CampaignsService', () => {
       const leaderboardQb = mockCampaignRepo.createQueryBuilder.mock.results[0].value;
       const whereClauses = [...leaderboardQb.where.mock.calls, ...leaderboardQb.andWhere.mock.calls].map((c: unknown[]) => c[0]);
       expect(whereClauses).toContain("(c.channelConfig ->> 'wizSingleMode') IS DISTINCT FROM 'true'");
-      expect(leaderboardQb.having).toHaveBeenCalledWith('COUNT(r.id) FILTER (WHERE r.status = :sentStatus) > 0');
+      expect(leaderboardQb.having).toHaveBeenCalledWith(expect.stringMatching(/^COUNT\(r\.id\) FILTER \(WHERE r\.status = :sentStatus AND \(c\.channelType <> 'POSTAL' OR .*diverted.*appIo.*\) > 0$/));
       expect(leaderboardQb.andHaving).toHaveBeenCalledWith('COUNT(r.id) > 1');
     });
 
@@ -2715,6 +2717,7 @@ describe('CampaignsService', () => {
         totalSent: 0,
         totalFailed: 0,
         totalDownloaded: 0,
+        totalDownloadable: 0,
         downloadPercentage: 0,
         totalCostCents: 0,
         totalSavingCents: 0,
@@ -2722,6 +2725,30 @@ describe('CampaignsService', () => {
       expect(result.monthlyTrend).toEqual([]);
       expect(result.dailyTrend).toEqual([]);
       expect(result.campaignLeaderboard).toEqual([]);
+    });
+
+    it('scaricati e denominatore: solo inviati con download possibile (POSTAL solo dirottati su PEC o con App IO)', async () => {
+      const qbs: any[] = [];
+      wire({ totals: { totalRecipients: '0', totalSent: '0', totalFailed: '0', totalDownloaded: '0' }, cost: { totalCostCents: '0' } }, qbs);
+
+      await service.getGlobalStats();
+
+      const downloadSelects = qbs
+        .flatMap((qb) => qb.addSelect.mock.calls as unknown[][])
+        .filter(([, alias]) => ['totalDownloaded', 'downloaded', 'downloadedCount'].includes(alias as string))
+        .map(([sql]) => sql as string);
+      expect(downloadSelects).toHaveLength(3);
+      downloadSelects.forEach((sql) => {
+        expect(sql).toContain('r.status = :sentStatus');
+        expect(sql).toContain("c.channelType <> 'POSTAL'");
+        expect(sql).toContain("(r.inadCheck ->> 'diverted') = 'true'");
+        expect(sql).toContain("(na_x.response_payload -> 'appIo' ->> 'success') = 'true'");
+        expect(sql).toContain('r.download_count > 0');
+      });
+      const totalsQb = qbs[0];
+      const denominator = totalsQb.addSelect.mock.calls.find(([, alias]: unknown[]) => alias === 'totalDownloadable');
+      expect(denominator?.[0]).toContain("c.channelType <> 'POSTAL'");
+      expect(denominator?.[0]).not.toContain('download_count');
     });
 
     it('esclude sempre le campagne isTest=true da ognuna delle 10 query aggregate', async () => {
@@ -2767,7 +2794,7 @@ describe('CampaignsService', () => {
           createdAt: '2026-06-01T10:00:00.000Z',
         },
       ]);
-      expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.SENT });
+      expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining("c.channelType <> 'POSTAL'"), { sentStatus: RecipientStatus.SENT });
       // Stesso perimetro del contatore neverDownloadedCount: niente campagne di test.
       expect(qb.andWhere).toHaveBeenCalledWith('c.isTest = false');
       const sqls = qb.andWhere.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
