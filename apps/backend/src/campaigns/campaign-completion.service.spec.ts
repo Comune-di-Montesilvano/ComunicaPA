@@ -159,4 +159,54 @@ describe('CampaignCompletionService', () => {
     expect(mockRecipientRepo.delete).not.toHaveBeenCalled();
     expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
   });
+
+  describe('refreshAfterLateFailure (esito negativo arrivato dopo la chiusura, es. rifiuto PN)', () => {
+    beforeEach(() => {
+      // I test sopra lasciano un mockResolvedValue persistente: sequenza pulita.
+      mockRecipientRepo.count.mockReset();
+      mockQb.execute.mockReset().mockResolvedValue({ affected: 1 });
+    });
+
+    it('porta a FAILED una campagna già COMPLETED se nessun destinatario resta SENT', async () => {
+      mockRecipientRepo.count
+        .mockResolvedValueOnce(0) // checkAndComplete: PENDING/QUEUED residui
+        .mockResolvedValueOnce(0) // checkAndComplete: SENT
+        .mockResolvedValueOnce(1) // checkAndComplete: FAILED
+        .mockResolvedValueOnce(0) // refresh: PENDING/QUEUED residui
+        .mockResolvedValueOnce(0) // refresh: SENT
+        .mockResolvedValueOnce(1); // refresh: FAILED
+      mockQb.execute.mockResolvedValueOnce({ affected: 0 }); // checkAndComplete: campagna non più QUEUED
+
+      await service.refreshAfterLateFailure('camp-1');
+
+      expect(mockQb.set).toHaveBeenLastCalledWith({ status: CampaignStatus.FAILED });
+      expect(mockQb.where).toHaveBeenLastCalledWith(
+        expect.stringContaining('is_test'),
+        expect.objectContaining({ id: 'camp-1', completed: CampaignStatus.COMPLETED, isTest: false }),
+      );
+    });
+
+    it('lascia COMPLETED se resta almeno un destinatario SENT', async () => {
+      mockRecipientRepo.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0) // refresh: PENDING/QUEUED residui
+        .mockResolvedValueOnce(1) // refresh: SENT
+        .mockResolvedValueOnce(1); // refresh: FAILED
+      mockQb.execute.mockResolvedValueOnce({ affected: 0 });
+
+      await service.refreshAfterLateFailure('camp-1');
+
+      expect(mockQb.set).not.toHaveBeenCalledWith({ status: CampaignStatus.FAILED });
+    });
+
+    it('non tocca nulla se restano destinatari da processare', async () => {
+      mockRecipientRepo.count.mockResolvedValue(2);
+
+      await service.refreshAfterLateFailure('camp-1');
+
+      expect(mockCampaignRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+  });
 });

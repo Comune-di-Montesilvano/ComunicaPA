@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
-import { NotificationAttempt } from '../../entities/notification-attempt.entity.js';
+import { AttemptStatus, NotificationAttempt } from '../../entities/notification-attempt.entity.js';
+import { Campaign } from '../../entities/campaign.entity.js';
+import { Recipient, RecipientStatus } from '../../entities/recipient.entity.js';
+import { CampaignCompletionService } from '../../campaigns/campaign-completion.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
@@ -22,6 +25,23 @@ export const LEGACY_TIMELINE_SQL =
   "((jsonb_array_length(COALESCE(attempt.send_timeline, '[]'::jsonb)) > 0 AND NOT (attempt.send_timeline -> 0 ? 'details')) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(attempt.send_timeline, '[]'::jsonb)) e WHERE e->>'category' = 'SEND_ANALOG_DOMICILE' AND e->'details' IS NOT NULL AND NOT (e->'details' ? 'physicalAddress')))";
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
 
+/**
+ * Errori di validazione PN (`ProblemError`: code, detail, element) in un
+ * messaggio leggibile dall'operatore, salvato su attempt.errorMessage.
+ */
+export function formatPnRefusalErrors(errors: unknown): string {
+  const list = Array.isArray(errors) ? errors : [];
+  const parts = list.map((e) => {
+    if (!e || typeof e !== 'object') return String(e);
+    const { code, detail, element } = e as Record<string, unknown>;
+    const text = [code, detail].filter((v) => typeof v === 'string' && v).join(': ');
+    const where = typeof element === 'string' && element ? ` (${element})` : '';
+    return (text || JSON.stringify(e)) + where;
+  });
+  const message = parts.length > 0 ? parts.join('; ') : 'motivo non indicato da PN';
+  return `Rifiutata da SEND: ${message}`.slice(0, 2000);
+}
+
 @Injectable()
 export class SendStatusSyncService {
   private readonly logger = new Logger(SendStatusSyncService.name);
@@ -29,9 +49,14 @@ export class SendStatusSyncService {
   constructor(
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
+    @InjectRepository(Recipient)
+    private readonly recipientRepo: Repository<Recipient>,
+    @InjectRepository(Campaign)
+    private readonly campaignRepo: Repository<Campaign>,
     private readonly settings: AppSettingsService,
     private readonly pdndAuth: PdndAuthService,
     private readonly baseFee: SendBaseFeeService,
+    private readonly campaignCompletion: CampaignCompletionService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -49,6 +74,39 @@ export class SendStatusSyncService {
     return { envKey, baseUrl, apiKey, purposeId };
   }
 
+  /**
+   * Rifiuto PN in validazione: la notifica non esiste (niente IUN), quindi è
+   * un invio fallito, non riuscito. Prima restava SUCCESS/SENT con il solo
+   * sendStatus REFUSED: campagna "Completata", motivo solo nel log e nessun
+   * modo di riprovare (retryRecipient vuole FAILED). Update guardato su
+   * SUCCESS come markSuccess/markFailed di SendDispatchService.
+   */
+  private async markRefused(attempt: NotificationAttempt, reason: string): Promise<void> {
+    const now = new Date();
+    const result = await this.attemptRepo.update(
+      { id: attempt.id, status: AttemptStatus.SUCCESS },
+      { status: AttemptStatus.FAILED, errorMessage: reason, sendStatus: 'REFUSED', sendStatusUpdatedAt: now },
+    );
+    if (!result.affected) {
+      // Attempt non più SUCCESS (es. annullato): registra solo lo stato PN.
+      attempt.sendStatus = 'REFUSED';
+      attempt.sendStatusUpdatedAt = now;
+      await this.attemptRepo.save(attempt);
+      return;
+    }
+    const recipient = await this.recipientRepo.findOneBy({ id: attempt.recipientId });
+    if (!recipient) return;
+    const moved = await this.recipientRepo.update(
+      { id: recipient.id, status: RecipientStatus.SENT },
+      { status: RecipientStatus.FAILED },
+    );
+    if (moved.affected) {
+      await this.campaignRepo.decrement({ id: recipient.campaignId }, 'sentCount', 1);
+      await this.campaignRepo.increment({ id: recipient.campaignId }, 'failedCount', 1);
+    }
+    await this.campaignCompletion.refreshAfterLateFailure(recipient.campaignId);
+  }
+
   async resolveMissingIun(): Promise<void> {
     const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
     const attempts = await this.attemptRepo
@@ -56,7 +114,14 @@ export class SendStatusSyncService {
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
       .andWhere('attempt.iun IS NULL')
       .andWhere("attempt.response_payload ->> 'notificationRequestId' IS NOT NULL")
-      .andWhere("(attempt.send_status IS NULL OR attempt.send_status <> :refused)", { refused: 'REFUSED' })
+      // REFUSED ancora SUCCESS = rifiuto registrato prima che diventasse un
+      // fallimento (solo sendStatus, motivo perso): ripollato una volta per
+      // rileggere gli errori da PN e applicare markRefused. Dopo resta FAILED
+      // e la query non lo ripesca più.
+      .andWhere(
+        '(attempt.send_status IS NULL OR (attempt.send_status = :refused AND attempt.status = :success))',
+        { refused: 'REFUSED', success: AttemptStatus.SUCCESS },
+      )
       .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
@@ -82,10 +147,8 @@ export class SendStatusSyncService {
           attempt.sendStatusUpdatedAt = new Date();
           await this.attemptRepo.save(attempt);
         } else if (data.notificationRequestStatus === 'REFUSED') {
-          attempt.sendStatus = 'REFUSED';
-          attempt.sendStatusUpdatedAt = new Date();
-          await this.attemptRepo.save(attempt);
           this.logger.warn(`Richiesta SEND ${requestId} rifiutata da PN: ${JSON.stringify(data.errors ?? [])}`);
+          await this.markRefused(attempt, formatPnRefusalErrors(data.errors));
         }
       } catch (err) {
         this.logger.warn(`Errore risoluzione IUN per richiesta SEND ${requestId}: ${errorMessage(err)}`);
