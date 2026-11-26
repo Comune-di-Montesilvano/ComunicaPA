@@ -69,6 +69,39 @@ export class CampaignCompletionService {
   }
 
   /**
+   * Esito negativo arrivato DOPO l'invio (es. rifiuto PN in validazione,
+   * che trasforma un destinatario SENT in FAILED a campagna già chiusa).
+   * Chiude la campagna se era ancora QUEUED, poi corregge COMPLETED → FAILED
+   * quando nessun destinatario resta SENT: stessa regola di checkAndComplete,
+   * che da sola agisce solo su campagne QUEUED (bug reale: invio singolo SEND
+   * rifiutato da PN mostrato "Completata").
+   */
+  async refreshAfterLateFailure(campaignId: string): Promise<void> {
+    await this.checkAndComplete(campaignId);
+
+    const remaining = await this.recipientRepo.count({
+      where: { campaignId, status: In([RecipientStatus.PENDING, RecipientStatus.QUEUED]) },
+    });
+    if (remaining > 0) return;
+    const [sentCount, failedCount] = await Promise.all([
+      this.recipientRepo.count({ where: { campaignId, status: RecipientStatus.SENT } }),
+      this.recipientRepo.count({ where: { campaignId, status: RecipientStatus.FAILED } }),
+    ]);
+    if (sentCount > 0 || failedCount === 0) return;
+
+    await this.campaignRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: CampaignStatus.FAILED })
+      .where('id = :id AND status = :completed AND is_test = :isTest', {
+        id: campaignId,
+        completed: CampaignStatus.COMPLETED,
+        isTest: false,
+      })
+      .execute();
+  }
+
+  /**
    * Cascata esplicita (non FK ON DELETE, la madre non viene cancellata qui):
    * elimina NotificationAttempt+Recipient+Campaign della campagna test
    * collegata e la sua cartella allegati su disco. Best-effort sui job

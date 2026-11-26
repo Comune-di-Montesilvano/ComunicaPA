@@ -1,10 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { SendStatusSyncService, LEGACY_TIMELINE_SQL } from './send-status-sync.service.js';
+import { SendStatusSyncService, LEGACY_TIMELINE_SQL, formatPnRefusalErrors } from './send-status-sync.service.js';
 import { SendBaseFeeService } from './send-base-fee.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
-import { NotificationAttempt } from '../../entities/notification-attempt.entity.js';
+import { AttemptStatus, NotificationAttempt } from '../../entities/notification-attempt.entity.js';
+import { Campaign } from '../../entities/campaign.entity.js';
+import { Recipient, RecipientStatus } from '../../entities/recipient.entity.js';
+import { CampaignCompletionService } from '../../campaigns/campaign-completion.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
@@ -34,10 +37,23 @@ function makeQueryBuilder(results: any[]) {
 describe('SendStatusSyncService', () => {
   let service: SendStatusSyncService;
   let mockRepo: any;
+  let mockRecipientRepo: any;
+  let mockCampaignRepo: any;
+  let mockCompletion: any;
 
   beforeEach(async () => {
     mockFetch.mockClear();
-    mockRepo = { createQueryBuilder: jest.fn(), save: jest.fn(async (a: any) => a) };
+    mockRepo = {
+      createQueryBuilder: jest.fn(),
+      save: jest.fn(async (a: any) => a),
+      update: jest.fn(async () => ({ affected: 1 })),
+    };
+    mockRecipientRepo = {
+      findOneBy: jest.fn(async () => ({ id: 'r1', campaignId: 'c1', status: RecipientStatus.SENT })),
+      update: jest.fn(async () => ({ affected: 1 })),
+    };
+    mockCampaignRepo = { increment: jest.fn(async () => undefined), decrement: jest.fn(async () => undefined) };
+    mockCompletion = { refreshAfterLateFailure: jest.fn(async () => undefined) };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -46,6 +62,9 @@ describe('SendStatusSyncService', () => {
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: PdndAuthService, useValue: mockPdndAuth },
         { provide: SendBaseFeeService, useValue: mockSendBaseFee },
+        { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
+        { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
+        { provide: CampaignCompletionService, useValue: mockCompletion },
       ],
     }).compile();
 
@@ -99,9 +118,57 @@ describe('SendStatusSyncService', () => {
     expect(mockRepo.save).not.toHaveBeenCalled();
   });
 
-  it('resolveMissingIun: salva sendStatus REFUSED se PN rifiuta', async () => {
-    const attempt: any = { id: 'a1', iun: null, sendStatus: null, responsePayload: { notificationRequestId: 'req-1' } };
+  it('resolveMissingIun: rifiuto PN = invio fallito (attempt FAILED col motivo, destinatario FAILED, contatori, stato campagna)', async () => {
+    const attempt: any = { id: 'a1', recipientId: 'r1', iun: null, sendStatus: null, status: AttemptStatus.SUCCESS, responsePayload: { notificationRequestId: 'req-1' } };
     mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        notificationRequestStatus: 'REFUSED',
+        errors: [{ code: 'NOT_VALID_ADDRESS', detail: 'foreignState mancante', element: 'recipients[0].physicalAddress' }],
+      })),
+    });
+
+    await service.resolveMissingIun();
+
+    expect(mockRepo.update).toHaveBeenCalledWith(
+      { id: 'a1', status: AttemptStatus.SUCCESS },
+      expect.objectContaining({
+        status: AttemptStatus.FAILED,
+        sendStatus: 'REFUSED',
+        sendStatusUpdatedAt: expect.any(Date),
+        errorMessage: 'Rifiutata da SEND: NOT_VALID_ADDRESS: foreignState mancante (recipients[0].physicalAddress)',
+      }),
+    );
+    expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+      { id: 'r1', status: RecipientStatus.SENT },
+      { status: RecipientStatus.FAILED },
+    );
+    expect(mockCampaignRepo.decrement).toHaveBeenCalledWith({ id: 'c1' }, 'sentCount', 1);
+    expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'c1' }, 'failedCount', 1);
+    expect(mockCompletion.refreshAfterLateFailure).toHaveBeenCalledWith('c1');
+  });
+
+  it('resolveMissingIun: rifiuto su destinatario non più SENT → contatori invariati, stato campagna ricontrollato', async () => {
+    const attempt: any = { id: 'a1', recipientId: 'r1', iun: null, sendStatus: null, responsePayload: { notificationRequestId: 'req-1' } };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockRecipientRepo.update.mockResolvedValueOnce({ affected: 0 });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ notificationRequestStatus: 'REFUSED', errors: [] })),
+    });
+
+    await service.resolveMissingIun();
+
+    expect(mockCampaignRepo.decrement).not.toHaveBeenCalled();
+    expect(mockCampaignRepo.increment).not.toHaveBeenCalled();
+    expect(mockCompletion.refreshAfterLateFailure).toHaveBeenCalledWith('c1');
+  });
+
+  it('resolveMissingIun: attempt non più SUCCESS (es. annullato) → solo sendStatus REFUSED, niente FAILED né contatori', async () => {
+    const attempt: any = { id: 'a1', recipientId: 'r1', iun: null, sendStatus: null, responsePayload: { notificationRequestId: 'req-1' } };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockRepo.update.mockResolvedValueOnce({ affected: 0 });
     mockFetch.mockResolvedValue({
       ok: true,
       text: () => Promise.resolve(JSON.stringify({ notificationRequestStatus: 'REFUSED', errors: [{ code: 'X' }] })),
@@ -111,6 +178,26 @@ describe('SendStatusSyncService', () => {
 
     expect(attempt.sendStatus).toBe('REFUSED');
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
+    expect(mockRecipientRepo.update).not.toHaveBeenCalled();
+    expect(mockCompletion.refreshAfterLateFailure).not.toHaveBeenCalled();
+  });
+
+  it('resolveMissingIun: ripesca una volta i REFUSED registrati quando restavano SUCCESS (backfill del motivo)', async () => {
+    const qb = makeQueryBuilder([]);
+    mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.resolveMissingIun();
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      expect.stringMatching(/send_status = :refused AND attempt\.status = :success/),
+      { refused: 'REFUSED', success: AttemptStatus.SUCCESS },
+    );
+  });
+
+  it('formatPnRefusalErrors: lista vuota/non valida e voci senza code', () => {
+    expect(formatPnRefusalErrors(undefined)).toBe('Rifiutata da SEND: motivo non indicato da PN');
+    expect(formatPnRefusalErrors([{ detail: 'PDF non valido' }, 'raw'])).toBe('Rifiutata da SEND: PDF non valido; raw');
+    expect(formatPnRefusalErrors([{ foo: 1 }])).toBe('Rifiutata da SEND: {"foo":1}');
   });
 
   it('updateStatuses: aggiorna sendStatus, storico e domicilio digitale da GET notifications/sent/{iun}', async () => {

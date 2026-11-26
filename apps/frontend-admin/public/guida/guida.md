@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-24_
+_Ultimo aggiornamento: 2026-11-26_
 
 ## Cos'è e chi lo usa
 
@@ -485,6 +485,7 @@ Un oggetto SEND che supera i 134 caratteri solo dopo la sostituzione dei segnapo
 2. Se il problema era temporaneo (server non raggiungibile, limite di invio), premi **Rimetti in coda tutti** su quel gruppo.
 3. Se il problema è un indirizzo postale, correggilo con **Correggi indirizzo e rimetti in coda**.
 4. Se è un indirizzo email o PEC errato: sul destinatario non si può correggere. Verifica il recapito giusto con **Verifica Anagrafica** e invialo con un **Invio Manuale**.
+5. Se il motivo inizia con «Rifiutata da SEND»: SEND ha scartato la notifica in fase di controllo, prima di crearla, quindi non ha uno IUN e non costa nulla. Il motivo riporta il codice di errore di SEND e il campo interessato (ad esempio indirizzo estero senza Stato, allegato PDF non valido). Correggi il dato e rimetti in coda; se il destinatario era l'unico della campagna, la campagna risulta «Fallita».
 
 I destinatari di una campagna annullata non si possono rimettere in coda.
 

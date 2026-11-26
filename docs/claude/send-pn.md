@@ -256,3 +256,16 @@ perfezionata per il destinatario …: termini di pagamento e ricorso non
 avviati, sollecitare SEND" (l'atto non diventa definitivo, niente coattiva).
 Senza ACCEPTED → "non ancora messa a disposizione su SEND, nessuna data legale
 per l'ente". Solo testo: `kind` e gemella SQL invariati.
+
+## SEND — rifiuto PN in validazione = invio FALLITO (dal v1.29.0)
+
+`notificationRequestStatus: REFUSED` (da `GET /delivery/v2.6/requests`)
+arriva DOPO `markSuccess`: la notifica non esiste, niente IUN, costo zero.
+Prima restava attempt SUCCESS + recipient SENT con il solo `sendStatus`
+REFUSED: campagna "Completata", motivo (`errors[]` PN: code/detail/element)
+solo nel log, nessun retry (`retryRecipient` vuole FAILED). Ora
+`SendStatusSyncService.markRefused`: attempt FAILED con `errorMessage`
+"Rifiutata da SEND: …", recipient SENT→FAILED, `sentCount`−1/`failedCount`+1,
+`CampaignCompletionService.refreshAfterLateFailure` (COMPLETED→FAILED se
+nessun SENT). I REFUSED rimasti SUCCESS (pre-fix) vengono ripollati una
+volta da `resolveMissingIun` per recuperare il motivo da PN.
