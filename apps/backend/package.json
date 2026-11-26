@@ -66,15 +66,15 @@
     "@types/passport-jwt": "^4.0.0",
     "@types/supertest": "^7.2.1",
     "@types/yauzl": "^3.4.0",
-    "@vitest/coverage-v8": "5.1.0",
+    "@vitest/coverage-v8": "5.1.1",
     "eslint": "^10.15.0",
-    "fast-check": "^4.10.2",
+    "fast-check": "^4.10.3",
     "supertest": "^7.3.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.73.0",
     "unplugin-swc": "^2.0.0",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }
