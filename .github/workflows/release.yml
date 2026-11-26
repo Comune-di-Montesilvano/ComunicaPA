@@ -60,7 +60,7 @@ jobs:
       # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
       # Release fallita per "blocked" → host nel log del post-step harden-runner o nella
       # pagina insights della run: aggiungerlo qui se legittimo.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           # Dal controllo cause: registry, Trivy (binario da get.trivy.dev → GitHub releases,
@@ -200,7 +200,7 @@ jobs:
       # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
       # Release fallita per "blocked" → host nel log del post-step harden-runner o nella
       # pagina insights della run: aggiungerlo qui se legittimo.
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -429,7 +429,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -494,7 +494,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           # Allowlist di smoke (stack + Mailpit da Docker Hub) piu': immagine Playwright da MCR
@@ -590,7 +590,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
