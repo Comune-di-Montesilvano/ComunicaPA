@@ -3114,7 +3114,10 @@ export function App(): React.JSX.Element {
   // External ID impostabile dal dettaglio notifica quando manca.
   const [notifExternalIdDraft, setNotifExternalIdDraft] = useState('');
   const [notifExternalIdSaving, setNotifExternalIdSaving] = useState(false);
-  useEffect(() => { setNotifExternalIdDraft(''); }, [notifDetail?.recipient.id]);
+  // Campo External ID chiuso di default: serve solo per l'export Maggioli
+  // (SEND/Posta) e quasi mai a mano; si apre col link "Aggiungi External ID".
+  const [notifExternalIdOpen, setNotifExternalIdOpen] = useState(false);
+  useEffect(() => { setNotifExternalIdDraft(''); setNotifExternalIdOpen(false); }, [notifDetail?.recipient.id]);
   const [maggioliSummary, setMaggioliSummary] = useState<{ notifiche: number; mancate: number; senzaOcr: number; ocrMancanti: number; nonEsportabili: number } | null>(null);
   const [postalDeliveryStatusBreakdown, setPostalDeliveryStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
@@ -13776,6 +13779,14 @@ export function App(): React.JSX.Element {
                           <p className="nd-who-meta small mb-0">
                             <span className="text-muted me-1">External ID:</span><code>{notifDetail.recipient.externalId}</code>
                           </p>
+                        ) : !['SEND', 'POSTAL'].includes(notifDetail.campaign.channelType) ? null : !notifExternalIdOpen ? (
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm p-0 small text-muted text-decoration-none"
+                            onClick={() => setNotifExternalIdOpen(true)}
+                          >
+                            + Aggiungi External ID
+                          </button>
                         ) : (
                           <form
                             className="d-flex align-items-center gap-1 mt-1"
