@@ -331,3 +331,8 @@
 .stx-job-panels li.border-bottom { border-color: var(--stx-border) !important; padding: 0.6rem 0.25rem; margin-bottom: 0 !important; }
 .stx-job-panels li .font-monospace { font-size: 0.78rem; }
 .stx-job-panels .border.rounded.bg-light { background: var(--stx-soft) !important; border-color: var(--stx-border) !important; border-radius: 6px !important; }
+
+/* Filtro e tabella "SEND per tassonomia" */
+.stx-dates .stx-taxonomy-select { width: 280px; max-width: 100%; }
+.stx-table-scroll { overflow-x: auto; }
+.stx-table tbody tr.is-active td { background: var(--stx-soft); font-weight: 600; }

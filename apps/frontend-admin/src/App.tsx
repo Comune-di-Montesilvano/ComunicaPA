@@ -51,6 +51,7 @@ import { guessOcrColumns, ocrPairs, parseOcrCsv, type OcrCsv } from './ocr-csv';
 import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, GUIDA_DATE_TERMINI, guidaSections } from './guida';
 import { pickWizardMailConfigId, coDeliveryModeWithServices } from './wizard-defaults';
 import { errorMessage } from './error-message';
+import { sendTaxonomyOptions } from './send-taxonomy';
 
 // ---------------------------------------------------------------------------
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
@@ -1693,6 +1694,9 @@ export function App(): React.JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCampaignId, setSearchCampaignId] = useState('');
   const [searchChannel, setSearchChannel] = useState('');
+  // Tassonomia SEND (solo campagne SEND); opzioni = tassonomie già usate.
+  const [searchTaxonomy, setSearchTaxonomy] = useState('');
+  const [searchTaxonomyOptions, setSearchTaxonomyOptions] = useState<Array<{ code: string; label: string }>>([]);
   const [searchStatus, setSearchStatus] = useState('');
   const [searchPosteVerification, setSearchPosteVerification] = useState('');
   const [searchDateFrom, setSearchDateFrom] = useState('');
@@ -1970,6 +1974,7 @@ export function App(): React.JSX.Element {
       if (searchCampaignId) params.set('campaignId', searchCampaignId);
       if (searchAuthor) params.set('createdBy', searchAuthor);
       if (searchChannel) params.set('channelType', searchChannel);
+      if (searchTaxonomy && (!searchChannel || searchChannel === 'SEND')) params.set('taxonomyCode', searchTaxonomy);
       if (searchStatus) params.set('status', searchStatus);
       if (searchPosteVerification) params.set('posteVerification', searchPosteVerification);
       if (searchDateFrom) params.set('dateFrom', searchDateFrom);
@@ -2357,6 +2362,10 @@ export function App(): React.JSX.Element {
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => { if (!cancelled) setSearchOperators(Array.isArray(list) ? list : []); })
       .catch(() => { if (!cancelled) setSearchOperators([]); });
+    fetch(`${ADMIN_API_BASE}/campaigns/stats/send-taxonomy`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => { if (!cancelled) setSearchTaxonomyOptions(Array.isArray(rows) ? sendTaxonomyOptions(rows) : []); })
+      .catch(() => { if (!cancelled) setSearchTaxonomyOptions([]); });
     return () => { cancelled = true; };
   }, [view, token]);
 
@@ -13635,6 +13644,15 @@ export function App(): React.JSX.Element {
                       ))}
                     </select>
                   </div>
+                  {(!searchChannel || searchChannel === 'SEND') && searchTaxonomyOptions.length > 0 && (
+                    <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                      <label className="form-label small text-muted mb-1" htmlFor="ns-taxonomy">Tassonomia SEND</label>
+                      <select id="ns-taxonomy" className="form-select form-select-sm" value={searchTaxonomy} onChange={e => setSearchTaxonomy(e.target.value)}>
+                        <option value="">Tutte</option>
+                        {searchTaxonomyOptions.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div style={{ flex: '1 1 130px', minWidth: 0 }}>
                     <label className="form-label small text-muted mb-1" htmlFor="ns-status">Stato</label>
                     <select id="ns-status" className="form-select form-select-sm" value={searchStatus} onChange={e => setSearchStatus(e.target.value)}>
@@ -13670,12 +13688,12 @@ export function App(): React.JSX.Element {
                     <button type="submit" className="btn btn-primary btn-sm d-inline-flex align-items-center text-nowrap px-3" disabled={searchLoading}>
                       {searchLoading ? <Loader2 className="icon-spin me-1" size={14} /> : <Search className="me-1" size={14} />}Cerca
                     </button>
-                    {(searchQuery || searchCampaignId || searchAuthor || searchChannel || searchStatus || searchDateFrom || searchDateTo) && (
+                    {(searchQuery || searchCampaignId || searchAuthor || searchChannel || searchTaxonomy || searchStatus || searchDateFrom || searchDateTo) && (
                       <button
                         type="button"
                         className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center text-nowrap"
                         onClick={() => {
-                          setSearchQuery(''); setSearchCampaignId(''); setSearchAuthor(''); setSearchChannel('');
+                          setSearchQuery(''); setSearchCampaignId(''); setSearchAuthor(''); setSearchChannel(''); setSearchTaxonomy('');
                           setSearchStatus(''); setSearchDateFrom(''); setSearchDateTo('');
                         }}
                       >

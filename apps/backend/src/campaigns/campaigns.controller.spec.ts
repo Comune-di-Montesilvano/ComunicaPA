@@ -222,9 +222,9 @@ describe('CampaignsController', () => {
       mockService.getNeverDownloadedRecipients = jest.fn().mockResolvedValue(rows);
       const res = { setHeader: jest.fn(), send: jest.fn() } as any;
 
-      await controller.exportNeverDownloadedCsv({ user: { username: 'mario', role: 'user' } } as any, undefined, undefined, res);
+      await controller.exportNeverDownloadedCsv({ user: { username: 'mario', role: 'user' } } as any, undefined, undefined, undefined, res);
 
-      expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, undefined, undefined);
+      expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, undefined, undefined, undefined);
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
@@ -235,7 +235,13 @@ describe('CampaignsController', () => {
     it('passa il richiedente al service (filtro bozze non visibili)', async () => {
       mockService.getCostAnalytics.mockResolvedValueOnce({});
       await controller.getCostAnalytics({ user: { username: 'mario', role: 'user' } } as any, '2026-01-01', undefined);
-      expect(mockService.getCostAnalytics).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, '2026-01-01', undefined);
+      expect(mockService.getCostAnalytics).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, '2026-01-01', undefined, undefined);
+    });
+
+    it('passa la tassonomia SEND normalizzata e rifiuta un codice non valido', async () => {
+      await controller.getCostAnalytics({ user: { username: 'mario', role: 'user' } } as any, undefined, undefined, '010201p');
+      expect(mockService.getCostAnalytics).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, undefined, undefined, '010201P');
+      expect(() => controller.getCostAnalytics({ user: { username: 'mario', role: 'user' } } as any, undefined, undefined, 'TARI')).toThrow(BadRequestException);
     });
   });
 

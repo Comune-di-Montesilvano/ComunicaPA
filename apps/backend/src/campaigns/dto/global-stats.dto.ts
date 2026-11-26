@@ -3,6 +3,8 @@ export interface GlobalStatsTotalsDto {
   totalSent: number;
   totalFailed: number;
   totalDownloaded: number;
+  /** Inviati con un download possibile (digitali, POSTAL solo se dirottati su PEC o con App IO): denominatore di downloadPercentage. */
+  totalDownloadable: number;
   downloadPercentage: number;
   totalCostCents: number;
   totalSavingCents: number;
@@ -35,6 +37,8 @@ export interface CampaignLeaderboardEntryDto {
   campaignName: string;
   totalRecipients: number;
   sentCount: number;
+  /** Inviati con un download possibile: denominatore di downloadPercentage. */
+  downloadableCount: number;
   downloadPercentage: number;
 }
 

@@ -105,6 +105,15 @@ describe('NotificationsSearchService.search', () => {
     );
   });
 
+  it('filtro tassonomia: solo campagne SEND con quel codice', async () => {
+    await service.search({ taxonomyCode: '010201P', page: 1, pageSize: 20 }, ADMIN);
+
+    expect(qbMock.andWhere).toHaveBeenCalledWith(
+      "campaign.channelType = 'SEND' AND (campaign.channelConfig ->> 'taxonomyCode') = :taxonomyCode",
+      { taxonomyCode: '010201P' },
+    );
+  });
+
   it('filtro autore: confronta campaign.createdBy col valore trimmato', async () => {
     qbMock.getManyAndCount.mockResolvedValue([[], 0]);
     await service.search({ createdBy: ' mrossi ', page: 1, pageSize: 20 }, ADMIN);

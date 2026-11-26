@@ -37,6 +37,7 @@ export const GUIDA_PER_VISTA: Record<string, string> = {
   'invio-massivo': 'seguire-lo-stato-di-una-campagna',
   'campaign-detail': 'seguire-lo-stato-di-una-campagna',
   'notifiche-ricerca': 'cercare-una-singola-notifica',
+  statistiche: 'consultare-le-statistiche',
   'ricerca-iun-send': 'cercare-una-notifica-send-dal-numero-di-protocollo',
   'cerca-domicilio': 'verificare-anagrafica-e-domicilio-digitale',
   'verifica-domicili': 'verificare-i-domicili-digitali-di-un-elenco',

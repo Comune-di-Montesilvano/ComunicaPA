@@ -4,21 +4,22 @@ import {
 } from 'recharts';
 import {
   Users, Send, XCircle, Download, EyeOff, RefreshCw, Loader2, FileSpreadsheet, Euro, Mail, Printer,
-  PiggyBank, Trophy, LineChart as LineChartIcon, PieChart as PieChartIcon, Wallet, Globe, Info, Hourglass,
+  PiggyBank, Trophy, LineChart as LineChartIcon, PieChart as PieChartIcon, Wallet, Globe, Info, Hourglass, Tags,
 } from 'lucide-react';
 import { getChannelMeta } from '../data/channels';
 import { CHART, channelColor, channelRank, formatMonth, fmt, pct, plural, iso } from './stats-utils';
 import { Kpi, BarRow, ChartTooltip } from './stats-ui';
+import { sendTaxonomyLabel, sendTaxonomyOptions, type SendTaxonomyStat } from '../send-taxonomy';
 import '../assets/css/statistics.css';
 
 // ─── Tipi (specchio dei DTO backend: global-stats.dto.ts / cost-analytics.util.ts) ───
 
 interface GlobalStats {
-  totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; downloadPercentage: number; totalCostCents: number; totalSavingCents: number };
+  totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; totalDownloadable: number; downloadPercentage: number; totalCostCents: number; totalSavingCents: number };
   monthlyTrend: Array<{ month: string; sent: number; downloaded: number }>;
   channelTotals: Array<{ channel: string; sent: number }>;
   downloadChannelTotals: Array<{ channel: string; count: number }>;
-  campaignLeaderboard: Array<{ campaignId: string; campaignName: string; totalRecipients: number; sentCount: number; downloadPercentage: number }>;
+  campaignLeaderboard: Array<{ campaignId: string; campaignName: string; totalRecipients: number; sentCount: number; downloadableCount: number; downloadPercentage: number }>;
   neverDownloadedCount: number;
 }
 
@@ -72,13 +73,22 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
   const [loading, setLoading] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [leaderboardTab, setLeaderboardTab] = useState<'best' | 'worst'>('best');
+  // Filtro tassonomia SEND: '' = tutte (e tutti i canali).
+  const [taxonomy, setTaxonomy] = useState('');
+  const [taxonomyRows, setTaxonomyRows] = useState<SendTaxonomyStat[]>([]);
 
-  const query = useMemo(() => {
+  // Solo periodo: la tabella per tassonomia mostra sempre tutte le tassonomie.
+  const periodQuery = useMemo(() => {
     const p = new URLSearchParams();
     if (dateFrom) p.set('dateFrom', dateFrom);
     if (dateTo) p.set('dateTo', dateTo);
     return p.toString();
   }, [dateFrom, dateTo]);
+  const query = useMemo(() => {
+    const p = new URLSearchParams(periodQuery);
+    if (taxonomy) p.set('taxonomyCode', taxonomy);
+    return p.toString();
+  }, [periodQuery, taxonomy]);
 
   // Il fetch dipende da `query`: il polling si ricrea a ogni cambio periodo,
   // mai più una closure ferma sulle date iniziali (bug reale: il poll
@@ -86,19 +96,21 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
   const load = useCallback(async (silent: boolean) => {
     if (!silent) setLoading(true);
     try {
-      const [g, c] = await Promise.all([
+      const [g, c, tx] = await Promise.all([
         apiFetch(`/campaigns/stats/global?${query}`),
         apiFetch(`/campaigns/stats/costs?${query}`),
+        apiFetch(`/campaigns/stats/send-taxonomy?${periodQuery}`),
       ]);
       if (g.ok) setStats(await g.json());
       if (c.ok) setCosts(await c.json());
+      if (tx.ok) setTaxonomyRows(await tx.json());
       setUpdatedAt(new Date());
     } catch {
       // Sessione scaduta/rete: apiFetch gestisce già il logout, nessun crash qui.
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [apiFetch, query]);
+  }, [apiFetch, query, periodQuery]);
 
   useEffect(() => {
     load(false);
@@ -162,6 +174,7 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
   const channelSentTotal = channelRows.reduce((s, c) => s + c.sent, 0);
   const downloadTotal = downloadRows.reduce((s, c) => s + c.count, 0);
   const maxDownload = Math.max(1, ...downloadRows.map((c) => c.count));
+  const taxonomyOptions = sendTaxonomyOptions(taxonomyRows);
 
   return (
     <div className="stx">
@@ -188,6 +201,16 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
             <input id="stx-to" type="date" className="form-control form-control-sm" value={dateTo} min={dateFrom || undefined}
               onChange={(e) => { setPreset('custom'); setDateTo(e.target.value); }} />
           </div>
+          <div>
+            <label htmlFor="stx-taxonomy">Tassonomia SEND</label>
+            <select id="stx-taxonomy" className="form-select form-select-sm stx-taxonomy-select" value={taxonomy}
+              onChange={(e) => setTaxonomy(e.target.value)}
+              title="Con una tassonomia scelta tutte le statistiche riguardano solo le campagne SEND con quella tassonomia">
+              <option value="">Tutte (tutti i canali)</option>
+              {taxonomyOptions.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
+              {taxonomy && !taxonomyOptions.some((o) => o.code === taxonomy) && <option value={taxonomy}>{sendTaxonomyLabel(taxonomy)}</option>}
+            </select>
+          </div>
         </div>
         <div className="stx-updated">
           {updatedAt && <span>Aggiornato alle {updatedAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
@@ -207,7 +230,8 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
             <Kpi icon={<XCircle size={14} />} label="Falliti" value={fmt(t.totalFailed)} valueColor={t.totalFailed > 0 ? 'var(--stx-bad)' : undefined}
               sub={<><strong>{pct(t.totalFailed, t.totalRecipients)}%</strong> dei destinatari</>} />
             <Kpi icon={<Download size={14} />} label="Scaricati" value={`${t.downloadPercentage}%`}
-              sub={<><strong>{fmt(t.totalDownloaded)}</strong> su {fmt(t.totalSent)} inviati</>} />
+              title="Sugli inviati che potevano scaricare: tutti i canali digitali; per la Posta solo i dirottati su PEC o con App IO (una lettera solo cartacea non ha nulla da scaricare)."
+              sub={<><strong>{fmt(t.totalDownloaded)}</strong> su {fmt(t.totalDownloadable)} raggiunti online</>} />
             <Kpi icon={<EyeOff size={14} />} label="Mai scaricato" value={fmt(stats!.neverDownloadedCount)}
               sub={<button type="button" className="btn btn-link p-0" style={{ fontSize: '0.78rem' }} onClick={exportNeverDownloaded}>
                 <FileSpreadsheet size={12} className="me-1" />Esporta elenco CSV
@@ -440,14 +464,65 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
         </>
       )}
 
+      {/* ── SEND per tassonomia ── */}
+      {taxonomyRows.length > 0 && (
+        <>
+          <h2 className="stx-section-title"><Tags size={18} />SEND per tassonomia<small>esito dall'ultimo tentativo di ogni destinatario, nel periodo</small></h2>
+          <div className="stx-grid">
+            <div className="stx-card stx-span-12">
+              <div className="stx-table-scroll">
+                <table className="stx-table">
+                  <thead>
+                    <tr>
+                      <th>Tassonomia</th>
+                      <th className="num">Campagne</th>
+                      <th className="num">Notifiche</th>
+                      <th className="num" title="Letta dal destinatario o perfezionata per decorrenza termini">Perfezionate</th>
+                      <th className="num" title="In coda, in validazione, accettate, in consegna o consegnate">In corso</th>
+                      <th className="num" title="Destinatario irreperibile o restituita al mittente">Irreperibili</th>
+                      <th className="num" title="Invio fallito, compresi i rifiuti di SEND in fase di controllo">Fallite</th>
+                      <th className="num" title="Annullate o saltate">Annullate</th>
+                      <th className="num">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {taxonomyRows.map((r) => {
+                      const selectable = !!r.taxonomyCode;
+                      const active = !!taxonomy && r.taxonomyCode === taxonomy;
+                      return (
+                        <tr key={r.taxonomyCode ?? 'none'} className={`${selectable ? 'is-link' : ''} ${active ? 'is-active' : ''}`}
+                          onClick={selectable ? () => setTaxonomy(active ? '' : r.taxonomyCode!) : undefined}
+                          title={selectable ? (active ? 'Togli il filtro' : 'Filtra le statistiche su questa tassonomia') : undefined}>
+                          <td style={{ maxWidth: 0, width: '34%' }}>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sendTaxonomyLabel(r.taxonomyCode)}</div>
+                          </td>
+                          <td className="num">{fmt(r.campaigns)}</td>
+                          <td className="num"><strong>{fmt(r.recipients)}</strong></td>
+                          <td className="num" style={{ color: 'var(--stx-good)' }}>{fmt(r.perfected)} <span className="stx-pct">{pct(r.perfected, r.recipients)}%</span></td>
+                          <td className="num">{fmt(r.inProgress)}</td>
+                          <td className="num">{fmt(r.unreachable)}</td>
+                          <td className="num" style={{ color: r.failed > 0 ? 'var(--stx-bad)' : undefined }}>{fmt(r.failed)}</td>
+                          <td className="num">{fmt(r.cancelled)}</td>
+                          <td className="num">{formatEuroCents(r.costCents)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ── Download ── */}
       {stats && (
         <>
-          <h2 className="stx-section-title"><Download size={18} />Download degli allegati<small>percentuali sui destinatari raggiunti con successo</small></h2>
+          <h2 className="stx-section-title"><Download size={18} />Download degli allegati<small>percentuali sugli inviati che potevano scaricare (Posta: solo dirottati su PEC o con App IO)</small></h2>
           <div className="stx-grid">
             <div className="stx-card stx-span-8">
               <div className="stx-card-head">
-                <h3 className="stx-card-title"><Trophy size={16} />Tasso di download per campagna<span className="stx-card-hint" style={{ fontWeight: 400 }}>· solo campagne con almeno 2 destinatari</span></h3>
+                <h3 className="stx-card-title"><Trophy size={16} />Tasso di download per campagna<span className="stx-card-hint" style={{ fontWeight: 400 }}>· solo campagne con almeno 2 destinatari raggiunti online</span></h3>
                 <div className="stx-tabs" role="tablist">
                   <button type="button" role="tab" aria-selected={leaderboardTab === 'best'} className={leaderboardTab === 'best' ? 'is-active' : ''} onClick={() => setLeaderboardTab('best')}>Migliori</button>
                   <button type="button" role="tab" aria-selected={leaderboardTab === 'worst'} className={leaderboardTab === 'worst' ? 'is-active' : ''} onClick={() => setLeaderboardTab('worst')}>Peggiori</button>
@@ -455,14 +530,14 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
               </div>
               {leaderboard.length === 0 ? <div className="stx-card-body"><div className="stx-empty">Nessuna campagna massiva nel periodo.</div></div> : (
                 <table className="stx-table">
-                  <thead><tr><th>Campagna</th><th className="num">Inviati</th><th className="num">Scaricati</th></tr></thead>
+                  <thead><tr><th>Campagna</th><th className="num" title="Inviati che potevano scaricare: per la Posta solo i dirottati su PEC o con App IO">Online</th><th className="num">Scaricati</th></tr></thead>
                   <tbody>
                     {leaderboardRows.map((c) => (
                       <tr key={c.campaignId} className="is-link" onClick={() => onOpenCampaign(c.campaignId)} title="Apri dettaglio campagna">
                         <td style={{ maxWidth: 0, width: '60%' }}>
                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.campaignName}</div>
                         </td>
-                        <td className="num">{fmt(c.sentCount)}</td>
+                        <td className="num" title={c.downloadableCount !== c.sentCount ? `${fmt(c.downloadableCount)} su ${fmt(c.sentCount)} inviati` : undefined}>{fmt(c.downloadableCount)}</td>
                         <td className="num">
                           <span className="stx-mini-track"><span style={{ width: `${c.downloadPercentage}%`, background: CHART.aqua }} /></span>
                           <strong className="stx-pct">{c.downloadPercentage}%</strong>

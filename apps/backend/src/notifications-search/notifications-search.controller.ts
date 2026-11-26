@@ -1,8 +1,9 @@
-import { Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Query, Req, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { NotificationsSearchService, POSTE_VERIFICATION_FILTERS, type PosteVerificationFilter } from './notifications-search.service.js';
+import { parseTaxonomyFilter } from '../campaigns/global-stats.util.js';
 
 @Controller('admin/notifications-search')
 @Roles('user', 'admin')
@@ -23,12 +24,16 @@ export class NotificationsSearchController {
     @Query('pageSize') pageSize = '20',
     @Query('posteVerification') posteVerification?: string,
     @Query('createdBy') createdBy?: string,
+    @Query('taxonomyCode') taxonomyCode?: string,
   ) {
+    const taxonomy = parseTaxonomyFilter(taxonomyCode);
+    if (taxonomy === null) throw new BadRequestException('taxonomyCode non valido (6 cifre + P/N)');
     return this.svc.search({
       query,
       codiceFiscale,
       campaignId,
       channelType,
+      taxonomyCode: taxonomy,
       createdBy,
       status,
       dateFrom,

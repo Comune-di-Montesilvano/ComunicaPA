@@ -57,6 +57,7 @@ import {
   operatorUploadOwner,
 } from './chunked-upload.util.js';
 import { errorMessage } from '../common/error-message.js';
+import { parseTaxonomyFilter } from './global-stats.util.js';
 
 type CampaignWithOwnerDisplay = Campaign & {
   createdByDisplayName?: string;
@@ -681,8 +682,9 @@ export class CampaignsController {
   getGlobalStats(
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('taxonomyCode') taxonomyCode?: string,
   ) {
-    return this.campaignsService.getGlobalStats(dateFrom, dateTo);
+    return this.campaignsService.getGlobalStats(dateFrom, dateTo, requireTaxonomyFilter(taxonomyCode));
   }
 
   @Get('stats/costs')
@@ -690,8 +692,18 @@ export class CampaignsController {
     @Req() req: Request & { user: JwtOperatorPayload },
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('taxonomyCode') taxonomyCode?: string,
   ) {
-    return this.campaignsService.getCostAnalytics(req.user, dateFrom, dateTo);
+    return this.campaignsService.getCostAnalytics(req.user, dateFrom, dateTo, requireTaxonomyFilter(taxonomyCode));
+  }
+
+  @Get('stats/send-taxonomy')
+  getSendTaxonomyStats(
+    @Req() req: Request & { user: JwtOperatorPayload },
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.campaignsService.getSendTaxonomyStats(req.user, dateFrom, dateTo);
   }
 
   @Get('stats/global/never-downloaded.csv')
@@ -699,9 +711,10 @@ export class CampaignsController {
     @Req() req: Request & { user: JwtOperatorPayload },
     @Query('dateFrom') dateFrom: string | undefined,
     @Query('dateTo') dateTo: string | undefined,
+    @Query('taxonomyCode') taxonomyCode: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    const rows = await this.campaignsService.getNeverDownloadedRecipients(req.user, dateFrom, dateTo);
+    const rows = await this.campaignsService.getNeverDownloadedRecipients(req.user, dateFrom, dateTo, requireTaxonomyFilter(taxonomyCode));
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
     res.send(buildNeverDownloadedCsv(rows));
@@ -1049,4 +1062,11 @@ export class CampaignsController {
     });
     return result;
   }
+}
+
+/** `taxonomyCode` da query string: assente → nessun filtro, formato errato → 400. */
+function requireTaxonomyFilter(raw?: string): string | undefined {
+  const code = parseTaxonomyFilter(raw);
+  if (code === null) throw new BadRequestException('taxonomyCode non valido (6 cifre + P/N)');
+  return code;
 }
